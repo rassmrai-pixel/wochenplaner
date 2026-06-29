@@ -1,0 +1,1011 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Perfekte Woche Planer</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel-2: #1f2937;
+      --text: #f9fafb;
+      --muted: #94a3b8;
+      --line: #334155;
+      --line-soft: #1e293b;
+      --accent: #38bdf8;
+      --danger: #ef4444;
+      --radius: 14px;
+      --cell-h: 18px;
+      --time-w: 70px;
+      --day-min-w: 145px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(135deg, #020617, #0f172a 55%, #111827);
+      color: var(--text);
+    }
+    header {
+      padding: 22px 24px 14px;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--line-soft);
+    }
+    h1 { margin: 0; font-size: clamp(22px, 3vw, 34px); letter-spacing: -0.03em; }
+    .subtitle { color: var(--muted); margin-top: 4px; font-size: 14px; }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; max-width: 950px; }
+    button, input, select {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font: inherit;
+      min-height: 40px;
+    }
+    input[type="text"] { width: 180px; }
+    input[type="color"] { padding: 4px; width: 46px; min-width: 46px; }
+    button { cursor: pointer; transition: 0.15s ease; user-select: none; }
+    button:hover { transform: translateY(-1px); border-color: var(--accent); }
+    button.primary { background: #0284c7; border-color: #0ea5e9; }
+    button.danger { background: #7f1d1d; border-color: #dc2626; }
+    button.ghost { background: transparent; }
+    button.small { padding: 7px 10px; min-height: 34px; font-size: 13px; }
+    .app { padding: 16px 24px 32px; }
+    .hint { margin: 0 0 14px; color: var(--muted); font-size: 14px; line-height: 1.45; }
+    .legend { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+    .pill {
+      border: 1px solid var(--line);
+      padding: 8px 10px;
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(31, 41, 55, 0.7);
+      cursor: pointer;
+      user-select: none;
+      font-size: 13px;
+    }
+    .pill.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.16); }
+    .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+
+    .habit-panel {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(17, 24, 39, 0.8);
+      margin-bottom: 14px;
+      overflow: hidden;
+    }
+    .habit-toggle {
+      width: 100%;
+      border: 0;
+      border-radius: 0;
+      background: rgba(31, 41, 55, 0.75);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      text-align: left;
+      padding: 12px 14px;
+    }
+    .habit-content { display: none; padding: 14px; }
+    .habit-panel.open .habit-content { display: block; }
+    .day-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+    .day-tab { padding: 7px 10px; min-height: 34px; font-size: 13px; border-radius: 999px; }
+    .day-tab.active { background: #0284c7; border-color: #38bdf8; }
+    .habit-list { display: grid; gap: 8px; }
+    .habit-item {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 10px;
+      align-items: center;
+      border: 1px solid var(--line-soft);
+      background: rgba(2, 6, 23, 0.35);
+      padding: 10px;
+      border-radius: 12px;
+    }
+    .habit-item input { min-height: auto; width: 18px; height: 18px; accent-color: #38bdf8; }
+    .habit-name { font-weight: 700; }
+    .habit-meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .habit-empty { color: var(--muted); font-size: 13px; }
+
+
+
+    .view-switch {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 0 0 14px;
+      align-items: center;
+    }
+    .view-switch button.active { background: #0284c7; border-color: #38bdf8; }
+    .task-view {
+      display: none;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(17, 24, 39, 0.82);
+      box-shadow: 0 24px 80px rgba(0,0,0,0.22);
+      overflow: hidden;
+    }
+    .task-view.active { display: block; }
+    .task-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      padding: 14px;
+      border-bottom: 1px solid var(--line-soft);
+      background: rgba(31, 41, 55, 0.62);
+    }
+    .task-head h2 { margin: 0; font-size: 18px; }
+    .task-progress { color: var(--muted); font-size: 13px; }
+    .task-list { display: grid; gap: 10px; padding: 14px; }
+    .task-card {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 12px;
+      align-items: center;
+      border: 1px solid var(--line-soft);
+      background: rgba(2, 6, 23, 0.35);
+      padding: 12px;
+      border-radius: 14px;
+    }
+    .task-card input { min-height: auto; width: 20px; height: 20px; accent-color: #38bdf8; }
+    .task-card.done { opacity: 0.62; }
+    .task-card.done .task-name { text-decoration: line-through; }
+    .task-color {
+      width: 5px;
+      align-self: stretch;
+      border-radius: 999px;
+      grid-column: 1;
+      grid-row: 1 / span 2;
+      display: none;
+    }
+    .task-main { min-width: 0; }
+    .task-name { font-size: 15px; font-weight: 800; margin-bottom: 3px; }
+    .task-meta { color: var(--muted); font-size: 12px; }
+    .task-time { font-weight: 800; white-space: nowrap; }
+    .task-empty { color: var(--muted); padding: 18px 14px; font-size: 14px; }
+    body.task-mode .calendar-wrap,
+    body.task-mode .habit-panel,
+    body.task-mode .hint.calendar-hint,
+    body.task-mode .legend { display: none; }
+    body.calendar-mode .task-view { display: none; }
+
+    .calendar-wrap {
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(15, 23, 42, 0.75);
+      box-shadow: 0 24px 80px rgba(0,0,0,0.25);
+      max-height: calc(100vh - 245px);
+    }
+    .calendar {
+      display: grid;
+      grid-template-columns: var(--time-w) repeat(7, minmax(var(--day-min-w), 1fr));
+      grid-template-rows: 44px calc(96 * var(--cell-h));
+      min-width: calc(var(--time-w) + 7 * var(--day-min-w));
+      position: relative;
+    }
+    .head-cell {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: #111827;
+      border-bottom: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+      padding: 12px 10px;
+      text-align: center;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .time-grid { grid-column: 1; grid-row: 2; }
+    .time-cell {
+      height: var(--cell-h);
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line-soft);
+      color: var(--muted);
+      font-size: 11px;
+      padding: 1px 8px;
+      text-align: right;
+      background: rgba(15, 23, 42, 0.92);
+      user-select: none;
+    }
+    .time-cell.hour { color: var(--text); border-top: 1px solid var(--line); font-weight: 600; }
+    .day-column {
+      grid-row: 2;
+      position: relative;
+      height: calc(96 * var(--cell-h));
+      border-right: 1px solid var(--line-soft);
+      background: rgba(2, 6, 23, 0.24);
+      overflow: hidden;
+    }
+    .slot {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: var(--cell-h);
+      border-bottom: 1px solid var(--line-soft);
+      cursor: crosshair;
+      user-select: none;
+    }
+    .slot.hour { border-top: 1px solid var(--line); }
+    .slot:hover { outline: 1px solid var(--accent); z-index: 2; }
+    .slot.selected { outline: 2px solid rgba(255,255,255,0.75); z-index: 3; }
+    .event {
+      position: absolute;
+      border: 1px solid rgba(255,255,255,0.35);
+      border-left: 4px solid rgba(255,255,255,0.78);
+      border-radius: 9px;
+      padding: 4px 5px;
+      color: white;
+      overflow: hidden;
+      z-index: 6;
+      box-shadow: 0 8px 18px rgba(0,0,0,0.26);
+      cursor: pointer;
+      min-height: 16px;
+    }
+    .event:hover { outline: 2px solid rgba(255,255,255,0.82); z-index: 9; }
+    .event-title-row { display: flex; gap: 5px; align-items: center; min-width: 0; }
+    .event-check { width: 15px; height: 15px; flex: 0 0 auto; accent-color: #38bdf8; }
+    .event-title { font-size: 11px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .event-time { font-size: 10px; opacity: 0.9; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .event.done { opacity: 0.64; }
+    .event.done .event-title { text-decoration: line-through; }
+
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.62);
+      z-index: 60;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal {
+      width: min(560px, 100%);
+      background: #111827;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 30px 100px rgba(0,0,0,0.45);
+    }
+    .modal h2 { margin: 0 0 12px; }
+    .modal label { display: block; color: var(--muted); font-size: 13px; margin: 12px 0 6px; }
+    .modal input, .modal select { width: 100%; }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
+    .footer-note { margin-top: 12px; color: var(--muted); font-size: 12px; }
+    @media (max-width: 700px) {
+      :root { --cell-h: 22px; --day-min-w: 125px; --time-w: 58px; }
+      header { padding: 16px; }
+      .app { padding: 14px; }
+      input[type="text"] { width: 150px; }
+  
+
+    .view-switch {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 0 0 14px;
+      align-items: center;
+    }
+    .view-switch button.active { background: #0284c7; border-color: #38bdf8; }
+    .task-view {
+      display: none;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(17, 24, 39, 0.82);
+      box-shadow: 0 24px 80px rgba(0,0,0,0.22);
+      overflow: hidden;
+    }
+    .task-view.active { display: block; }
+    .task-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      padding: 14px;
+      border-bottom: 1px solid var(--line-soft);
+      background: rgba(31, 41, 55, 0.62);
+    }
+    .task-head h2 { margin: 0; font-size: 18px; }
+    .task-progress { color: var(--muted); font-size: 13px; }
+    .task-list { display: grid; gap: 10px; padding: 14px; }
+    .task-card {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 12px;
+      align-items: center;
+      border: 1px solid var(--line-soft);
+      background: rgba(2, 6, 23, 0.35);
+      padding: 12px;
+      border-radius: 14px;
+    }
+    .task-card input { min-height: auto; width: 20px; height: 20px; accent-color: #38bdf8; }
+    .task-card.done { opacity: 0.62; }
+    .task-card.done .task-name { text-decoration: line-through; }
+    .task-color {
+      width: 5px;
+      align-self: stretch;
+      border-radius: 999px;
+      grid-column: 1;
+      grid-row: 1 / span 2;
+      display: none;
+    }
+    .task-main { min-width: 0; }
+    .task-name { font-size: 15px; font-weight: 800; margin-bottom: 3px; }
+    .task-meta { color: var(--muted); font-size: 12px; }
+    .task-time { font-weight: 800; white-space: nowrap; }
+    .task-empty { color: var(--muted); padding: 18px 14px; font-size: 14px; }
+    body.task-mode .calendar-wrap,
+    body.task-mode .habit-panel,
+    body.task-mode .hint.calendar-hint,
+    body.task-mode .legend { display: none; }
+    body.calendar-mode .task-view { display: none; }
+
+    .calendar-wrap { max-height: calc(100vh - 295px); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Perfekte Woche Planer</h1>
+      <div class="subtitle">Wochenansicht · 24 Stunden · 15-Minuten-Schritte · Kalender + Habit Tracker + Tages-Taskansicht</div>
+    </div>
+    <div class="toolbar">
+      <input id="quickLabel" type="text" placeholder="Kategorie, z. B. Lernen" />
+      <input id="quickColor" type="color" value="#22c55e" title="Farbe" />
+      <button class="primary" id="addCategoryBtn">Kategorie hinzufügen</button>
+      <button id="exportBtn">Export</button>
+      <button id="importBtn">Import</button>
+      <input id="importFile" type="file" accept="application/json" hidden />
+      <button class="danger" id="clearBtn">Alles löschen</button>
+    </div>
+  </header>
+
+  <main class="app">
+    <p class="hint calendar-hint">Wähle eine Kategorie und ziehe über freie Zeitfelder, um neue Blöcke zu setzen. Doppelklick auf einen Block öffnet die Bearbeitung. Checkboxen im Kalender und im Habit Tracker sind synchron. Fahrt wird nicht getrackt, Orga schon. Mit der Tages-Taskansicht kannst du ohne Kalender nur abhaken.</p>
+    <div class="legend" id="legend"></div>
+
+
+    <div class="view-switch">
+      <button class="primary" id="calendarModeBtn">Kalender planen</button>
+      <button id="taskModeBtn">Tages-Tasks abhaken</button>
+      <select id="taskDaySelect" title="Tag für Tagesansicht"></select>
+    </div>
+
+    <section class="task-view" id="taskView">
+      <div class="task-head">
+        <div>
+          <h2 id="taskTitle">Tagesansicht</h2>
+          <div class="task-progress" id="taskProgress">0/0 erledigt</div>
+        </div>
+        <button class="small ghost" id="taskBackToCalendarBtn">Zurück zum Kalender</button>
+      </div>
+      <div class="task-list" id="taskList"></div>
+    </section>
+
+    <section class="habit-panel" id="habitPanel">
+      <button class="habit-toggle" id="habitToggle">
+        <span><strong>Habit Tracker</strong> · Tagesbezogen abhaken</span>
+        <span id="habitSummary">Einklappen/Ausklappen</span>
+      </button>
+      <div class="habit-content">
+        <div class="day-tabs" id="dayTabs"></div>
+        <div class="habit-list" id="habitList"></div>
+      </div>
+    </section>
+
+    <div class="calendar-wrap">
+      <div class="calendar" id="calendar"></div>
+    </div>
+    <div class="footer-note">Tipp: Parallele Termine funktionieren jetzt. Wenn zwei Blöcke am selben Tag zeitlich überlappen, werden sie nebeneinander angezeigt.</div>
+  </main>
+
+  <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal">
+      <h2 id="modalTitle">Block bearbeiten</h2>
+      <label for="modalLabel">Name</label>
+      <input id="modalLabel" type="text" />
+      <label for="modalCategory">Kategorie</label>
+      <select id="modalCategory"></select>
+      <label for="modalDay">Tag</label>
+      <select id="modalDay"></select>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+        <div>
+          <label for="modalStart">Startzeit</label>
+          <select id="modalStart"></select>
+        </div>
+        <div>
+          <label for="modalEnd">Endzeit</label>
+          <select id="modalEnd"></select>
+        </div>
+      </div>
+      <div class="footer-note" id="modalInfo">Zeiten werden in 15-Minuten-Schritten gespeichert.</div>
+      <div class="modal-actions">
+        <button class="danger" id="deleteBlockBtn">Block löschen</button>
+        <button class="ghost" id="cancelModalBtn">Abbrechen</button>
+        <button class="primary" id="saveModalBtn">Speichern</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const days = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+  const slotsPerDay = 96;
+  const storageKeyV2 = 'perfekte-woche-planer-v2';
+  const storageKeyV1 = 'perfekte-woche-planer-v1';
+  const cellHeight = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell-h')) || 18;
+
+  const defaults = {
+    selectedCategory: 'gym',
+    habitOpen: false,
+    activeHabitDay: 0,
+    viewMode: 'calendar',
+    categories: {
+      gym: { label: 'Gym / Sport', color: '#22c55e', habit: true },
+      work: { label: 'Arbeit / Business', color: '#38bdf8', habit: true },
+      sleep: { label: 'Schlaf', color: '#6366f1', habit: false },
+      food: { label: 'Essen / Mealprep', color: '#f97316', habit: true },
+      commute: { label: 'Fahrt / Wegzeit', color: '#64748b', habit: false },
+      orga: { label: 'Orga / To-dos', color: '#94a3b8', habit: true },
+      social: { label: 'Social / Dating', color: '#ec4899', habit: true },
+      focus: { label: 'Deep Work', color: '#a855f7', habit: true }
+    },
+    events: []
+  };
+
+  let state = loadState();
+  let isDragging = false;
+  let dragDay = null;
+  let dragStart = null;
+  let dragEnd = null;
+  let editingId = null;
+
+  const calendar = document.getElementById('calendar');
+  const legend = document.getElementById('legend');
+  const quickLabel = document.getElementById('quickLabel');
+  const quickColor = document.getElementById('quickColor');
+  const modalBackdrop = document.getElementById('modalBackdrop');
+  const modalTitle = document.getElementById('modalTitle');
+  const modalLabel = document.getElementById('modalLabel');
+  const modalCategory = document.getElementById('modalCategory');
+  const modalDay = document.getElementById('modalDay');
+  const modalStart = document.getElementById('modalStart');
+  const modalEnd = document.getElementById('modalEnd');
+  const modalInfo = document.getElementById('modalInfo');
+  const deleteBlockBtn = document.getElementById('deleteBlockBtn');
+  const habitPanel = document.getElementById('habitPanel');
+  const habitSummary = document.getElementById('habitSummary');
+  const dayTabs = document.getElementById('dayTabs');
+  const habitList = document.getElementById('habitList');
+  const calendarModeBtn = document.getElementById('calendarModeBtn');
+  const taskModeBtn = document.getElementById('taskModeBtn');
+  const taskDaySelect = document.getElementById('taskDaySelect');
+  const taskView = document.getElementById('taskView');
+  const taskTitle = document.getElementById('taskTitle');
+  const taskProgress = document.getElementById('taskProgress');
+  const taskList = document.getElementById('taskList');
+
+  function id() { return 'e-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8); }
+  function clone(x) { return JSON.parse(JSON.stringify(x)); }
+
+  function loadState() {
+    try {
+      const rawV2 = localStorage.getItem(storageKeyV2);
+      if (rawV2) return normalizeState(JSON.parse(rawV2));
+      const rawV1 = localStorage.getItem(storageKeyV1);
+      if (rawV1) return migrateV1(JSON.parse(rawV1));
+      return clone(defaults);
+    } catch {
+      return clone(defaults);
+    }
+  }
+
+  function normalizeState(input) {
+    const s = { ...clone(defaults), ...input };
+    s.categories = { ...clone(defaults).categories, ...(input.categories || {}) };
+    Object.values(s.categories).forEach(cat => { if (cat.habit === undefined) cat.habit = true; });
+    if (s.categories.neutral) {
+      s.categories.orga = s.categories.orga || { label: 'Orga / To-dos', color: s.categories.neutral.color || '#94a3b8', habit: true };
+      delete s.categories.neutral;
+    }
+    s.events = Array.isArray(input.events) ? input.events.map(ev => ({
+      id: ev.id || id(),
+      day: clamp(Number(ev.day), 0, 6),
+      start: clamp(Number(ev.start), 0, slotsPerDay - 1),
+      end: clamp(Number(ev.end), 1, slotsPerDay),
+      label: ev.label || 'Block',
+      categoryId: s.categories[ev.categoryId] ? ev.categoryId : 'orga',
+      done: Boolean(ev.done)
+    })).filter(ev => ev.end > ev.start) : [];
+    if (!s.categories[s.selectedCategory]) s.selectedCategory = 'gym';
+    if (!['calendar', 'tasks'].includes(s.viewMode)) s.viewMode = 'calendar';
+    s.activeHabitDay = clamp(Number(s.activeHabitDay), 0, 6);
+    return s;
+  }
+
+  function migrateV1(old) {
+    const s = clone(defaults);
+    if (old.categories) {
+      Object.entries(old.categories).forEach(([key, cat]) => {
+        if (key === 'neutral') return;
+        s.categories[key] = { ...cat, habit: !/schlaf|fahrt|wegzeit/i.test(cat.label || '') };
+      });
+    }
+    const slots = old.slots || {};
+    const visited = new Set();
+    for (const k of Object.keys(slots)) {
+      if (visited.has(k)) continue;
+      const [dStr, stStr] = k.split('-');
+      const day = Number(dStr), start = Number(stStr);
+      const data = slots[k];
+      let end = start + 1;
+      visited.add(k);
+      while (end < slotsPerDay) {
+        const nextKey = `${day}-${end}`;
+        const next = slots[nextKey];
+        if (!next || next.categoryId !== data.categoryId || next.label !== data.label) break;
+        visited.add(nextKey);
+        end++;
+      }
+      let categoryId = data.categoryId === 'neutral' ? 'orga' : data.categoryId;
+      if (!s.categories[categoryId]) categoryId = 'orga';
+      s.events.push({ id: id(), day, start, end, label: data.label || s.categories[categoryId].label, categoryId, done: false });
+    }
+    s.selectedCategory = s.categories[old.selectedCategory] ? old.selectedCategory : 'gym';
+    saveState(s);
+    return s;
+  }
+
+  function saveState(next = state) { localStorage.setItem(storageKeyV2, JSON.stringify(next)); }
+  function clamp(n, min, max) { return Math.max(min, Math.min(max, Number.isFinite(n) ? n : min)); }
+  function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[ch])); }
+  function timeLabel(slot) {
+    const clamped = clamp(slot, 0, slotsPerDay);
+    const minutes = clamped * 15;
+    const h = Math.floor(minutes / 60).toString().padStart(2, '0');
+    const m = (minutes % 60).toString().padStart(2, '0');
+    return `${h}:${m}`;
+  }
+  function eventTime(ev) { return `${timeLabel(ev.start)}–${timeLabel(ev.end)}`; }
+
+  function fillTimeSelect(select, includeEndOfDay = false) {
+    select.innerHTML = '';
+    const max = includeEndOfDay ? slotsPerDay : slotsPerDay - 1;
+    for (let s = 0; s <= max; s++) {
+      const option = document.createElement('option');
+      option.value = String(s);
+      option.textContent = timeLabel(s);
+      select.appendChild(option);
+    }
+  }
+
+  function fillDaySelect() {
+    modalDay.innerHTML = '';
+    days.forEach((day, index) => {
+      const option = document.createElement('option');
+      option.value = String(index);
+      option.textContent = day;
+      modalDay.appendChild(option);
+    });
+  }
+
+  function renderLegend() {
+    legend.innerHTML = '';
+    Object.entries(state.categories).forEach(([catId, cat]) => {
+      const pill = document.createElement('div');
+      pill.className = `pill ${state.selectedCategory === catId ? 'active' : ''}`;
+      pill.innerHTML = `<span class="dot" style="background:${cat.color}"></span>${escapeHtml(cat.label)}${cat.habit ? '' : ' · kein Habit'}`;
+      pill.onclick = () => { state.selectedCategory = catId; saveState(); renderLegend(); };
+      legend.appendChild(pill);
+    });
+  }
+
+  function renderCalendar() {
+    calendar.innerHTML = '';
+    calendar.appendChild(headerCell('', 1));
+    days.forEach((day, i) => calendar.appendChild(headerCell(day, i + 2)));
+
+    const timeGrid = document.createElement('div');
+    timeGrid.className = 'time-grid';
+    for (let s = 0; s < slotsPerDay; s++) {
+      const t = document.createElement('div');
+      t.className = `time-cell ${s % 4 === 0 ? 'hour' : ''}`;
+      t.textContent = s % 4 === 0 ? timeLabel(s) : '';
+      timeGrid.appendChild(t);
+    }
+    calendar.appendChild(timeGrid);
+
+    for (let d = 0; d < 7; d++) {
+      const col = document.createElement('div');
+      col.className = 'day-column';
+      col.style.gridColumn = String(d + 2);
+      col.dataset.day = d;
+
+      for (let s = 0; s < slotsPerDay; s++) {
+        const slot = document.createElement('div');
+        slot.className = `slot ${s % 4 === 0 ? 'hour' : ''}`;
+        slot.style.top = `${s * cellHeight()}px`;
+        slot.dataset.day = d;
+        slot.dataset.slot = s;
+        slot.title = `${days[d]} ${timeLabel(s)}-${timeLabel(s + 1)}`;
+        slot.addEventListener('mousedown', (e) => startDrag(e, d, s));
+        slot.addEventListener('mouseenter', () => moveDrag(d, s));
+        slot.addEventListener('mouseup', () => finishDrag(d, s));
+        col.appendChild(slot);
+      }
+
+      const events = state.events.filter(ev => ev.day === d);
+      layoutDayEvents(events).forEach(ev => col.appendChild(eventEl(ev)));
+      calendar.appendChild(col);
+    }
+  }
+
+  function headerCell(text, col) {
+    const div = document.createElement('div');
+    div.className = 'head-cell';
+    div.style.gridColumn = String(col);
+    div.style.gridRow = '1';
+    div.textContent = text;
+    return div;
+  }
+
+  function startDrag(e, d, s) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    isDragging = true;
+    dragDay = d;
+    dragStart = s;
+    dragEnd = s;
+    markSelection();
+  }
+  function moveDrag(d, s) {
+    if (!isDragging || d !== dragDay) return;
+    dragEnd = s;
+    markSelection();
+  }
+  function finishDrag(d, s) {
+    if (!isDragging || d !== dragDay) return;
+    dragEnd = s;
+    const start = Math.min(dragStart, dragEnd);
+    const end = Math.max(dragStart, dragEnd) + 1;
+    clearSelection();
+    isDragging = false;
+    if (end <= start) return;
+    openEditor(null, { day: d, start, end });
+  }
+  document.addEventListener('mouseup', () => {
+    if (!isDragging) return;
+    clearSelection();
+    isDragging = false;
+  });
+  function markSelection() {
+    clearSelection();
+    const a = Math.min(dragStart, dragEnd), b = Math.max(dragStart, dragEnd);
+    document.querySelectorAll(`.slot[data-day="${dragDay}"]`).forEach(slot => {
+      const s = Number(slot.dataset.slot);
+      if (s >= a && s <= b) slot.classList.add('selected');
+    });
+  }
+  function clearSelection() { document.querySelectorAll('.slot.selected').forEach(el => el.classList.remove('selected')); }
+
+  function layoutDayEvents(events) {
+    const sorted = [...events].sort((a, b) => a.start - b.start || b.end - a.end);
+    const active = [];
+    const groups = [];
+    let group = [];
+    let groupEnd = -1;
+
+    sorted.forEach(ev => {
+      if (!group.length || ev.start < groupEnd) {
+        group.push(ev);
+        groupEnd = Math.max(groupEnd, ev.end);
+      } else {
+        groups.push(group);
+        group = [ev];
+        groupEnd = ev.end;
+      }
+    });
+    if (group.length) groups.push(group);
+
+    const laidOut = [];
+    groups.forEach(g => {
+      const lanes = [];
+      const byStart = [...g].sort((a, b) => a.start - b.start || a.end - b.end);
+      byStart.forEach(ev => {
+        let lane = lanes.findIndex(end => end <= ev.start);
+        if (lane === -1) { lane = lanes.length; lanes.push(ev.end); }
+        else lanes[lane] = ev.end;
+        ev._lane = lane;
+      });
+      const laneCount = Math.max(1, lanes.length);
+      byStart.forEach(ev => laidOut.push({ ...ev, _laneCount: laneCount }));
+    });
+    return laidOut;
+  }
+
+  function eventEl(ev) {
+    const cat = state.categories[ev.categoryId] || state.categories.orga;
+    const div = document.createElement('div');
+    div.className = `event ${ev.done ? 'done' : ''}`;
+    div.dataset.id = ev.id;
+    const gap = 3;
+    const laneCount = ev._laneCount || 1;
+    const totalGap = (laneCount - 1) * gap;
+    const widthPercent = 100 / laneCount;
+    const leftPercent = (ev._lane || 0) * widthPercent;
+    const widthPxAdjustment = totalGap / laneCount;
+    const leftPxAdjustment = (ev._lane || 0) * gap / laneCount;
+    div.style.top = `${ev.start * cellHeight() + 1}px`;
+    div.style.height = `${Math.max(16, (ev.end - ev.start) * cellHeight() - 2)}px`;
+    div.style.left = `calc(${leftPercent}% + ${leftPxAdjustment}px)`;
+    div.style.width = `calc(${widthPercent}% - ${widthPxAdjustment}px)`;
+    div.style.background = cat.color;
+    div.title = `${days[ev.day]} ${eventTime(ev)} · ${ev.label}`;
+
+    const trackable = Boolean(cat.habit);
+    div.innerHTML = `
+      <div class="event-title-row">
+        ${trackable ? `<input class="event-check" type="checkbox" ${ev.done ? 'checked' : ''} title="Abhaken" />` : ''}
+        <span class="event-title">${escapeHtml(ev.label)}</span>
+      </div>
+      <div class="event-time">${eventTime(ev)}</div>`;
+
+    div.addEventListener('mousedown', e => e.stopPropagation());
+    div.addEventListener('click', e => e.stopPropagation());
+    div.addEventListener('dblclick', e => { e.preventDefault(); e.stopPropagation(); openEditor(ev.id); });
+    const checkbox = div.querySelector('.event-check');
+    if (checkbox) {
+      checkbox.addEventListener('click', e => {
+        e.stopPropagation();
+        toggleDone(ev.id, checkbox.checked);
+      });
+    }
+    return div;
+  }
+
+  function openEditor(eventId = null, preset = null) {
+    editingId = eventId;
+    const ev = eventId ? state.events.find(x => x.id === eventId) : {
+      id: null,
+      day: preset.day,
+      start: preset.start,
+      end: preset.end,
+      label: state.categories[state.selectedCategory]?.label || 'Block',
+      categoryId: state.selectedCategory,
+      done: false
+    };
+    if (!ev) return;
+
+    modalTitle.textContent = eventId ? 'Block bearbeiten' : 'Neuen Block erstellen';
+    modalLabel.value = ev.label;
+    modalCategory.innerHTML = '';
+    Object.entries(state.categories).forEach(([catId, cat]) => {
+      const option = document.createElement('option');
+      option.value = catId;
+      option.textContent = `${cat.label}${cat.habit ? '' : ' · kein Habit'}`;
+      if (catId === ev.categoryId) option.selected = true;
+      modalCategory.appendChild(option);
+    });
+    fillDaySelect();
+    fillTimeSelect(modalStart, false);
+    fillTimeSelect(modalEnd, true);
+    modalDay.value = String(ev.day);
+    modalStart.value = String(ev.start);
+    modalEnd.value = String(ev.end);
+    deleteBlockBtn.style.display = eventId ? '' : 'none';
+    updateModalInfo();
+    modalBackdrop.style.display = 'flex';
+  }
+
+  function closeModal() { modalBackdrop.style.display = 'none'; editingId = null; }
+  function updateModalInfo() {
+    const d = Number(modalDay.value), start = Number(modalStart.value), end = Number(modalEnd.value);
+    const durationMinutes = Math.max(0, end - start) * 15;
+    const hours = Math.floor(durationMinutes / 60), minutes = durationMinutes % 60;
+    const durationText = hours ? `${hours}h ${minutes ? minutes + 'min' : ''}` : `${minutes}min`;
+    const categoryId = modalCategory.value;
+    const habitText = state.categories[categoryId]?.habit ? 'erscheint im Habit Tracker' : 'kein Habit Tracking';
+    modalInfo.textContent = `${days[d] || ''} · ${timeLabel(start)}–${timeLabel(end)} · Dauer: ${durationText} · ${habitText}`;
+  }
+
+  function renderHabits() {
+    habitPanel.classList.toggle('open', Boolean(state.habitOpen));
+    habitSummary.textContent = state.habitOpen ? '▲' : '▼';
+    dayTabs.innerHTML = '';
+    days.forEach((day, d) => {
+      const btn = document.createElement('button');
+      btn.className = `day-tab ${state.activeHabitDay === d ? 'active' : ''}`;
+      btn.textContent = day;
+      btn.onclick = () => { state.activeHabitDay = d; saveState(); renderAll(); };
+      dayTabs.appendChild(btn);
+    });
+
+    const list = state.events
+      .filter(ev => ev.day === state.activeHabitDay && state.categories[ev.categoryId]?.habit)
+      .sort((a, b) => a.start - b.start || a.end - b.end);
+    habitList.innerHTML = '';
+    if (!list.length) {
+      habitList.innerHTML = '<div class="habit-empty">Für diesen Tag gibt es noch keine trackbaren Blöcke. Fahrt/Wegzeit und Schlaf werden bewusst nicht als Habit gezählt.</div>';
+      return;
+    }
+    list.forEach(ev => {
+      const cat = state.categories[ev.categoryId];
+      const item = document.createElement('label');
+      item.className = 'habit-item';
+      item.innerHTML = `
+        <input type="checkbox" ${ev.done ? 'checked' : ''} />
+        <div>
+          <div class="habit-name">${escapeHtml(ev.label)}</div>
+          <div class="habit-meta">${eventTime(ev)} · ${escapeHtml(cat.label)}</div>
+        </div>
+        <button type="button" class="small ghost">Bearbeiten</button>`;
+      const cb = item.querySelector('input');
+      cb.addEventListener('change', () => toggleDone(ev.id, cb.checked));
+      item.querySelector('button').addEventListener('click', e => { e.preventDefault(); openEditor(ev.id); });
+      habitList.appendChild(item);
+    });
+  }
+
+  function renderViewMode() {
+    document.body.classList.toggle('task-mode', state.viewMode === 'tasks');
+    document.body.classList.toggle('calendar-mode', state.viewMode !== 'tasks');
+    calendarModeBtn.classList.toggle('active', state.viewMode === 'calendar');
+    taskModeBtn.classList.toggle('active', state.viewMode === 'tasks');
+    taskView.classList.toggle('active', state.viewMode === 'tasks');
+    taskDaySelect.value = String(state.activeHabitDay);
+  }
+
+  function fillTaskDaySelect() {
+    taskDaySelect.innerHTML = '';
+    days.forEach((day, index) => {
+      const option = document.createElement('option');
+      option.value = String(index);
+      option.textContent = day;
+      taskDaySelect.appendChild(option);
+    });
+  }
+
+  function renderTaskView() {
+    const d = state.activeHabitDay;
+    taskTitle.textContent = `${days[d]} · Tages-Tasks`;
+    const all = state.events
+      .filter(ev => ev.day === d && state.categories[ev.categoryId]?.habit)
+      .sort((a, b) => a.start - b.start || a.end - b.end);
+    const done = all.filter(ev => ev.done).length;
+    taskProgress.textContent = `${done}/${all.length} erledigt`;
+    taskList.innerHTML = '';
+
+    if (!all.length) {
+      taskList.innerHTML = '<div class="task-empty">Für diesen Tag gibt es noch keine trackbaren Aufgaben. Fahrt/Wegzeit und Schlaf werden bewusst ausgeblendet.</div>';
+      return;
+    }
+
+    all.forEach(ev => {
+      const cat = state.categories[ev.categoryId] || state.categories.orga;
+      const item = document.createElement('label');
+      item.className = `task-card ${ev.done ? 'done' : ''}`;
+      item.innerHTML = `
+        <input type="checkbox" ${ev.done ? 'checked' : ''} />
+        <div class="task-main">
+          <div class="task-name">${escapeHtml(ev.label)}</div>
+          <div class="task-meta">${escapeHtml(cat.label)}</div>
+        </div>
+        <div class="task-time">${eventTime(ev)}</div>
+        <button type="button" class="small ghost" style="grid-column: 3; justify-self:end;">Bearbeiten</button>`;
+      item.style.borderLeft = `5px solid ${cat.color}`;
+      const cb = item.querySelector('input');
+      cb.addEventListener('change', () => toggleDone(ev.id, cb.checked));
+      item.querySelector('button').addEventListener('click', e => { e.preventDefault(); openEditor(ev.id); });
+      taskList.appendChild(item);
+    });
+  }
+
+  function toggleDone(eventId, done) {
+    const ev = state.events.find(x => x.id === eventId);
+    if (!ev) return;
+    ev.done = Boolean(done);
+    saveState();
+    renderCalendar();
+    renderHabits();
+    renderTaskView();
+  }
+
+  document.getElementById('habitToggle').onclick = () => { state.habitOpen = !state.habitOpen; saveState(); renderHabits(); };
+  calendarModeBtn.onclick = () => { state.viewMode = 'calendar'; saveState(); renderAll(); };
+  taskModeBtn.onclick = () => { state.viewMode = 'tasks'; saveState(); renderAll(); };
+  document.getElementById('taskBackToCalendarBtn').onclick = () => { state.viewMode = 'calendar'; saveState(); renderAll(); };
+  taskDaySelect.onchange = () => { state.activeHabitDay = Number(taskDaySelect.value); saveState(); renderAll(); };
+  document.getElementById('addCategoryBtn').onclick = () => {
+    const label = quickLabel.value.trim();
+    if (!label) { alert('Bitte gib einen Namen für die Kategorie ein.'); return; }
+    const catId = label.toLowerCase().replace(/[^a-z0-9äöüß]+/gi, '-').replace(/^-|-$/g, '') + '-' + Date.now().toString(36);
+    state.categories[catId] = { label, color: quickColor.value, habit: true };
+    state.selectedCategory = catId;
+    quickLabel.value = '';
+    saveState();
+    renderLegend();
+    renderHabits();
+  };
+  document.getElementById('clearBtn').onclick = () => {
+    if (confirm('Wirklich den kompletten Wochenplan löschen? Kategorien bleiben erhalten.')) {
+      state.events = [];
+      saveState();
+      renderCalendar();
+      renderHabits();
+    }
+  };
+  document.getElementById('exportBtn').onclick = () => {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'perfekte-woche-plan.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  document.getElementById('importBtn').onclick = () => document.getElementById('importFile').click();
+  document.getElementById('importFile').onchange = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    try {
+      const imported = JSON.parse(await file.text());
+      state = imported.events ? normalizeState(imported) : migrateV1(imported);
+      saveState();
+      renderAll();
+    } catch (err) { alert('Import fehlgeschlagen: ' + err.message); }
+  };
+  document.getElementById('cancelModalBtn').onclick = closeModal;
+  document.getElementById('saveModalBtn').onclick = () => {
+    const categoryId = modalCategory.value;
+    const label = modalLabel.value.trim() || state.categories[categoryId].label;
+    const day = Number(modalDay.value);
+    const start = Number(modalStart.value);
+    const end = Number(modalEnd.value);
+    if (Number.isNaN(day) || Number.isNaN(start) || Number.isNaN(end) || end <= start) {
+      alert('Die Endzeit muss nach der Startzeit liegen.');
+      return;
+    }
+    if (editingId) {
+      const ev = state.events.find(x => x.id === editingId);
+      if (ev) Object.assign(ev, { day, start, end, label, categoryId });
+    } else {
+      state.events.push({ id: id(), day, start, end, label, categoryId, done: false });
+    }
+    saveState();
+    renderAll();
+    closeModal();
+  };
+  document.getElementById('deleteBlockBtn').onclick = () => {
+    if (!editingId) return;
+    state.events = state.events.filter(ev => ev.id !== editingId);
+    saveState();
+    renderAll();
+    closeModal();
+  };
+  [modalDay, modalStart, modalEnd, modalCategory].forEach(el => el.addEventListener('change', updateModalInfo));
+  modalBackdrop.addEventListener('click', (e) => { if (e.target === modalBackdrop) closeModal(); });
+  window.addEventListener('resize', renderCalendar);
+
+  function renderAll() { renderLegend(); renderCalendar(); renderHabits(); renderTaskView(); renderViewMode(); }
+  fillTaskDaySelect();
+  renderAll();
+})();
+</script>
+</body>
+</html>
