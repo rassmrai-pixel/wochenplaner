@@ -81,6 +81,90 @@
     .pill.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.16); }
     .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
 
+    .planner-switch {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 0 0 14px;
+      align-items: center;
+    }
+    .planner-switch button.active { background: #0284c7; border-color: #38bdf8; }
+    .planner-note {
+      color: var(--muted);
+      font-size: 13px;
+      margin-left: 4px;
+    }
+    .tracking-panel {
+      display: none;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(17, 24, 39, 0.82);
+      box-shadow: 0 24px 80px rgba(0,0,0,0.22);
+      overflow: hidden;
+      margin-bottom: 14px;
+    }
+    .tracking-panel.active { display: block; }
+    .tracking-head {
+      padding: 14px;
+      border-bottom: 1px solid var(--line-soft);
+      background: rgba(31, 41, 55, 0.62);
+    }
+    .tracking-head h2 { margin: 0; font-size: 18px; }
+    .tracking-head p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+    .tracking-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      padding: 14px;
+    }
+    .tracking-card {
+      border: 1px solid var(--line-soft);
+      border-radius: 14px;
+      background: rgba(2, 6, 23, 0.35);
+      padding: 14px;
+    }
+    .tracking-label { color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+    .tracking-value { font-size: 30px; font-weight: 900; letter-spacing: -0.04em; }
+    .tracking-sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+    .tracking-bar {
+      width: 100%;
+      height: 9px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.18);
+      overflow: hidden;
+      margin-top: 12px;
+    }
+    .tracking-fill {
+      height: 100%;
+      width: 0%;
+      background: #38bdf8;
+      border-radius: 999px;
+      transition: width 0.25s ease;
+    }
+    .tracking-list {
+      padding: 0 14px 14px;
+      display: grid;
+      gap: 8px;
+    }
+    .tracking-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      border: 1px solid var(--line-soft);
+      border-radius: 12px;
+      padding: 10px;
+      background: rgba(2, 6, 23, 0.24);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .event.extra-event {
+      box-shadow: 0 8px 18px rgba(0,0,0,0.26), inset 0 0 0 2px rgba(255,255,255,0.22);
+    }
+    @media (max-width: 900px) {
+      .tracking-grid { grid-template-columns: 1fr; }
+    }
+
+
     .habit-panel {
       border: 1px solid var(--line);
       border-radius: var(--radius);
@@ -535,12 +619,47 @@
     <p class="hint calendar-hint">Wähle eine Kategorie und ziehe über freie Zeitfelder, um neue Blöcke zu setzen. Doppelklick auf einen Block öffnet die Bearbeitung. Checkboxen im Kalender und im Habit Tracker sind synchron. Fahrt wird nicht getrackt, Orga schon. Mit dem To-do Planner sammelst du Aufgaben und planst sie später als Kalenderblock ein. Mit der Tages-Taskansicht kannst du ohne Kalender nur abhaken.</p>
     <div class="legend" id="legend"></div>
 
+    <div class="planner-switch">
+      <button class="primary" id="templateModeBtn">Stundenplan bearbeiten</button>
+      <button id="weekModeBtn">Kalenderwoche</button>
+      <button id="trackingModeBtn">Tracking</button>
+      <button class="ghost" id="applyTemplateBtn">Stundenplan übernehmen</button>
+      <span class="planner-note" id="plannerNote">Standardwoche als Vorlage bearbeiten.</span>
+    </div>
 
     <div class="view-switch">
       <button class="primary" id="calendarModeBtn">Kalender planen</button>
       <button id="taskModeBtn">Tages-Tasks abhaken</button>
       <select id="taskDaySelect" title="Tag für Tagesansicht"></select>
     </div>
+
+    <section class="tracking-panel" id="trackingPanel">
+      <div class="tracking-head">
+        <h2>Wochen-Tracking</h2>
+        <p>Routine-Erfolg misst deine Standardwoche. Extra-Erfolg misst zusätzliche To-dos aus der echten Kalenderwoche.</p>
+      </div>
+      <div class="tracking-grid">
+        <div class="tracking-card">
+          <div class="tracking-label">Routine-Erfolg</div>
+          <div class="tracking-value" id="routinePercent">0%</div>
+          <div class="tracking-sub" id="routineSub">0/0 erledigt</div>
+          <div class="tracking-bar"><div class="tracking-fill" id="routineFill"></div></div>
+        </div>
+        <div class="tracking-card">
+          <div class="tracking-label">Extra-Erfolg</div>
+          <div class="tracking-value" id="extraPercent">0%</div>
+          <div class="tracking-sub" id="extraSub">0/0 erledigt</div>
+          <div class="tracking-bar"><div class="tracking-fill" id="extraFill"></div></div>
+        </div>
+        <div class="tracking-card">
+          <div class="tracking-label">Gesamt</div>
+          <div class="tracking-value" id="totalPercent">0%</div>
+          <div class="tracking-sub" id="totalSub">0/0 erledigt</div>
+          <div class="tracking-bar"><div class="tracking-fill" id="totalFill"></div></div>
+        </div>
+      </div>
+      <div class="tracking-list" id="trackingList"></div>
+    </section>
 
     <section class="task-view" id="taskView">
       <div class="task-head">
@@ -630,6 +749,7 @@
     habitOpen: false,
     activeHabitDay: 0,
     viewMode: 'calendar',
+    plannerMode: 'template',
     todoDrawerOpen: false,
     categories: {
       gym: { label: 'Gym / Sport', color: '#22c55e', habit: true },
@@ -642,6 +762,8 @@
       focus: { label: 'Deep Work', color: '#a855f7', habit: true }
     },
     events: [],
+    templateEvents: [],
+    weekEvents: [],
     todos: []
   };
 
@@ -652,6 +774,7 @@
   let dragEnd = null;
   let editingId = null;
   let pendingTodoId = null;
+  let presetSource = null;
 
   const calendar = document.getElementById('calendar');
   const legend = document.getElementById('legend');
@@ -685,6 +808,22 @@
   const todoDrawerBackdrop = document.getElementById('todoDrawerBackdrop');
   const todoDrawerToggleBtn = document.getElementById('todoDrawerToggleBtn');
   const closeTodoDrawerBtn = document.getElementById('closeTodoDrawerBtn');
+  const templateModeBtn = document.getElementById('templateModeBtn');
+  const weekModeBtn = document.getElementById('weekModeBtn');
+  const trackingModeBtn = document.getElementById('trackingModeBtn');
+  const applyTemplateBtn = document.getElementById('applyTemplateBtn');
+  const plannerNote = document.getElementById('plannerNote');
+  const trackingPanel = document.getElementById('trackingPanel');
+  const routinePercent = document.getElementById('routinePercent');
+  const routineSub = document.getElementById('routineSub');
+  const routineFill = document.getElementById('routineFill');
+  const extraPercent = document.getElementById('extraPercent');
+  const extraSub = document.getElementById('extraSub');
+  const extraFill = document.getElementById('extraFill');
+  const totalPercent = document.getElementById('totalPercent');
+  const totalSub = document.getElementById('totalSub');
+  const totalFill = document.getElementById('totalFill');
+  const trackingList = document.getElementById('trackingList');
 
   function id() { return 'e-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8); }
   function clone(x) { return JSON.parse(JSON.stringify(x)); }
@@ -709,15 +848,37 @@
       s.categories.orga = s.categories.orga || { label: 'Orga / To-dos', color: s.categories.neutral.color || '#94a3b8', habit: true };
       delete s.categories.neutral;
     }
-    s.events = Array.isArray(input.events) ? input.events.map(ev => ({
-      id: ev.id || id(),
-      day: clamp(Number(ev.day), 0, 6),
-      start: clamp(Number(ev.start), 0, slotsPerDay - 1),
-      end: clamp(Number(ev.end), 1, slotsPerDay),
-      label: ev.label || 'Block',
-      categoryId: s.categories[ev.categoryId] ? ev.categoryId : 'orga',
-      done: Boolean(ev.done)
-    })).filter(ev => ev.end > ev.start) : [];
+
+    function normalizeEvent(ev, fallbackSource = 'routine') {
+      return {
+        id: ev.id || id(),
+        day: clamp(Number(ev.day), 0, 6),
+        start: clamp(Number(ev.start), 0, slotsPerDay - 1),
+        end: clamp(Number(ev.end), 1, slotsPerDay),
+        label: ev.label || 'Block',
+        categoryId: s.categories[ev.categoryId] ? ev.categoryId : 'orga',
+        done: Boolean(ev.done),
+        source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
+        templateEventId: ev.templateEventId || null,
+        createdAt: ev.createdAt || new Date().toISOString()
+      };
+    }
+
+    const legacyEvents = Array.isArray(input.events) ? input.events : [];
+    const rawTemplateEvents = Array.isArray(input.templateEvents) ? input.templateEvents : legacyEvents;
+    const rawWeekEvents = Array.isArray(input.weekEvents) ? input.weekEvents : [];
+
+    s.templateEvents = rawTemplateEvents
+      .map(ev => normalizeEvent(ev, 'routine'))
+      .map(ev => ({ ...ev, source: 'routine', done: false, templateEventId: null }))
+      .filter(ev => ev.end > ev.start);
+
+    s.weekEvents = rawWeekEvents
+      .map(ev => normalizeEvent(ev, ev.source || 'extra'))
+      .filter(ev => ev.end > ev.start);
+
+    s.events = s.templateEvents;
+
     s.todos = Array.isArray(input.todos) ? input.todos.map(todo => ({
       id: todo.id || id(),
       text: todo.text || 'To-do',
@@ -727,8 +888,11 @@
       plannedEventId: todo.plannedEventId || null,
       createdAt: todo.createdAt || new Date().toISOString()
     })) : [];
+
     if (!s.categories[s.selectedCategory]) s.selectedCategory = 'gym';
     if (!['calendar', 'tasks'].includes(s.viewMode)) s.viewMode = 'calendar';
+    if (!['template', 'week', 'tracking'].includes(s.plannerMode)) s.plannerMode = 'template';
+    if (s.plannerMode !== 'week' && s.viewMode === 'tasks') s.viewMode = 'calendar';
     s.todoDrawerOpen = Boolean(s.todoDrawerOpen);
     s.activeHabitDay = clamp(Number(s.activeHabitDay), 0, 6);
     return s;
@@ -760,8 +924,20 @@
       }
       let categoryId = data.categoryId === 'neutral' ? 'orga' : data.categoryId;
       if (!s.categories[categoryId]) categoryId = 'orga';
-      s.events.push({ id: id(), day, start, end, label: data.label || s.categories[categoryId].label, categoryId, done: false });
+      s.templateEvents.push({
+        id: id(),
+        day,
+        start,
+        end,
+        label: data.label || s.categories[categoryId].label,
+        categoryId,
+        done: false,
+        source: 'routine',
+        templateEventId: null,
+        createdAt: new Date().toISOString()
+      });
     }
+    s.events = s.templateEvents;
     s.selectedCategory = s.categories[old.selectedCategory] ? old.selectedCategory : 'gym';
     saveState(s);
     return s;
@@ -778,6 +954,24 @@
     return `${h}:${m}`;
   }
   function eventTime(ev) { return `${timeLabel(ev.start)}–${timeLabel(ev.end)}`; }
+
+  function currentEvents() {
+    return state.plannerMode === 'week' ? state.weekEvents : state.templateEvents;
+  }
+
+  function setCurrentEvents(nextEvents) {
+    if (state.plannerMode === 'week') state.weekEvents = nextEvents;
+    else state.templateEvents = nextEvents;
+    state.events = state.templateEvents;
+  }
+
+  function isWeekMode() { return state.plannerMode === 'week'; }
+  function isTemplateMode() { return state.plannerMode === 'template'; }
+
+  function makePercent(done, total) {
+    return total ? Math.round((done / total) * 100) : 0;
+  }
+
 
   function fillTimeSelect(select, includeEndOfDay = false) {
     select.innerHTML = '';
@@ -845,7 +1039,7 @@
         col.appendChild(slot);
       }
 
-      const events = state.events.filter(ev => ev.day === d);
+      const events = currentEvents().filter(ev => ev.day === d);
       layoutDayEvents(events).forEach(ev => col.appendChild(eventEl(ev)));
       calendar.appendChild(col);
     }
@@ -882,7 +1076,7 @@
     clearSelection();
     isDragging = false;
     if (end <= start) return;
-    openEditor(null, { day: d, start, end });
+    openEditor(null, { day: d, start, end, source: isTemplateMode() ? 'routine' : 'extra' });
   }
   document.addEventListener('mouseup', () => {
     if (!isDragging) return;
@@ -937,7 +1131,7 @@
   function eventEl(ev) {
     const cat = state.categories[ev.categoryId] || state.categories.orga;
     const div = document.createElement('div');
-    div.className = `event ${ev.done ? 'done' : ''}`;
+    div.className = `event ${ev.done ? 'done' : ''} ${ev.source === 'extra' ? 'extra-event' : ''}`;
     div.dataset.id = ev.id;
     const gap = 3;
     const laneCount = ev._laneCount || 1;
@@ -953,7 +1147,7 @@
     div.style.background = cat.color;
     div.title = `${days[ev.day]} ${eventTime(ev)} · ${ev.label}`;
 
-    const trackable = Boolean(cat.habit);
+    const trackable = isWeekMode() && Boolean(cat.habit);
     div.innerHTML = `
       <div class="event-title-row">
         ${trackable ? `<input class="event-check" type="checkbox" ${ev.done ? 'checked' : ''} title="Abhaken" />` : ''}
@@ -976,14 +1170,17 @@
 
   function openEditor(eventId = null, preset = null) {
     editingId = eventId;
-    const ev = eventId ? state.events.find(x => x.id === eventId) : {
+    presetSource = preset?.source || null;
+    const ev = eventId ? currentEvents().find(x => x.id === eventId) : {
       id: null,
       day: preset.day,
       start: preset.start,
       end: preset.end,
       label: preset.label || state.categories[preset.categoryId || state.selectedCategory]?.label || 'Block',
       categoryId: preset.categoryId || state.selectedCategory,
-      done: false
+      done: false,
+      source: preset?.source || (isTemplateMode() ? 'routine' : 'extra'),
+      templateEventId: null
     };
     if (!ev) return;
 
@@ -1008,7 +1205,7 @@
     modalBackdrop.style.display = 'flex';
   }
 
-  function closeModal() { modalBackdrop.style.display = 'none'; editingId = null; pendingTodoId = null; }
+  function closeModal() { modalBackdrop.style.display = 'none'; editingId = null; pendingTodoId = null; presetSource = null; }
   function updateModalInfo() {
     const d = Number(modalDay.value), start = Number(modalStart.value), end = Number(modalEnd.value);
     const durationMinutes = Math.max(0, end - start) * 15;
@@ -1016,7 +1213,7 @@
     const durationText = hours ? `${hours}h ${minutes ? minutes + 'min' : ''}` : `${minutes}min`;
     const categoryId = modalCategory.value;
     const habitText = state.categories[categoryId]?.habit ? 'erscheint im Habit Tracker' : 'kein Habit Tracking';
-    modalInfo.textContent = `${days[d] || ''} · ${timeLabel(start)}–${timeLabel(end)} · Dauer: ${durationText} · ${habitText}`;
+    modalInfo.textContent = `${days[d] || ''} · ${timeLabel(start)}–${timeLabel(end)} · Dauer: ${durationText} · ${habitText} · ${isTemplateMode() ? 'Routine-Vorlage' : (presetSource === 'extra' ? 'Extra-To-do' : 'Kalenderwoche')}`;
   }
 
   function renderHabits() {
@@ -1031,7 +1228,7 @@
       dayTabs.appendChild(btn);
     });
 
-    const list = state.events
+    const list = state.weekEvents
       .filter(ev => ev.day === state.activeHabitDay && state.categories[ev.categoryId]?.habit)
       .sort((a, b) => a.start - b.start || a.end - b.end);
     habitList.innerHTML = '';
@@ -1079,7 +1276,7 @@
   function renderTaskView() {
     const d = state.activeHabitDay;
     taskTitle.textContent = `${days[d]} · Tages-Tasks`;
-    const all = state.events
+    const all = state.weekEvents
       .filter(ev => ev.day === d && state.categories[ev.categoryId]?.habit)
       .sort((a, b) => a.start - b.start || a.end - b.end);
     const done = all.filter(ev => ev.done).length;
@@ -1109,6 +1306,120 @@
       item.querySelector('button').addEventListener('click', e => { e.preventDefault(); openEditor(ev.id); });
       taskList.appendChild(item);
     });
+  }
+
+
+  function renderPlannerMode() {
+    const isTracking = state.plannerMode === 'tracking';
+    document.body.classList.toggle('planner-template', state.plannerMode === 'template');
+    document.body.classList.toggle('planner-week', state.plannerMode === 'week');
+    document.body.classList.toggle('planner-tracking', isTracking);
+
+    templateModeBtn.classList.toggle('active', state.plannerMode === 'template');
+    weekModeBtn.classList.toggle('active', state.plannerMode === 'week');
+    trackingModeBtn.classList.toggle('active', isTracking);
+
+    applyTemplateBtn.style.display = state.plannerMode === 'week' ? '' : 'none';
+    trackingPanel.classList.toggle('active', isTracking);
+
+    const showCalendarArea = !isTracking;
+    document.querySelector('.calendar-wrap').style.display = showCalendarArea && state.viewMode !== 'tasks' ? '' : 'none';
+    document.querySelector('.view-switch').style.display = showCalendarArea ? '' : 'none';
+    habitPanel.style.display = state.plannerMode === 'week' && showCalendarArea ? '' : 'none';
+
+    if (state.plannerMode !== 'week' && state.viewMode === 'tasks') state.viewMode = 'calendar';
+    taskModeBtn.disabled = state.plannerMode !== 'week';
+    taskDaySelect.disabled = state.plannerMode !== 'week';
+
+    if (state.plannerMode === 'template') {
+      plannerNote.textContent = 'Standardwoche/Routine-Vorlage bearbeiten. Hier wird noch nichts getrackt.';
+    } else if (state.plannerMode === 'week') {
+      plannerNote.textContent = 'Echte Kalenderwoche abhaken. Routine kommt aus dem Stundenplan, Extras aus To-dos.';
+    } else {
+      plannerNote.textContent = 'Auswertung deiner echten Woche: Routine und Extra-To-dos getrennt.';
+    }
+  }
+
+  function routineTrackingStats() {
+    const trackableTemplate = state.templateEvents.filter(ev => state.categories[ev.categoryId]?.habit);
+    const done = trackableTemplate.filter(templateEv => {
+      const weekEv = state.weekEvents.find(ev => ev.source === 'routine' && ev.templateEventId === templateEv.id);
+      return Boolean(weekEv?.done);
+    }).length;
+    return { total: trackableTemplate.length, done, percent: makePercent(done, trackableTemplate.length) };
+  }
+
+  function extraTrackingStats() {
+    const extras = state.weekEvents.filter(ev => ev.source === 'extra' && state.categories[ev.categoryId]?.habit);
+    const done = extras.filter(ev => ev.done).length;
+    return { total: extras.length, done, percent: makePercent(done, extras.length) };
+  }
+
+  function renderTracking() {
+    const routine = routineTrackingStats();
+    const extra = extraTrackingStats();
+    const totalDone = routine.done + extra.done;
+    const total = routine.total + extra.total;
+    const totalPct = makePercent(totalDone, total);
+
+    routinePercent.textContent = `${routine.percent}%`;
+    routineSub.textContent = `${routine.done}/${routine.total} Routine-Blöcke erledigt`;
+    routineFill.style.width = `${routine.percent}%`;
+
+    extraPercent.textContent = `${extra.percent}%`;
+    extraSub.textContent = `${extra.done}/${extra.total} Extra-To-dos erledigt`;
+    extraFill.style.width = `${extra.percent}%`;
+
+    totalPercent.textContent = `${totalPct}%`;
+    totalSub.textContent = `${totalDone}/${total} insgesamt erledigt`;
+    totalFill.style.width = `${totalPct}%`;
+
+    const missingRoutine = state.templateEvents
+      .filter(ev => state.categories[ev.categoryId]?.habit)
+      .filter(templateEv => {
+        const weekEv = state.weekEvents.find(ev => ev.source === 'routine' && ev.templateEventId === templateEv.id);
+        return !weekEv || !weekEv.done;
+      })
+      .sort((a, b) => a.day - b.day || a.start - b.start)
+      .slice(0, 8);
+
+    trackingList.innerHTML = '';
+    if (!missingRoutine.length) {
+      trackingList.innerHTML = '<div class="tracking-row"><span>Routine</span><strong>Alle Routine-Blöcke erledigt oder noch keine Routine angelegt.</strong></div>';
+      return;
+    }
+
+    missingRoutine.forEach(ev => {
+      const row = document.createElement('div');
+      row.className = 'tracking-row';
+      row.innerHTML = `<span>${days[ev.day]} · ${eventTime(ev)}</span><strong>${escapeHtml(ev.label)}</strong>`;
+      trackingList.appendChild(row);
+    });
+  }
+
+  function applyTemplateToWeek() {
+    if (!state.templateEvents.length) {
+      alert('Dein Stundenplan ist noch leer. Lege zuerst Routine-Blöcke im Stundenplan an.');
+      return;
+    }
+    if (state.weekEvents.length && !confirm('Kalenderwoche überschreiben und den Stundenplan neu übernehmen?')) return;
+
+    state.weekEvents = state.templateEvents.map(templateEv => ({
+      id: id(),
+      day: templateEv.day,
+      start: templateEv.start,
+      end: templateEv.end,
+      label: templateEv.label,
+      categoryId: templateEv.categoryId,
+      done: false,
+      source: 'routine',
+      templateEventId: templateEv.id,
+      createdAt: new Date().toISOString()
+    }));
+    state.plannerMode = 'week';
+    state.viewMode = 'calendar';
+    saveState();
+    renderAll();
   }
 
 
@@ -1180,13 +1491,18 @@
       item.querySelector('button').addEventListener('click', e => {
         e.preventDefault();
         pendingTodoId = todo.id;
+        state.plannerMode = 'week';
+        state.viewMode = 'calendar';
+        saveState();
+        renderAll();
         const start = 36; // 09:00 Uhr als neutraler Vorschlag
         openEditor(null, {
           day: state.activeHabitDay,
           start,
           end: start + 4,
           label: todo.text,
-          categoryId: todo.categoryId
+          categoryId: todo.categoryId,
+          source: 'extra'
         });
       });
 
@@ -1195,7 +1511,7 @@
   }
 
   function toggleDone(eventId, done) {
-    const ev = state.events.find(x => x.id === eventId);
+    const ev = currentEvents().find(x => x.id === eventId);
     if (!ev) return;
     ev.done = Boolean(done);
     saveState();
@@ -1203,6 +1519,26 @@
     renderHabits();
     renderTaskView();
   }
+
+  templateModeBtn.onclick = () => {
+    state.plannerMode = 'template';
+    state.viewMode = 'calendar';
+    saveState();
+    renderAll();
+  };
+  weekModeBtn.onclick = () => {
+    state.plannerMode = 'week';
+    state.viewMode = 'calendar';
+    saveState();
+    renderAll();
+  };
+  trackingModeBtn.onclick = () => {
+    state.plannerMode = 'tracking';
+    state.viewMode = 'calendar';
+    saveState();
+    renderAll();
+  };
+  applyTemplateBtn.onclick = applyTemplateToWeek;
 
   document.getElementById('habitToggle').onclick = () => { state.habitOpen = !state.habitOpen; saveState(); renderHabits(); };
   calendarModeBtn.onclick = () => { state.viewMode = 'calendar'; saveState(); renderAll(); };
@@ -1233,8 +1569,7 @@
     state.selectedCategory = catId;
     quickLabel.value = '';
     saveState();
-    renderLegend();
-    renderHabits();
+    renderAll();
   };
 
   document.getElementById('addTodoBtn').onclick = () => {
@@ -1257,8 +1592,8 @@
     if (e.key === 'Enter') document.getElementById('addTodoBtn').click();
   });
   document.getElementById('clearBtn').onclick = () => {
-    if (confirm('Wirklich den kompletten Wochenplan löschen? Kategorien bleiben erhalten.')) {
-      state.events = [];
+    if (confirm(state.plannerMode === 'week' ? 'Wirklich die aktuelle Kalenderwoche löschen? Kategorien und Stundenplan bleiben erhalten.' : 'Wirklich den aktuellen Stundenplan löschen? Kategorien bleiben erhalten.')) {
+      setCurrentEvents([]);
       saveState();
       renderCalendar();
       renderHabits();
@@ -1279,7 +1614,7 @@
     if (!file) return;
     try {
       const imported = JSON.parse(await file.text());
-      state = imported.events ? normalizeState(imported) : migrateV1(imported);
+      state = imported.slots ? migrateV1(imported) : normalizeState(imported);
       saveState();
       renderAll();
     } catch (err) { alert('Import fehlgeschlagen: ' + err.message); }
@@ -1296,11 +1631,11 @@
       return;
     }
     if (editingId) {
-      const ev = state.events.find(x => x.id === editingId);
+      const ev = currentEvents().find(x => x.id === editingId);
       if (ev) Object.assign(ev, { day, start, end, label, categoryId });
     } else {
       const newEventId = id();
-      state.events.push({ id: newEventId, day, start, end, label, categoryId, done: false });
+      currentEvents().push({ id: newEventId, day, start, end, label, categoryId, done: false, source: (presetSource || (isTemplateMode() ? 'routine' : 'extra')), templateEventId: null, createdAt: new Date().toISOString() });
       if (pendingTodoId) {
         const todo = state.todos.find(t => t.id === pendingTodoId);
         if (todo) {
@@ -1317,7 +1652,7 @@
   };
   document.getElementById('deleteBlockBtn').onclick = () => {
     if (!editingId) return;
-    state.events = state.events.filter(ev => ev.id !== editingId);
+    setCurrentEvents(currentEvents().filter(ev => ev.id !== editingId));
     saveState();
     renderAll();
     closeModal();
@@ -1336,7 +1671,7 @@
   });
   window.addEventListener('resize', renderCalendar);
 
-  function renderAll() { renderLegend(); fillTodoCategorySelect(); renderTodos(); renderCalendar(); renderHabits(); renderTaskView(); renderViewMode(); renderTodoDrawer(); }
+  function renderAll() { renderLegend(); fillTodoCategorySelect(); renderTodos(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); }
   fillTaskDaySelect();
   renderAll();
 })();
