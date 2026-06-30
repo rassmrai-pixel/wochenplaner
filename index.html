@@ -745,7 +745,7 @@
       </div>
     </section>
 
-    <div class="calendar-wrap">
+    <div class="calendar-wrap" id="calendarWrap">
       <div class="calendar" id="calendar"></div>
     </div>
     <div class="footer-note">Tipp: Parallele Termine funktionieren jetzt. Wenn zwei Blöcke am selben Tag zeitlich überlappen, werden sie nebeneinander angezeigt.</div>
@@ -839,8 +839,10 @@
   let editingId = null;
   let pendingTodoId = null;
   let presetSource = null;
+  let lastAutoScrollKey = null;
 
   const calendar = document.getElementById('calendar');
+  const calendarWrap = document.getElementById('calendarWrap');
   const legend = document.getElementById('legend');
   const quickLabel = document.getElementById('quickLabel');
   const quickColor = document.getElementById('quickColor');
@@ -1188,6 +1190,16 @@
     });
   }
 
+  function autoScrollCalendarToMorning() {
+    if (!calendarWrap || state.plannerMode === 'tracking' || state.viewMode === 'tasks') return;
+    const key = `${state.plannerMode}|${state.viewMode}|${state.selectedWeekStart || ''}`;
+    if (lastAutoScrollKey === key) return;
+    lastAutoScrollKey = key;
+    requestAnimationFrame(() => {
+      calendarWrap.scrollTop = 24 * cellHeight(); // 06:00 Uhr, 24 Slots à 15 Minuten
+    });
+  }
+
   function renderCalendar() {
     calendar.innerHTML = '';
     const today = getTodayInfo();
@@ -1228,6 +1240,7 @@
       layoutDayEvents(events).forEach(ev => col.appendChild(eventEl(ev)));
       calendar.appendChild(col);
     }
+    autoScrollCalendarToMorning();
   }
 
   function headerCell(text, col, dayIndex = null) {
