@@ -94,6 +94,48 @@
       font-size: 13px;
       margin-left: 4px;
     }
+
+    .week-nav {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin: -4px 0 14px;
+      padding: 10px;
+      border: 1px solid var(--line-soft);
+      border-radius: 14px;
+      background: rgba(17, 24, 39, 0.48);
+    }
+    .week-nav input[type="date"] { min-width: 150px; }
+    .week-nav button.active { background: #0284c7; border-color: #38bdf8; }
+    .week-label {
+      color: var(--text);
+      font-weight: 800;
+      padding: 0 4px;
+      white-space: nowrap;
+    }
+    .week-range {
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .head-cell.today {
+      color: white;
+      background: linear-gradient(180deg, rgba(2, 132, 199, 0.95), rgba(17, 24, 39, 0.95));
+      box-shadow: inset 0 -2px 0 #38bdf8;
+    }
+    .day-column.today {
+      background: rgba(14, 165, 233, 0.08);
+    }
+    .day-date {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .head-cell.today .day-date { color: rgba(255,255,255,0.86); }
+
     .tracking-panel {
       display: none;
       border: 1px solid var(--line);
@@ -627,6 +669,15 @@
       <span class="planner-note" id="plannerNote">Standardwoche als Vorlage bearbeiten.</span>
     </div>
 
+    <div class="week-nav" id="weekNav">
+      <button class="small ghost" id="prevWeekBtn">← Vorwoche</button>
+      <button class="small ghost" id="todayWeekBtn">Heute</button>
+      <button class="small ghost" id="nextWeekBtn">Nächste Woche →</button>
+      <input id="weekDateInput" type="date" title="Woche über Datum auswählen" />
+      <span class="week-label" id="weekLabel">KW</span>
+      <span class="week-range" id="weekRange"></span>
+    </div>
+
     <div class="view-switch">
       <button class="primary" id="calendarModeBtn">Kalender planen</button>
       <button id="taskModeBtn">Tages-Tasks abhaken</button>
@@ -751,6 +802,7 @@
     viewMode: 'calendar',
     plannerMode: 'template',
     todoDrawerOpen: false,
+    currentWeekStart: null,
     categories: {
       gym: { label: 'Gym / Sport', color: '#22c55e', habit: true },
       work: { label: 'Arbeit / Business', color: '#38bdf8', habit: true },
@@ -764,6 +816,7 @@
     events: [],
     templateEvents: [],
     weekEvents: [],
+    weekEventsByWeek: {},
     todos: []
   };
 
@@ -813,6 +866,13 @@
   const trackingModeBtn = document.getElementById('trackingModeBtn');
   const applyTemplateBtn = document.getElementById('applyTemplateBtn');
   const plannerNote = document.getElementById('plannerNote');
+  const weekNav = document.getElementById('weekNav');
+  const prevWeekBtn = document.getElementById('prevWeekBtn');
+  const todayWeekBtn = document.getElementById('todayWeekBtn');
+  const nextWeekBtn = document.getElementById('nextWeekBtn');
+  const weekDateInput = document.getElementById('weekDateInput');
+  const weekLabel = document.getElementById('weekLabel');
+  const weekRange = document.getElementById('weekRange');
   const trackingPanel = document.getElementById('trackingPanel');
   const routinePercent = document.getElementById('routinePercent');
   const routineSub = document.getElementById('routineSub');
@@ -836,7 +896,7 @@
       if (rawV1) return migrateV1(JSON.parse(rawV1));
       return clone(defaults);
     } catch {
-      return clone(defaults);
+      return normalizeState({});
     }
   }
 
@@ -864,6 +924,10 @@
       };
     }
 
+    const todayWeek = weekStartKey(new Date());
+    const initialWeek = clampWeekKey(input.currentWeekStart || todayWeek);
+    s.currentWeekStart = initialWeek;
+
     const legacyEvents = Array.isArray(input.events) ? input.events : [];
     const rawTemplateEvents = Array.isArray(input.templateEvents) ? input.templateEvents : legacyEvents;
     const rawWeekEvents = Array.isArray(input.weekEvents) ? input.weekEvents : [];
@@ -873,10 +937,25 @@
       .map(ev => ({ ...ev, source: 'routine', done: false, templateEventId: null }))
       .filter(ev => ev.end > ev.start);
 
-    s.weekEvents = rawWeekEvents
-      .map(ev => normalizeEvent(ev, ev.source || 'extra'))
-      .filter(ev => ev.end > ev.start);
+    s.weekEventsByWeek = {};
+    if (input.weekEventsByWeek && typeof input.weekEventsByWeek === 'object') {
+      Object.entries(input.weekEventsByWeek).forEach(([weekKey, events]) => {
+        const safeWeek = clampWeekKey(weekKey);
+        if (!Array.isArray(events)) return;
+        s.weekEventsByWeek[safeWeek] = events
+          .map(ev => normalizeEvent(ev, ev.source || 'extra'))
+          .filter(ev => ev.end > ev.start);
+      });
+    }
 
+    if (rawWeekEvents.length && !s.weekEventsByWeek[initialWeek]) {
+      s.weekEventsByWeek[initialWeek] = rawWeekEvents
+        .map(ev => normalizeEvent(ev, ev.source || 'extra'))
+        .filter(ev => ev.end > ev.start);
+    }
+
+    if (!s.weekEventsByWeek[s.currentWeekStart]) s.weekEventsByWeek[s.currentWeekStart] = [];
+    s.weekEvents = s.weekEventsByWeek[s.currentWeekStart];
     s.events = s.templateEvents;
 
     s.todos = Array.isArray(input.todos) ? input.todos.map(todo => ({
@@ -886,6 +965,7 @@
       status: ['open', 'planned', 'done'].includes(todo.status) ? todo.status : 'open',
       done: Boolean(todo.done || todo.status === 'done'),
       plannedEventId: todo.plannedEventId || null,
+      plannedWeekStart: todo.plannedWeekStart || null,
       createdAt: todo.createdAt || new Date().toISOString()
     })) : [];
 
@@ -894,7 +974,9 @@
     if (!['template', 'week', 'tracking'].includes(s.plannerMode)) s.plannerMode = 'template';
     if (s.plannerMode !== 'week' && s.viewMode === 'tasks') s.viewMode = 'calendar';
     s.todoDrawerOpen = Boolean(s.todoDrawerOpen);
-    s.activeHabitDay = clamp(Number(s.activeHabitDay), 0, 6);
+    const todayInfo = getTodayInfo();
+    const isCurrentWeek = s.currentWeekStart === todayInfo.weekKey;
+    s.activeHabitDay = isCurrentWeek ? todayInfo.dayIndex : clamp(Number(s.activeHabitDay), 0, 6);
     return s;
   }
 
@@ -937,6 +1019,9 @@
         createdAt: new Date().toISOString()
       });
     }
+    s.currentWeekStart = weekStartKey(new Date());
+    s.weekEventsByWeek = { [s.currentWeekStart]: [] };
+    s.weekEvents = s.weekEventsByWeek[s.currentWeekStart];
     s.events = s.templateEvents;
     s.selectedCategory = s.categories[old.selectedCategory] ? old.selectedCategory : 'gym';
     saveState(s);
@@ -955,12 +1040,29 @@
   }
   function eventTime(ev) { return `${timeLabel(ev.start)}–${timeLabel(ev.end)}`; }
 
+  function currentWeekEvents() {
+    if (!state.weekEventsByWeek) state.weekEventsByWeek = {};
+    const key = clampWeekKey(state.currentWeekStart || weekStartKey(new Date()));
+    state.currentWeekStart = key;
+    if (!state.weekEventsByWeek[key]) state.weekEventsByWeek[key] = [];
+    state.weekEvents = state.weekEventsByWeek[key];
+    return state.weekEventsByWeek[key];
+  }
+
+  function setCurrentWeekEvents(nextEvents) {
+    if (!state.weekEventsByWeek) state.weekEventsByWeek = {};
+    const key = clampWeekKey(state.currentWeekStart || weekStartKey(new Date()));
+    state.currentWeekStart = key;
+    state.weekEventsByWeek[key] = nextEvents;
+    state.weekEvents = state.weekEventsByWeek[key];
+  }
+
   function currentEvents() {
-    return state.plannerMode === 'week' ? state.weekEvents : state.templateEvents;
+    return state.plannerMode === 'week' ? currentWeekEvents() : state.templateEvents;
   }
 
   function setCurrentEvents(nextEvents) {
-    if (state.plannerMode === 'week') state.weekEvents = nextEvents;
+    if (state.plannerMode === 'week') setCurrentWeekEvents(nextEvents);
     else state.templateEvents = nextEvents;
     state.events = state.templateEvents;
   }
@@ -970,6 +1072,75 @@
 
   function makePercent(done, total) {
     return total ? Math.round((done / total) * 100) : 0;
+  }
+
+
+  function toLocalDate(value) {
+    if (value instanceof Date) return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+    if (typeof value === 'string') {
+      const [y, m, d] = value.split('-').map(Number);
+      return new Date(y, (m || 1) - 1, d || 1);
+    }
+    return new Date();
+  }
+  function dateKey(date) {
+    const d = toLocalDate(date);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  function addDays(date, daysToAdd) {
+    const d = toLocalDate(date);
+    d.setDate(d.getDate() + daysToAdd);
+    return d;
+  }
+  function weekStartDate(date) {
+    const d = toLocalDate(date);
+    const day = (d.getDay() + 6) % 7;
+    d.setDate(d.getDate() - day);
+    return d;
+  }
+  function weekStartKey(date) { return dateKey(weekStartDate(date)); }
+  function clampWeekKey(key) {
+    const min = weekStartDate('2026-01-01');
+    const candidate = weekStartDate(key || new Date());
+    return dateKey(candidate < min ? min : candidate);
+  }
+  function getTodayInfo() {
+    const today = toLocalDate(new Date());
+    return {
+      date: today,
+      dateKey: dateKey(today),
+      weekKey: weekStartKey(today),
+      dayIndex: (today.getDay() + 6) % 7
+    };
+  }
+  function getSelectedWeekStartDate() { return toLocalDate(clampWeekKey(state.currentWeekStart || new Date())); }
+  function getDayDate(dayIndex) { return addDays(getSelectedWeekStartDate(), dayIndex); }
+  function formatShortDate(date) {
+    return toLocalDate(date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+  }
+  function formatLongDate(date) {
+    return toLocalDate(date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+  function getISOWeekInfo(date) {
+    const d = toLocalDate(date);
+    const target = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    const dayNr = target.getUTCDay() || 7;
+    target.setUTCDate(target.getUTCDate() + 4 - dayNr);
+    const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
+    const week = Math.ceil((((target - yearStart) / 86400000) + 1) / 7);
+    return { year: target.getUTCFullYear(), week };
+  }
+  function changeWeek(offset) {
+    const next = addDays(getSelectedWeekStartDate(), offset * 7);
+    state.currentWeekStart = clampWeekKey(next);
+    currentWeekEvents();
+    const today = getTodayInfo();
+    if (state.currentWeekStart === today.weekKey) state.activeHabitDay = today.dayIndex;
+    saveState();
+    renderAll();
   }
 
 
@@ -989,7 +1160,8 @@
     days.forEach((day, index) => {
       const option = document.createElement('option');
       option.value = String(index);
-      option.textContent = day;
+      const dateText = isTemplateMode() ? '' : ` · ${formatShortDate(getDayDate(index))}`;
+      option.textContent = `${day}${dateText}`;
       modalDay.appendChild(option);
     });
   }
@@ -1007,8 +1179,9 @@
 
   function renderCalendar() {
     calendar.innerHTML = '';
+    const today = getTodayInfo();
     calendar.appendChild(headerCell('', 1));
-    days.forEach((day, i) => calendar.appendChild(headerCell(day, i + 2)));
+    days.forEach((day, i) => calendar.appendChild(headerCell(day, i + 2, i)));
 
     const timeGrid = document.createElement('div');
     timeGrid.className = 'time-grid';
@@ -1022,7 +1195,8 @@
 
     for (let d = 0; d < 7; d++) {
       const col = document.createElement('div');
-      col.className = 'day-column';
+      const dayDateKey = dateKey(getDayDate(d));
+      col.className = `day-column ${isWeekMode() && dayDateKey === today.dateKey ? 'today' : ''}`;
       col.style.gridColumn = String(d + 2);
       col.dataset.day = d;
 
@@ -1032,7 +1206,7 @@
         slot.style.top = `${s * cellHeight()}px`;
         slot.dataset.day = d;
         slot.dataset.slot = s;
-        slot.title = `${days[d]} ${timeLabel(s)}-${timeLabel(s + 1)}`;
+        slot.title = `${days[d]} ${formatShortDate(getDayDate(d))} ${timeLabel(s)}-${timeLabel(s + 1)}`;
         slot.addEventListener('mousedown', (e) => startDrag(e, d, s));
         slot.addEventListener('mouseenter', () => moveDrag(d, s));
         slot.addEventListener('mouseup', () => finishDrag(d, s));
@@ -1045,12 +1219,20 @@
     }
   }
 
-  function headerCell(text, col) {
+  function headerCell(text, col, dayIndex = null) {
     const div = document.createElement('div');
-    div.className = 'head-cell';
+    const today = getTodayInfo();
+    const isToday = isWeekMode() && dayIndex !== null && dateKey(getDayDate(dayIndex)) === today.dateKey;
+    div.className = `head-cell ${isToday ? 'today' : ''}`;
     div.style.gridColumn = String(col);
     div.style.gridRow = '1';
-    div.textContent = text;
+    if (dayIndex === null) {
+      div.textContent = text;
+    } else if (isTemplateMode()) {
+      div.textContent = text;
+    } else {
+      div.innerHTML = `${text}<span class="day-date">${formatShortDate(getDayDate(dayIndex))}${isToday ? ' · Heute' : ''}</span>`;
+    }
     return div;
   }
 
@@ -1145,7 +1327,7 @@
     div.style.left = `calc(${leftPercent}% + ${leftPxAdjustment}px)`;
     div.style.width = `calc(${widthPercent}% - ${widthPxAdjustment}px)`;
     div.style.background = cat.color;
-    div.title = `${days[ev.day]} ${eventTime(ev)} · ${ev.label}`;
+    div.title = `${days[ev.day]} ${isTemplateMode() ? '' : formatShortDate(getDayDate(ev.day)) + ' '}${eventTime(ev)} · ${ev.label}`;
 
     const trackable = isWeekMode() && Boolean(cat.habit);
     div.innerHTML = `
@@ -1213,7 +1395,7 @@
     const durationText = hours ? `${hours}h ${minutes ? minutes + 'min' : ''}` : `${minutes}min`;
     const categoryId = modalCategory.value;
     const habitText = state.categories[categoryId]?.habit ? 'erscheint im Habit Tracker' : 'kein Habit Tracking';
-    modalInfo.textContent = `${days[d] || ''} · ${timeLabel(start)}–${timeLabel(end)} · Dauer: ${durationText} · ${habitText} · ${isTemplateMode() ? 'Routine-Vorlage' : (presetSource === 'extra' ? 'Extra-To-do' : 'Kalenderwoche')}`;
+    modalInfo.textContent = `${days[d] || ''}${isTemplateMode() ? '' : ' · ' + formatShortDate(getDayDate(d))} · ${timeLabel(start)}–${timeLabel(end)} · Dauer: ${durationText} · ${habitText} · ${isTemplateMode() ? 'Routine-Vorlage' : (presetSource === 'extra' ? 'Extra-To-do' : 'Kalenderwoche')}`;
   }
 
   function renderHabits() {
@@ -1228,7 +1410,7 @@
       dayTabs.appendChild(btn);
     });
 
-    const list = state.weekEvents
+    const list = currentWeekEvents()
       .filter(ev => ev.day === state.activeHabitDay && state.categories[ev.categoryId]?.habit)
       .sort((a, b) => a.start - b.start || a.end - b.end);
     habitList.innerHTML = '';
@@ -1268,15 +1450,15 @@
     days.forEach((day, index) => {
       const option = document.createElement('option');
       option.value = String(index);
-      option.textContent = day;
+      option.textContent = `${day} ${formatShortDate(getDayDate(index))}`;
       taskDaySelect.appendChild(option);
     });
   }
 
   function renderTaskView() {
     const d = state.activeHabitDay;
-    taskTitle.textContent = `${days[d]} · Tages-Tasks`;
-    const all = state.weekEvents
+    taskTitle.textContent = `${days[d]} ${formatShortDate(getDayDate(d))} · Tages-Tasks`;
+    const all = currentWeekEvents()
       .filter(ev => ev.day === d && state.categories[ev.categoryId]?.habit)
       .sort((a, b) => a.start - b.start || a.end - b.end);
     const done = all.filter(ev => ev.done).length;
@@ -1311,6 +1493,8 @@
 
   function renderPlannerMode() {
     const isTracking = state.plannerMode === 'tracking';
+    const showCalendarArea = state.viewMode === 'calendar' && !isTracking;
+    const weekInfo = getISOWeekInfo(getSelectedWeekStartDate());
     document.body.classList.toggle('planner-template', state.plannerMode === 'template');
     document.body.classList.toggle('planner-week', state.plannerMode === 'week');
     document.body.classList.toggle('planner-tracking', isTracking);
@@ -1321,11 +1505,11 @@
 
     applyTemplateBtn.style.display = state.plannerMode === 'week' ? '' : 'none';
     trackingPanel.classList.toggle('active', isTracking);
-
-    const showCalendarArea = !isTracking;
-    document.querySelector('.calendar-wrap').style.display = showCalendarArea && state.viewMode !== 'tasks' ? '' : 'none';
-    document.querySelector('.view-switch').style.display = showCalendarArea ? '' : 'none';
+    calendar.parentElement.style.display = showCalendarArea ? '' : 'none';
+    document.querySelector('.footer-note').style.display = showCalendarArea ? '' : 'none';
+    taskView.classList.toggle('active', state.viewMode === 'tasks' && state.plannerMode === 'week');
     habitPanel.style.display = state.plannerMode === 'week' && showCalendarArea ? '' : 'none';
+    weekNav.style.display = state.plannerMode === 'template' ? 'none' : '';
 
     if (state.plannerMode !== 'week' && state.viewMode === 'tasks') state.viewMode = 'calendar';
     taskModeBtn.disabled = state.plannerMode !== 'week';
@@ -1334,23 +1518,23 @@
     if (state.plannerMode === 'template') {
       plannerNote.textContent = 'Standardwoche/Routine-Vorlage bearbeiten. Hier wird noch nichts getrackt.';
     } else if (state.plannerMode === 'week') {
-      plannerNote.textContent = 'Echte Kalenderwoche abhaken. Routine kommt aus dem Stundenplan, Extras aus To-dos.';
+      plannerNote.textContent = `Echte Kalenderwoche abhaken · KW ${weekInfo.week}/${weekInfo.year}`;
     } else {
-      plannerNote.textContent = 'Auswertung deiner echten Woche: Routine und Extra-To-dos getrennt.';
+      plannerNote.textContent = `Auswertung für KW ${weekInfo.week}/${weekInfo.year}: Routine und Extra-To-dos getrennt.`;
     }
   }
 
   function routineTrackingStats() {
     const trackableTemplate = state.templateEvents.filter(ev => state.categories[ev.categoryId]?.habit);
     const done = trackableTemplate.filter(templateEv => {
-      const weekEv = state.weekEvents.find(ev => ev.source === 'routine' && ev.templateEventId === templateEv.id);
+      const weekEv = currentWeekEvents().find(ev => ev.source === 'routine' && ev.templateEventId === templateEv.id);
       return Boolean(weekEv?.done);
     }).length;
     return { total: trackableTemplate.length, done, percent: makePercent(done, trackableTemplate.length) };
   }
 
   function extraTrackingStats() {
-    const extras = state.weekEvents.filter(ev => ev.source === 'extra' && state.categories[ev.categoryId]?.habit);
+    const extras = currentWeekEvents().filter(ev => ev.source === 'extra' && state.categories[ev.categoryId]?.habit);
     const done = extras.filter(ev => ev.done).length;
     return { total: extras.length, done, percent: makePercent(done, extras.length) };
   }
@@ -1377,7 +1561,7 @@
     const missingRoutine = state.templateEvents
       .filter(ev => state.categories[ev.categoryId]?.habit)
       .filter(templateEv => {
-        const weekEv = state.weekEvents.find(ev => ev.source === 'routine' && ev.templateEventId === templateEv.id);
+        const weekEv = currentWeekEvents().find(ev => ev.source === 'routine' && ev.templateEventId === templateEv.id);
         return !weekEv || !weekEv.done;
       })
       .sort((a, b) => a.day - b.day || a.start - b.start)
@@ -1402,9 +1586,11 @@
       alert('Dein Stundenplan ist noch leer. Lege zuerst Routine-Blöcke im Stundenplan an.');
       return;
     }
-    if (state.weekEvents.length && !confirm('Kalenderwoche überschreiben und den Stundenplan neu übernehmen?')) return;
+    const existing = currentWeekEvents();
+    const weekInfo = getISOWeekInfo(getSelectedWeekStartDate());
+    if (existing.length && !confirm(`Kalenderwoche KW ${weekInfo.week}/${weekInfo.year} überschreiben und den Stundenplan neu übernehmen?`)) return;
 
-    state.weekEvents = state.templateEvents.map(templateEv => ({
+    setCurrentWeekEvents(state.templateEvents.map(templateEv => ({
       id: id(),
       day: templateEv.day,
       start: templateEv.start,
@@ -1415,11 +1601,27 @@
       source: 'routine',
       templateEventId: templateEv.id,
       createdAt: new Date().toISOString()
-    }));
+    })));
     state.plannerMode = 'week';
     state.viewMode = 'calendar';
     saveState();
     renderAll();
+  }
+
+
+  function renderWeekControls() {
+    const start = getSelectedWeekStartDate();
+    const end = addDays(start, 6);
+    const info = getISOWeekInfo(start);
+    const today = getTodayInfo();
+    weekDateInput.min = '2026-01-01';
+    weekDateInput.value = dateKey(start);
+    weekLabel.textContent = `KW ${info.week}/${info.year}`;
+    weekRange.textContent = `${formatLongDate(start)} – ${formatLongDate(end)}`;
+    fillTaskDaySelect();
+    todayWeekBtn.classList.toggle('active', state.currentWeekStart === today.weekKey);
+    const minWeek = weekStartDate('2026-01-01');
+    prevWeekBtn.disabled = getSelectedWeekStartDate() <= minWeek;
   }
 
 
@@ -1529,6 +1731,8 @@
   weekModeBtn.onclick = () => {
     state.plannerMode = 'week';
     state.viewMode = 'calendar';
+    const today = getTodayInfo();
+    if (state.currentWeekStart === today.weekKey) state.activeHabitDay = today.dayIndex;
     saveState();
     renderAll();
   };
@@ -1539,6 +1743,26 @@
     renderAll();
   };
   applyTemplateBtn.onclick = applyTemplateToWeek;
+  prevWeekBtn.onclick = () => changeWeek(-1);
+  nextWeekBtn.onclick = () => changeWeek(1);
+  todayWeekBtn.onclick = () => {
+    const today = getTodayInfo();
+    state.currentWeekStart = today.weekKey;
+    state.activeHabitDay = today.dayIndex;
+    state.plannerMode = state.plannerMode === 'template' ? 'week' : state.plannerMode;
+    currentWeekEvents();
+    saveState();
+    renderAll();
+  };
+  weekDateInput.onchange = () => {
+    if (!weekDateInput.value) return;
+    state.currentWeekStart = clampWeekKey(weekDateInput.value);
+    const today = getTodayInfo();
+    if (state.currentWeekStart === today.weekKey) state.activeHabitDay = today.dayIndex;
+    currentWeekEvents();
+    saveState();
+    renderAll();
+  };
 
   document.getElementById('habitToggle').onclick = () => { state.habitOpen = !state.habitOpen; saveState(); renderHabits(); };
   calendarModeBtn.onclick = () => { state.viewMode = 'calendar'; saveState(); renderAll(); };
@@ -1595,8 +1819,7 @@
     if (confirm(state.plannerMode === 'week' ? 'Wirklich die aktuelle Kalenderwoche löschen? Kategorien und Stundenplan bleiben erhalten.' : 'Wirklich den aktuellen Stundenplan löschen? Kategorien bleiben erhalten.')) {
       setCurrentEvents([]);
       saveState();
-      renderCalendar();
-      renderHabits();
+      renderAll();
     }
   };
   document.getElementById('exportBtn').onclick = () => {
@@ -1642,6 +1865,7 @@
           todo.status = 'planned';
           todo.done = false;
           todo.plannedEventId = newEventId;
+          todo.plannedWeekStart = state.currentWeekStart;
         }
         pendingTodoId = null;
       }
@@ -1671,7 +1895,7 @@
   });
   window.addEventListener('resize', renderCalendar);
 
-  function renderAll() { renderLegend(); fillTodoCategorySelect(); renderTodos(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); }
+  function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); }
   fillTaskDaySelect();
   renderAll();
 })();
