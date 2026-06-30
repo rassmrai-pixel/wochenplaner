@@ -321,7 +321,7 @@
     }
     .todo-item {
       display: grid;
-      grid-template-columns: auto 1fr auto auto;
+      grid-template-columns: auto 1fr auto;
       gap: 10px;
       align-items: center;
       border: 1px solid var(--line-soft);
@@ -343,6 +343,17 @@
       font-size: 12px;
       white-space: nowrap;
     }
+    .todo-actions {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .todo-actions button.danger {
+      background: #7f1d1d;
+      border-color: #dc2626;
+    }
     .todo-empty { color: var(--muted); font-size: 13px; padding: 2px; }
     @media (max-width: 700px) {
       .todo-drawer {
@@ -358,7 +369,7 @@
       .todo-form { grid-template-columns: 1fr; }
       .todo-item { grid-template-columns: auto 1fr; }
       .todo-item .todo-status,
-      .todo-item button { grid-column: 2; justify-self: start; }
+      .todo-item .todo-actions { grid-column: 2; justify-self: stretch; justify-content: flex-start; }
     }
 
 
@@ -1676,11 +1687,15 @@
       item.innerHTML = `
         <input type="checkbox" ${todo.done || todo.status === 'done' ? 'checked' : ''} />
         <div class="todo-main">
-          <div class="todo-name">${escapeHtml(todo.text)}</div>
+          <div class="todo-name" title="Doppelklick zum Umbenennen">${escapeHtml(todo.text)}</div>
           <div class="todo-meta">${escapeHtml(cat.label)}</div>
         </div>
         <span class="todo-status">${todoStatusLabel(todo)}</span>
-        <button type="button" class="small ghost">${todo.status === 'planned' ? 'Erneut planen' : 'Einplanen'}</button>`;
+        <div class="todo-actions">
+          <button type="button" class="small ghost todo-plan-btn">${todo.status === 'planned' ? 'Erneut planen' : 'Einplanen'}</button>
+          <button type="button" class="small ghost todo-edit-btn">Umbenennen</button>
+          <button type="button" class="small danger todo-delete-btn">Löschen</button>
+        </div>`;
 
       const cb = item.querySelector('input');
       cb.addEventListener('change', () => {
@@ -1690,8 +1705,57 @@
         renderAll();
       });
 
-      item.querySelector('button').addEventListener('click', e => {
+      const renameTodo = () => {
+        const nextText = prompt('To-do umbenennen:', todo.text);
+        if (nextText === null) return;
+        const clean = nextText.trim();
+        if (!clean) {
+          alert('Das To-do braucht einen Namen.');
+          return;
+        }
+        todo.text = clean;
+
+        // Wenn das To-do schon als Extra-Block eingeplant ist, den Kalenderblock mit umbenennen.
+        if (todo.plannedEventId) {
+          Object.values(state.weekEventsByKey || {}).forEach(list => {
+            const ev = Array.isArray(list) ? list.find(x => x.id === todo.plannedEventId) : null;
+            if (ev) ev.label = clean;
+          });
+        }
+
+        saveState();
+        renderAll();
+      };
+
+      item.querySelector('.todo-name').addEventListener('dblclick', e => {
         e.preventDefault();
+        e.stopPropagation();
+        renameTodo();
+      });
+
+      item.querySelector('.todo-edit-btn').addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        renameTodo();
+      });
+
+      item.querySelector('.todo-delete-btn').addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        const alsoDeleteEvent = todo.plannedEventId && confirm('Dieses To-do ist bereits eingeplant. Soll der dazugehörige Kalenderblock auch gelöscht werden?');
+        if (alsoDeleteEvent) {
+          Object.keys(state.weekEventsByKey || {}).forEach(weekKey => {
+            state.weekEventsByKey[weekKey] = (state.weekEventsByKey[weekKey] || []).filter(ev => ev.id !== todo.plannedEventId);
+          });
+        }
+        state.todos = state.todos.filter(t => t.id !== todo.id);
+        saveState();
+        renderAll();
+      });
+
+      item.querySelector('.todo-plan-btn').addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
         pendingTodoId = todo.id;
         state.plannerMode = 'week';
         state.viewMode = 'calendar';
