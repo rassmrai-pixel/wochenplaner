@@ -247,19 +247,56 @@
       border: 1px solid rgba(255,255,255,0.35);
       border-left: 4px solid rgba(255,255,255,0.78);
       border-radius: 9px;
-      padding: 4px 5px;
+      padding: 0 5px;
       color: white;
       overflow: hidden;
       z-index: 6;
       box-shadow: 0 8px 18px rgba(0,0,0,0.26);
       cursor: pointer;
       min-height: 16px;
+      box-sizing: border-box;
     }
     .event:hover { outline: 2px solid rgba(255,255,255,0.82); z-index: 9; }
-    .event-title-row { display: flex; gap: 5px; align-items: center; min-width: 0; }
-    .event-check { width: 15px; height: 15px; flex: 0 0 auto; accent-color: #38bdf8; margin-top: 1px; position: relative; top: -3px; }
-    .event-title { font-size: 11px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .event-time { font-size: 10px; opacity: 0.9; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .event-title-row {
+      position: absolute;
+      top: 0;
+      left: 5px;
+      right: 5px;
+      height: var(--cell-h);
+      display: flex;
+      gap: 5px;
+      align-items: center;
+      min-width: 0;
+      line-height: var(--cell-h);
+    }
+    .event-check {
+      width: 15px;
+      height: 15px;
+      flex: 0 0 auto;
+      accent-color: #38bdf8;
+      margin: 0;
+    }
+    .event-title {
+      font-size: 11px;
+      font-weight: 800;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      line-height: 1;
+    }
+    .event-time {
+      position: absolute;
+      top: calc(var(--cell-h) + 2px);
+      left: 5px;
+      right: 5px;
+      font-size: 10px;
+      opacity: 0.9;
+      margin-top: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1;
+    }
     .event.done { opacity: 0.64; }
     .event.done .event-title { text-decoration: line-through; }
 
