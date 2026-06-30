@@ -43,7 +43,7 @@
     }
     h1 { margin: 0; font-size: clamp(22px, 3vw, 34px); letter-spacing: -0.03em; }
     .subtitle { color: var(--muted); margin-top: 4px; font-size: 14px; }
-    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; max-width: 950px; }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; max-width: 1100px; align-items: center; width: 100%; }
     button, input, select {
       border: 1px solid var(--line);
       background: var(--panel-2);
@@ -61,6 +61,8 @@
     button.danger { background: #7f1d1d; border-color: #dc2626; }
     button.ghost { background: transparent; }
     button.small { padding: 7px 10px; min-height: 34px; font-size: 13px; }
+    .todo-drawer-trigger { margin-left: auto; }
+    .todo-drawer-trigger.active { background: #0284c7; border-color: #38bdf8; }
     .app { padding: 16px 24px 32px; }
     .hint { margin: 0 0 14px; color: var(--muted); font-size: 14px; line-height: 1.45; }
     .legend { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
@@ -117,6 +119,121 @@
     .habit-name { font-weight: 700; }
     .habit-meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
     .habit-empty { color: var(--muted); font-size: 13px; }
+
+
+    .todo-drawer-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(2, 6, 23, 0.18);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.22s ease;
+      z-index: 45;
+    }
+    .todo-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      height: 100vh;
+      width: min(460px, 92vw);
+      transform: translateX(100%);
+      transition: transform 0.24s ease;
+      z-index: 50;
+      padding: 20px 18px 20px 0;
+      pointer-events: none;
+    }
+    .todo-drawer-shell {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid var(--line);
+      border-right: 0;
+      border-radius: 20px 0 0 20px;
+      background: rgba(10, 20, 41, 0.97);
+      box-shadow: -18px 0 50px rgba(0,0,0,0.34);
+      overflow: hidden;
+      pointer-events: auto;
+      backdrop-filter: blur(14px);
+    }
+    body.todo-drawer-open .todo-drawer {
+      transform: translateX(0);
+      pointer-events: auto;
+    }
+    body.todo-drawer-open .todo-drawer-backdrop {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .todo-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      padding: 16px 16px 14px;
+      border-bottom: 1px solid var(--line-soft);
+      background: rgba(31, 41, 55, 0.62);
+      flex: 0 0 auto;
+    }
+    .todo-head h2 { margin: 0; font-size: 18px; }
+    .todo-summary { color: var(--muted); font-size: 13px; }
+    .todo-form {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line-soft);
+      flex: 0 0 auto;
+    }
+    .todo-form input[type="text"] { width: 100%; }
+    .todo-list {
+      display: grid;
+      gap: 10px;
+      padding: 14px 16px 22px;
+      overflow: auto;
+      align-content: start;
+      min-height: 0;
+    }
+    .todo-item {
+      display: grid;
+      grid-template-columns: auto 1fr auto auto;
+      gap: 10px;
+      align-items: center;
+      border: 1px solid var(--line-soft);
+      background: rgba(2, 6, 23, 0.35);
+      padding: 10px;
+      border-radius: 12px;
+    }
+    .todo-item input { min-height: auto; width: 18px; height: 18px; accent-color: #38bdf8; }
+    .todo-item.done { opacity: 0.62; }
+    .todo-item.done .todo-name { text-decoration: line-through; }
+    .todo-main { min-width: 0; }
+    .todo-name { font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .todo-meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .todo-status {
+      border: 1px solid var(--line-soft);
+      border-radius: 999px;
+      padding: 5px 8px;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .todo-empty { color: var(--muted); font-size: 13px; padding: 2px; }
+    @media (max-width: 700px) {
+      .todo-drawer {
+        width: 100vw;
+        padding: 0;
+      }
+      .todo-drawer-shell {
+        border-radius: 0;
+        border-right: 0;
+        border-top: 0;
+        border-bottom: 0;
+      }
+      .todo-form { grid-template-columns: 1fr; }
+      .todo-item { grid-template-columns: auto 1fr; }
+      .todo-item .todo-status,
+      .todo-item button { grid-column: 2; justify-self: start; }
+    }
 
 
 
@@ -400,7 +517,7 @@
   <header>
     <div>
       <h1>Perfekte Woche Planer</h1>
-      <div class="subtitle">Wochenansicht · 24 Stunden · 15-Minuten-Schritte · Kalender + Habit Tracker + Tages-Taskansicht</div>
+      <div class="subtitle">Wochenansicht · 24 Stunden · 15-Minuten-Schritte · Kalender + Habit Tracker + To-do Planner + Tages-Taskansicht</div>
     </div>
     <div class="toolbar">
       <input id="quickLabel" type="text" placeholder="Kategorie, z. B. Lernen" />
@@ -410,11 +527,12 @@
       <button id="importBtn">Import</button>
       <input id="importFile" type="file" accept="application/json" hidden />
       <button class="danger" id="clearBtn">Alles löschen</button>
+      <button id="todoDrawerToggleBtn" class="todo-drawer-trigger">To-do Planner</button>
     </div>
   </header>
 
   <main class="app">
-    <p class="hint calendar-hint">Wähle eine Kategorie und ziehe über freie Zeitfelder, um neue Blöcke zu setzen. Doppelklick auf einen Block öffnet die Bearbeitung. Checkboxen im Kalender und im Habit Tracker sind synchron. Fahrt wird nicht getrackt, Orga schon. Mit der Tages-Taskansicht kannst du ohne Kalender nur abhaken.</p>
+    <p class="hint calendar-hint">Wähle eine Kategorie und ziehe über freie Zeitfelder, um neue Blöcke zu setzen. Doppelklick auf einen Block öffnet die Bearbeitung. Checkboxen im Kalender und im Habit Tracker sind synchron. Fahrt wird nicht getrackt, Orga schon. Mit dem To-do Planner sammelst du Aufgaben und planst sie später als Kalenderblock ein. Mit der Tages-Taskansicht kannst du ohne Kalender nur abhaken.</p>
     <div class="legend" id="legend"></div>
 
 
@@ -451,6 +569,25 @@
     </div>
     <div class="footer-note">Tipp: Parallele Termine funktionieren jetzt. Wenn zwei Blöcke am selben Tag zeitlich überlappen, werden sie nebeneinander angezeigt.</div>
   </main>
+
+  <div class="todo-drawer-backdrop" id="todoDrawerBackdrop"></div>
+  <aside class="todo-drawer" id="todoDrawer">
+    <div class="todo-drawer-shell">
+      <div class="todo-head">
+        <div>
+          <h2>To-do Planner</h2>
+          <div class="todo-summary" id="todoSummary">0 offen · 0 geplant · 0 erledigt</div>
+        </div>
+        <button class="small ghost" id="closeTodoDrawerBtn">Einklappen</button>
+      </div>
+      <div class="todo-form">
+        <input id="todoInput" type="text" placeholder="To-do hinzufügen, z. B. Gewerbeanmeldung machen" />
+        <select id="todoCategorySelect" title="Kategorie"></select>
+        <button class="primary" id="addTodoBtn">To-do hinzufügen</button>
+      </div>
+      <div class="todo-list" id="todoList"></div>
+    </div>
+  </aside>
 
   <div class="modal-backdrop" id="modalBackdrop">
     <div class="modal">
@@ -493,6 +630,7 @@
     habitOpen: false,
     activeHabitDay: 0,
     viewMode: 'calendar',
+    todoDrawerOpen: false,
     categories: {
       gym: { label: 'Gym / Sport', color: '#22c55e', habit: true },
       work: { label: 'Arbeit / Business', color: '#38bdf8', habit: true },
@@ -503,7 +641,8 @@
       social: { label: 'Social / Dating', color: '#ec4899', habit: true },
       focus: { label: 'Deep Work', color: '#a855f7', habit: true }
     },
-    events: []
+    events: [],
+    todos: []
   };
 
   let state = loadState();
@@ -512,6 +651,7 @@
   let dragStart = null;
   let dragEnd = null;
   let editingId = null;
+  let pendingTodoId = null;
 
   const calendar = document.getElementById('calendar');
   const legend = document.getElementById('legend');
@@ -537,6 +677,14 @@
   const taskTitle = document.getElementById('taskTitle');
   const taskProgress = document.getElementById('taskProgress');
   const taskList = document.getElementById('taskList');
+  const todoInput = document.getElementById('todoInput');
+  const todoCategorySelect = document.getElementById('todoCategorySelect');
+  const todoList = document.getElementById('todoList');
+  const todoSummary = document.getElementById('todoSummary');
+  const todoDrawer = document.getElementById('todoDrawer');
+  const todoDrawerBackdrop = document.getElementById('todoDrawerBackdrop');
+  const todoDrawerToggleBtn = document.getElementById('todoDrawerToggleBtn');
+  const closeTodoDrawerBtn = document.getElementById('closeTodoDrawerBtn');
 
   function id() { return 'e-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8); }
   function clone(x) { return JSON.parse(JSON.stringify(x)); }
@@ -570,8 +718,18 @@
       categoryId: s.categories[ev.categoryId] ? ev.categoryId : 'orga',
       done: Boolean(ev.done)
     })).filter(ev => ev.end > ev.start) : [];
+    s.todos = Array.isArray(input.todos) ? input.todos.map(todo => ({
+      id: todo.id || id(),
+      text: todo.text || 'To-do',
+      categoryId: s.categories[todo.categoryId] ? todo.categoryId : 'orga',
+      status: ['open', 'planned', 'done'].includes(todo.status) ? todo.status : 'open',
+      done: Boolean(todo.done || todo.status === 'done'),
+      plannedEventId: todo.plannedEventId || null,
+      createdAt: todo.createdAt || new Date().toISOString()
+    })) : [];
     if (!s.categories[s.selectedCategory]) s.selectedCategory = 'gym';
     if (!['calendar', 'tasks'].includes(s.viewMode)) s.viewMode = 'calendar';
+    s.todoDrawerOpen = Boolean(s.todoDrawerOpen);
     s.activeHabitDay = clamp(Number(s.activeHabitDay), 0, 6);
     return s;
   }
@@ -823,8 +981,8 @@
       day: preset.day,
       start: preset.start,
       end: preset.end,
-      label: state.categories[state.selectedCategory]?.label || 'Block',
-      categoryId: state.selectedCategory,
+      label: preset.label || state.categories[preset.categoryId || state.selectedCategory]?.label || 'Block',
+      categoryId: preset.categoryId || state.selectedCategory,
       done: false
     };
     if (!ev) return;
@@ -850,7 +1008,7 @@
     modalBackdrop.style.display = 'flex';
   }
 
-  function closeModal() { modalBackdrop.style.display = 'none'; editingId = null; }
+  function closeModal() { modalBackdrop.style.display = 'none'; editingId = null; pendingTodoId = null; }
   function updateModalInfo() {
     const d = Number(modalDay.value), start = Number(modalStart.value), end = Number(modalEnd.value);
     const durationMinutes = Math.max(0, end - start) * 15;
@@ -953,6 +1111,89 @@
     });
   }
 
+
+  function renderTodoDrawer() {
+    document.body.classList.toggle('todo-drawer-open', Boolean(state.todoDrawerOpen));
+    todoDrawerToggleBtn.classList.toggle('active', Boolean(state.todoDrawerOpen));
+    todoDrawerToggleBtn.setAttribute('aria-expanded', String(Boolean(state.todoDrawerOpen)));
+  }
+
+
+  function fillTodoCategorySelect() {
+    todoCategorySelect.innerHTML = '';
+    Object.entries(state.categories).forEach(([catId, cat]) => {
+      const option = document.createElement('option');
+      option.value = catId;
+      option.textContent = cat.label;
+      if (catId === 'orga') option.selected = true;
+      todoCategorySelect.appendChild(option);
+    });
+  }
+
+  function todoStatusLabel(todo) {
+    if (todo.done || todo.status === 'done') return 'Erledigt';
+    if (todo.status === 'planned') return 'Geplant';
+    return 'Offen';
+  }
+
+  function renderTodos() {
+    const open = state.todos.filter(t => !t.done && t.status === 'open').length;
+    const planned = state.todos.filter(t => !t.done && t.status === 'planned').length;
+    const done = state.todos.filter(t => t.done || t.status === 'done').length;
+    todoSummary.textContent = `${open} offen · ${planned} geplant · ${done} erledigt`;
+    todoList.innerHTML = '';
+
+    if (!state.todos.length) {
+      todoList.innerHTML = '<div class="todo-empty">Noch keine To-dos. Sammle hier Aufgaben und plane sie danach als Kalenderblock ein.</div>';
+      return;
+    }
+
+    const sorted = [...state.todos].sort((a, b) => {
+      const order = { open: 0, planned: 1, done: 2 };
+      const aStatus = a.done ? 'done' : a.status;
+      const bStatus = b.done ? 'done' : b.status;
+      return (order[aStatus] ?? 0) - (order[bStatus] ?? 0) || String(a.createdAt).localeCompare(String(b.createdAt));
+    });
+
+    sorted.forEach(todo => {
+      const cat = state.categories[todo.categoryId] || state.categories.orga;
+      const item = document.createElement('label');
+      item.className = `todo-item ${todo.done || todo.status === 'done' ? 'done' : ''}`;
+      item.style.borderLeft = `5px solid ${cat.color}`;
+      item.innerHTML = `
+        <input type="checkbox" ${todo.done || todo.status === 'done' ? 'checked' : ''} />
+        <div class="todo-main">
+          <div class="todo-name">${escapeHtml(todo.text)}</div>
+          <div class="todo-meta">${escapeHtml(cat.label)}</div>
+        </div>
+        <span class="todo-status">${todoStatusLabel(todo)}</span>
+        <button type="button" class="small ghost">${todo.status === 'planned' ? 'Erneut planen' : 'Einplanen'}</button>`;
+
+      const cb = item.querySelector('input');
+      cb.addEventListener('change', () => {
+        todo.done = cb.checked;
+        todo.status = cb.checked ? 'done' : (todo.plannedEventId ? 'planned' : 'open');
+        saveState();
+        renderAll();
+      });
+
+      item.querySelector('button').addEventListener('click', e => {
+        e.preventDefault();
+        pendingTodoId = todo.id;
+        const start = 36; // 09:00 Uhr als neutraler Vorschlag
+        openEditor(null, {
+          day: state.activeHabitDay,
+          start,
+          end: start + 4,
+          label: todo.text,
+          categoryId: todo.categoryId
+        });
+      });
+
+      todoList.appendChild(item);
+    });
+  }
+
   function toggleDone(eventId, done) {
     const ev = state.events.find(x => x.id === eventId);
     if (!ev) return;
@@ -968,6 +1209,22 @@
   taskModeBtn.onclick = () => { state.viewMode = 'tasks'; saveState(); renderAll(); };
   document.getElementById('taskBackToCalendarBtn').onclick = () => { state.viewMode = 'calendar'; saveState(); renderAll(); };
   taskDaySelect.onchange = () => { state.activeHabitDay = Number(taskDaySelect.value); saveState(); renderAll(); };
+  todoDrawerToggleBtn.onclick = () => {
+    state.todoDrawerOpen = !state.todoDrawerOpen;
+    saveState();
+    renderTodoDrawer();
+    if (state.todoDrawerOpen) setTimeout(() => todoInput.focus(), 180);
+  };
+  closeTodoDrawerBtn.onclick = () => {
+    state.todoDrawerOpen = false;
+    saveState();
+    renderTodoDrawer();
+  };
+  todoDrawerBackdrop.onclick = () => {
+    state.todoDrawerOpen = false;
+    saveState();
+    renderTodoDrawer();
+  };
   document.getElementById('addCategoryBtn').onclick = () => {
     const label = quickLabel.value.trim();
     if (!label) { alert('Bitte gib einen Namen für die Kategorie ein.'); return; }
@@ -979,6 +1236,26 @@
     renderLegend();
     renderHabits();
   };
+
+  document.getElementById('addTodoBtn').onclick = () => {
+    const text = todoInput.value.trim();
+    if (!text) { alert('Bitte gib ein To-do ein.'); return; }
+    state.todos.push({
+      id: id(),
+      text,
+      categoryId: todoCategorySelect.value || 'orga',
+      status: 'open',
+      done: false,
+      plannedEventId: null,
+      createdAt: new Date().toISOString()
+    });
+    todoInput.value = '';
+    saveState();
+    renderTodos();
+  };
+  todoInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('addTodoBtn').click();
+  });
   document.getElementById('clearBtn').onclick = () => {
     if (confirm('Wirklich den kompletten Wochenplan löschen? Kategorien bleiben erhalten.')) {
       state.events = [];
@@ -1022,7 +1299,17 @@
       const ev = state.events.find(x => x.id === editingId);
       if (ev) Object.assign(ev, { day, start, end, label, categoryId });
     } else {
-      state.events.push({ id: id(), day, start, end, label, categoryId, done: false });
+      const newEventId = id();
+      state.events.push({ id: newEventId, day, start, end, label, categoryId, done: false });
+      if (pendingTodoId) {
+        const todo = state.todos.find(t => t.id === pendingTodoId);
+        if (todo) {
+          todo.status = 'planned';
+          todo.done = false;
+          todo.plannedEventId = newEventId;
+        }
+        pendingTodoId = null;
+      }
     }
     saveState();
     renderAll();
@@ -1037,9 +1324,19 @@
   };
   [modalDay, modalStart, modalEnd, modalCategory].forEach(el => el.addEventListener('change', updateModalInfo));
   modalBackdrop.addEventListener('click', (e) => { if (e.target === modalBackdrop) closeModal(); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      if (modalBackdrop.style.display === 'flex') closeModal();
+      else if (state.todoDrawerOpen) {
+        state.todoDrawerOpen = false;
+        saveState();
+        renderTodoDrawer();
+      }
+    }
+  });
   window.addEventListener('resize', renderCalendar);
 
-  function renderAll() { renderLegend(); renderCalendar(); renderHabits(); renderTaskView(); renderViewMode(); }
+  function renderAll() { renderLegend(); fillTodoCategorySelect(); renderTodos(); renderCalendar(); renderHabits(); renderTaskView(); renderViewMode(); renderTodoDrawer(); }
   fillTaskDaySelect();
   renderAll();
 })();
