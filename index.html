@@ -646,6 +646,50 @@
     body.task-mode .legend { display: none; }
     body.calendar-mode .task-view { display: none; }
 
+
+
+    .cloud-panel {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      border: 1px solid var(--line-soft);
+      border-radius: 14px;
+      background: rgba(17, 24, 39, 0.58);
+      padding: 10px;
+      margin: 0 0 14px;
+    }
+    .cloud-left { display: grid; gap: 2px; min-width: 220px; }
+    .cloud-title { font-weight: 900; }
+    .cloud-status { color: var(--muted); font-size: 13px; }
+    .cloud-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .cloud-form input { width: 190px; }
+    .cloud-form input[type="password"] { width: 150px; }
+    .cloud-panel.signed-in { border-color: rgba(34, 197, 94, 0.45); }
+    .cloud-panel.error { border-color: rgba(239, 68, 68, 0.55); }
+    .cloud-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: #bbf7d0;
+      font-size: 12px;
+      font-weight: 800;
+      border: 1px solid rgba(34, 197, 94, 0.34);
+      background: rgba(34, 197, 94, 0.12);
+      border-radius: 999px;
+      padding: 4px 8px;
+      width: max-content;
+    }
+    .cloud-badge::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #22c55e;
+      display: inline-block;
+    }
+
     .calendar-wrap { max-height: calc(100vh - 295px); }
     }
   </style>
@@ -670,6 +714,20 @@
 
   <main class="app">
     <p class="hint calendar-hint">Wähle eine Kategorie und ziehe über freie Zeitfelder, um neue Blöcke zu setzen. Doppelklick auf einen Block öffnet die Bearbeitung. Checkboxen im Kalender und im Habit Tracker sind synchron. Fahrt wird nicht getrackt, Orga schon. Mit dem To-do Planner sammelst du Aufgaben und planst sie später als Kalenderblock ein. Mit der Tages-Taskansicht kannst du ohne Kalender nur abhaken.</p>
+    <section class="cloud-panel" id="cloudPanel">
+      <div class="cloud-left">
+        <div class="cloud-title">Cloud Sync</div>
+        <div class="cloud-status" id="cloudStatus">Nicht eingeloggt · Daten sind aktuell nur lokal auf diesem Gerät.</div>
+      </div>
+      <div class="cloud-form" id="cloudForm">
+        <input id="authEmail" type="text" autocomplete="email" placeholder="E-Mail" />
+        <input id="authPassword" type="password" autocomplete="current-password" placeholder="Passwort" />
+        <button class="primary" id="loginBtn">Einloggen</button>
+        <button class="ghost" id="signupBtn">Registrieren</button>
+        <button class="ghost" id="magicLinkBtn">Magic Link</button>
+        <button class="ghost" id="logoutBtn" style="display:none;">Ausloggen</button>
+      </div>
+    </section>
     <div class="legend" id="legend"></div>
 
     <div class="planner-switch">
@@ -798,12 +856,19 @@
     </div>
   </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 (() => {
   const days = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
   const slotsPerDay = 96;
   const storageKeyV2 = 'perfekte-woche-planer-v2';
   const storageKeyV1 = 'perfekte-woche-planer-v1';
+  const SUPABASE_URL = 'https://uwynzmdsveplxfqgwzqp.supabase.co';
+  const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_zIKjzTf24k4BDsVrQAyeZQ_WALpNEkH';
+  const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY) : null;
+  let cloudUser = null;
+  let cloudSaveTimer = null;
+  let cloudLoading = false;
   const cellHeight = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell-h')) || 18;
 
   const defaults = {
@@ -897,6 +962,14 @@
   const totalSub = document.getElementById('totalSub');
   const totalFill = document.getElementById('totalFill');
   const trackingList = document.getElementById('trackingList');
+  const cloudPanel = document.getElementById('cloudPanel');
+  const cloudStatus = document.getElementById('cloudStatus');
+  const authEmail = document.getElementById('authEmail');
+  const authPassword = document.getElementById('authPassword');
+  const loginBtn = document.getElementById('loginBtn');
+  const signupBtn = document.getElementById('signupBtn');
+  const magicLinkBtn = document.getElementById('magicLinkBtn');
+  const logoutBtn = document.getElementById('logoutBtn');
 
   function id() { return 'e-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8); }
   function clone(x) { return JSON.parse(JSON.stringify(x)); }
@@ -1041,7 +1114,151 @@
     return s;
   }
 
-  function saveState(next = state) { localStorage.setItem(storageKeyV2, JSON.stringify(next)); }
+  function saveState(next = state) {
+    localStorage.setItem(storageKeyV2, JSON.stringify(next));
+    scheduleCloudSave(next);
+  }
+
+  function setCloudStatus(message, mode = 'neutral') {
+    if (!cloudStatus || !cloudPanel) return;
+    cloudStatus.textContent = message;
+    cloudPanel.classList.toggle('signed-in', mode === 'signed-in');
+    cloudPanel.classList.toggle('error', mode === 'error');
+  }
+
+  function renderAuthUi() {
+    const signedIn = Boolean(cloudUser);
+    loginBtn.style.display = signedIn ? 'none' : '';
+    signupBtn.style.display = signedIn ? 'none' : '';
+    magicLinkBtn.style.display = signedIn ? 'none' : '';
+    logoutBtn.style.display = signedIn ? '' : 'none';
+    authEmail.style.display = signedIn ? 'none' : '';
+    authPassword.style.display = signedIn ? 'none' : '';
+    if (signedIn) {
+      setCloudStatus(`Eingeloggt als ${cloudUser.email || 'Nutzer'} · Cloud Sync aktiv.`, 'signed-in');
+    } else {
+      setCloudStatus('Nicht eingeloggt · Daten sind aktuell nur lokal auf diesem Gerät.');
+    }
+  }
+
+  function scheduleCloudSave(next = state) {
+    if (!supabaseClient || !cloudUser || cloudLoading) return;
+    clearTimeout(cloudSaveTimer);
+    const snapshot = clone(next);
+    cloudSaveTimer = setTimeout(() => saveCloudState(snapshot), 650);
+  }
+
+  async function saveCloudState(snapshot = state) {
+    if (!supabaseClient || !cloudUser || cloudLoading) return;
+    try {
+      setCloudStatus(`Eingeloggt als ${cloudUser.email || 'Nutzer'} · Speichere in Supabase...`, 'signed-in');
+      const { error } = await supabaseClient
+        .from('planner_state')
+        .upsert({
+          user_id: cloudUser.id,
+          data: snapshot,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+      if (error) throw error;
+      setCloudStatus(`Eingeloggt als ${cloudUser.email || 'Nutzer'} · Cloud Sync aktiv.`, 'signed-in');
+    } catch (err) {
+      console.error(err);
+      setCloudStatus(`Cloud-Fehler: ${err.message || err}`, 'error');
+    }
+  }
+
+  async function loadCloudState() {
+    if (!supabaseClient || !cloudUser) return;
+    cloudLoading = true;
+    try {
+      setCloudStatus('Lade Cloud-Daten aus Supabase...', 'signed-in');
+      const { data, error } = await supabaseClient
+        .from('planner_state')
+        .select('data, updated_at')
+        .eq('user_id', cloudUser.id)
+        .maybeSingle();
+      if (error) throw error;
+
+      if (data && data.data) {
+        state = normalizeState(data.data);
+        localStorage.setItem(storageKeyV2, JSON.stringify(state));
+        renderAll();
+        setCloudStatus(`Eingeloggt als ${cloudUser.email || 'Nutzer'} · Cloud-Daten geladen.`, 'signed-in');
+      } else {
+        await saveCloudState(state);
+        setCloudStatus(`Eingeloggt als ${cloudUser.email || 'Nutzer'} · Lokale Daten in Cloud gespeichert.`, 'signed-in');
+      }
+    } catch (err) {
+      console.error(err);
+      setCloudStatus(`Cloud-Fehler: ${err.message || err}`, 'error');
+    } finally {
+      cloudLoading = false;
+    }
+  }
+
+  async function initCloudSync() {
+    if (!supabaseClient) {
+      setCloudStatus('Supabase konnte nicht geladen werden. Lokale Speicherung bleibt aktiv.', 'error');
+      return;
+    }
+    renderAuthUi();
+    const { data } = await supabaseClient.auth.getSession();
+    cloudUser = data.session?.user || null;
+    renderAuthUi();
+    if (cloudUser) await loadCloudState();
+
+    supabaseClient.auth.onAuthStateChange(async (_event, session) => {
+      cloudUser = session?.user || null;
+      renderAuthUi();
+      if (cloudUser) await loadCloudState();
+    });
+  }
+
+  async function signInWithPassword() {
+    if (!supabaseClient) return;
+    const email = authEmail.value.trim();
+    const password = authPassword.value;
+    if (!email || !password) return alert('Bitte E-Mail und Passwort eingeben.');
+    setCloudStatus('Login läuft...');
+    const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    if (error) return setCloudStatus(`Login-Fehler: ${error.message}`, 'error');
+  }
+
+  async function signUpWithPassword() {
+    if (!supabaseClient) return;
+    const email = authEmail.value.trim();
+    const password = authPassword.value;
+    if (!email || !password) return alert('Bitte E-Mail und Passwort eingeben.');
+    if (password.length < 6) return alert('Nimm bitte mindestens 6 Zeichen als Passwort.');
+    setCloudStatus('Registrierung läuft...');
+    const { error } = await supabaseClient.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: window.location.origin + window.location.pathname }
+    });
+    if (error) return setCloudStatus(`Registrierungs-Fehler: ${error.message}`, 'error');
+    setCloudStatus('Registrierung angelegt. Prüfe ggf. deine E-Mail zur Bestätigung.');
+  }
+
+  async function sendMagicLink() {
+    if (!supabaseClient) return;
+    const email = authEmail.value.trim();
+    if (!email) return alert('Bitte E-Mail eingeben.');
+    setCloudStatus('Magic Link wird gesendet...');
+    const { error } = await supabaseClient.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: window.location.origin + window.location.pathname }
+    });
+    if (error) return setCloudStatus(`Magic-Link-Fehler: ${error.message}`, 'error');
+    setCloudStatus('Magic Link gesendet. Öffne den Link in deiner E-Mail.');
+  }
+
+  async function signOut() {
+    if (!supabaseClient) return;
+    await supabaseClient.auth.signOut();
+    cloudUser = null;
+    renderAuthUi();
+  }
   function clamp(n, min, max) { return Math.max(min, Math.min(max, Number.isFinite(n) ? n : min)); }
   function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[ch])); }
   function timeLabel(slot) {
@@ -1841,6 +2058,12 @@
     renderAll();
   };
 
+  loginBtn.onclick = signInWithPassword;
+  signupBtn.onclick = signUpWithPassword;
+  magicLinkBtn.onclick = sendMagicLink;
+  logoutBtn.onclick = signOut;
+  authPassword.addEventListener('keydown', e => { if (e.key === 'Enter') signInWithPassword(); });
+
   document.getElementById('habitToggle').onclick = () => { state.habitOpen = !state.habitOpen; saveState(); renderHabits(); };
   calendarModeBtn.onclick = () => { state.viewMode = 'calendar'; saveState(); renderAll(); };
   taskModeBtn.onclick = () => { state.viewMode = 'tasks'; saveState(); renderAll(); };
@@ -1975,6 +2198,7 @@
   function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); }
   fillTaskDaySelect();
   renderAll();
+  initCloudSync();
 })();
 </script>
 </body>
