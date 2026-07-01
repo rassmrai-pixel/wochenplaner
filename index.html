@@ -1209,16 +1209,70 @@
     /* Drawer Tagesstruktur: Habits / geplante To-dos / To-dos ohne Uhrzeit */
     .day-tabs {
       align-items: center;
+      width: 100%;
     }
     .day-add-tab-btn {
-      width: 44px;
-      min-width: 44px;
-      height: 44px;
+      width: 42px;
+      min-width: 42px;
+      height: 42px;
       border-radius: 999px;
       padding: 0;
-      font-size: 22px;
-      font-weight: 900;
+      font-size: 24px;
+      font-weight: 950;
       line-height: 1;
+      margin-left: auto;
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.18), 0 10px 24px rgba(2, 132, 199, 0.24);
+    }
+    .day-add-tab-btn { display: inline-flex; align-items: center; justify-content: center; }
+    @media (max-width: 700px) {
+      .day-add-tab-btn { margin-left: auto; }
+    }
+    .day-todo-modal-subtask-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      margin-top: 8px;
+    }
+    .day-todo-modal-subtask-row input { width: 100%; }
+    .day-todo-modal-subtask-list {
+      display: grid;
+      gap: 7px;
+      margin-top: 8px;
+    }
+    .day-todo-modal-subtask-item {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      padding: 8px 10px;
+      border: 1px solid var(--line-soft);
+      border-radius: 10px;
+      background: rgba(2, 6, 23, 0.25);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .day-todo-modal-options {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .day-todo-modal-options label {
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      color: var(--text);
+      border: 1px solid var(--line-soft);
+      border-radius: 12px;
+      padding: 10px;
+      background: rgba(2, 6, 23, 0.22);
+    }
+    .day-todo-modal-options input {
+      width: 18px;
+      height: 18px;
+      min-height: auto;
+      accent-color: #38bdf8;
     }
     .drawer-day-sections {
       display: grid;
@@ -1527,6 +1581,38 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="dayTodoModalBackdrop">
+    <div class="modal">
+      <h2 id="dayTodoModalTitle">Tages-To-do erstellen</h2>
+      <div class="footer-note" id="dayTodoModalInfo">Dieses To-do wird dem ausgewählten Tag zugeordnet, aber noch nicht zeitlich im Kalender platziert.</div>
+
+      <label for="dayTodoModalText">Name</label>
+      <input id="dayTodoModalText" type="text" placeholder="z. B. Wohnung aufräumen" />
+
+      <label for="dayTodoModalCategory">Kategorie</label>
+      <select id="dayTodoModalCategory"></select>
+
+      <div class="day-todo-modal-options">
+        <label for="dayTodoModalAuto">
+          <input id="dayTodoModalAuto" type="checkbox" />
+          <span>Auto-Erledigen, wenn alle Untertasks erledigt sind</span>
+        </label>
+      </div>
+
+      <label for="dayTodoModalSubtaskInput">Untertasks</label>
+      <div class="day-todo-modal-subtask-row">
+        <input id="dayTodoModalSubtaskInput" type="text" placeholder="z. B. saugen, Wäsche, lüften" />
+        <button class="small ghost" id="dayTodoModalAddSubtaskBtn" type="button">+ Untertask</button>
+      </div>
+      <div class="day-todo-modal-subtask-list" id="dayTodoModalSubtaskList"></div>
+
+      <div class="modal-actions">
+        <button class="ghost" id="cancelDayTodoModalBtn">Abbrechen</button>
+        <button class="primary" id="saveDayTodoModalBtn">Tages-To-do erstellen</button>
+      </div>
+    </div>
+  </div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 (() => {
@@ -1585,6 +1671,7 @@
   let pendingTodoId = null;
   let presetSource = null;
   let lastAutoScrollKey = null;
+  let dayTodoDraftSubtasks = [];
 
   const calendar = document.getElementById('calendar');
   const calendarWrap = document.getElementById('calendarWrap');
@@ -1619,6 +1706,17 @@
   const dayTodoInput = document.getElementById('dayTodoInput');
   const dayTodoCategorySelect = document.getElementById('dayTodoCategorySelect');
   const addDayTodoBtn = document.getElementById('addDayTodoBtn');
+  const dayTodoModalBackdrop = document.getElementById('dayTodoModalBackdrop');
+  const dayTodoModalTitle = document.getElementById('dayTodoModalTitle');
+  const dayTodoModalInfo = document.getElementById('dayTodoModalInfo');
+  const dayTodoModalText = document.getElementById('dayTodoModalText');
+  const dayTodoModalCategory = document.getElementById('dayTodoModalCategory');
+  const dayTodoModalAuto = document.getElementById('dayTodoModalAuto');
+  const dayTodoModalSubtaskInput = document.getElementById('dayTodoModalSubtaskInput');
+  const dayTodoModalAddSubtaskBtn = document.getElementById('dayTodoModalAddSubtaskBtn');
+  const dayTodoModalSubtaskList = document.getElementById('dayTodoModalSubtaskList');
+  const cancelDayTodoModalBtn = document.getElementById('cancelDayTodoModalBtn');
+  const saveDayTodoModalBtn = document.getElementById('saveDayTodoModalBtn');
   const dayTodoList = document.getElementById('dayTodoList');
   const dayTodoCount = document.getElementById('dayTodoCount');
   const taskView = document.getElementById('taskView');
@@ -2646,27 +2744,87 @@
     return item;
   }
 
-  function addDayTodoQuick() {
+  function fillDayTodoModalCategorySelect() {
+    if (!dayTodoModalCategory) return;
+    dayTodoModalCategory.innerHTML = '';
+    Object.entries(state.categories).forEach(([catId, cat]) => {
+      const option = document.createElement('option');
+      option.value = catId;
+      option.textContent = cat.label;
+      dayTodoModalCategory.appendChild(option);
+    });
+  }
+
+  function renderDayTodoDraftSubtasks() {
+    if (!dayTodoModalSubtaskList) return;
+    dayTodoModalSubtaskList.innerHTML = '';
+    if (!dayTodoDraftSubtasks.length) {
+      dayTodoModalSubtaskList.innerHTML = '<div class="category-modal-note">Noch keine Untertasks. Du kannst sie jetzt hinzufügen oder später am To-do ergänzen.</div>';
+      return;
+    }
+    dayTodoDraftSubtasks.forEach((text, index) => {
+      const row = document.createElement('div');
+      row.className = 'day-todo-modal-subtask-item';
+      row.innerHTML = `<span>${escapeHtml(text)}</span><button class="small ghost" type="button">Entfernen</button>`;
+      row.querySelector('button').onclick = () => {
+        dayTodoDraftSubtasks.splice(index, 1);
+        renderDayTodoDraftSubtasks();
+      };
+      dayTodoModalSubtaskList.appendChild(row);
+    });
+  }
+
+  function addDayTodoDraftSubtask() {
+    const text = dayTodoModalSubtaskInput.value.trim();
+    if (!text) return;
+    dayTodoDraftSubtasks.push(text);
+    dayTodoModalSubtaskInput.value = '';
+    renderDayTodoDraftSubtasks();
+    dayTodoModalSubtaskInput.focus();
+  }
+
+  function openDayTodoModal() {
     if (!isWeekMode()) return alert('Tages-To-dos kannst du in der Kalenderwoche hinzufügen.');
-    const text = prompt(`${days[state.activeHabitDay]} ${formatShortDate(getDayDate(state.activeHabitDay))}: Tages-To-do ohne Uhrzeit hinzufügen`);
-    if (text === null) return;
-    const clean = text.trim();
-    if (!clean) return alert('Bitte gib ein Tages-To-do ein.');
+    fillDayTodoModalCategorySelect();
+    dayTodoDraftSubtasks = [];
+    dayTodoModalTitle.textContent = 'Tages-To-do erstellen';
+    dayTodoModalInfo.textContent = `${days[state.activeHabitDay]} ${formatShortDate(getDayDate(state.activeHabitDay))} · ohne feste Uhrzeit. Du kannst es später zeitlich einplanen.`;
+    dayTodoModalText.value = '';
+    dayTodoModalCategory.value = state.selectedCategory || 'orga';
+    dayTodoModalAuto.checked = false;
+    dayTodoModalSubtaskInput.value = '';
+    renderDayTodoDraftSubtasks();
+    dayTodoModalBackdrop.style.display = 'flex';
+    setTimeout(() => dayTodoModalText.focus(), 50);
+  }
+
+  function closeDayTodoModal() {
+    dayTodoModalBackdrop.style.display = 'none';
+  }
+
+  function saveDayTodoFromModal() {
+    const text = dayTodoModalText.value.trim();
+    if (!text) { alert('Bitte gib ein Tages-To-do ein.'); return; }
     state.todos.push({
       id: id(),
-      text: clean,
-      categoryId: state.selectedCategory || 'orga',
+      text,
+      categoryId: dayTodoModalCategory.value || 'orga',
       status: 'planned',
       done: false,
       plannedEventId: null,
       plannedWeekStart: state.currentWeekStart,
       plannedDay: state.activeHabitDay,
-      autoComplete: false,
-      subtasks: [],
+      autoComplete: Boolean(dayTodoModalAuto.checked),
+      subtasks: dayTodoDraftSubtasks.map(text => ({ id: id(), text, done: false })),
       createdAt: new Date().toISOString()
     });
+    closeDayTodoModal();
     saveState();
     renderAll();
+  }
+
+  function addDayTodoQuick() {
+    openDayTodoModal();
   }
 
   function renderHabits() {
@@ -2691,7 +2849,7 @@
     const addBtn = document.createElement('button');
     addBtn.type = 'button';
     addBtn.className = 'day-tab day-add-tab-btn primary';
-    addBtn.title = 'Tages-To-do ohne Uhrzeit hinzufügen';
+    addBtn.title = 'Tages-To-do ohne Uhrzeit erstellen';
     addBtn.textContent = '+';
     addBtn.onclick = addDayTodoQuick;
     dayTabs.appendChild(addBtn);
@@ -3583,28 +3741,21 @@
 
 
 
-  if (addDayTodoBtn) addDayTodoBtn.onclick = () => {
-    const text = dayTodoInput.value.trim();
-    if (!text) { alert('Bitte gib ein Tages-To-do ein.'); return; }
-    state.todos.push({
-      id: id(),
-      text,
-      categoryId: dayTodoCategorySelect.value || 'orga',
-      status: 'planned',
-      done: false,
-      plannedEventId: null,
-      plannedWeekStart: state.currentWeekStart,
-      plannedDay: state.activeHabitDay,
-      autoComplete: false,
-      subtasks: [],
-      createdAt: new Date().toISOString()
-    });
-    dayTodoInput.value = '';
-    saveState();
-    renderAll();
-  };
+  if (addDayTodoBtn) addDayTodoBtn.onclick = openDayTodoModal;
   if (dayTodoInput) dayTodoInput.addEventListener('keydown', e => {
-    if (e.key === 'Enter') addDayTodoBtn.click();
+    if (e.key === 'Enter') openDayTodoModal();
+  });
+  if (cancelDayTodoModalBtn) cancelDayTodoModalBtn.onclick = closeDayTodoModal;
+  if (saveDayTodoModalBtn) saveDayTodoModalBtn.onclick = saveDayTodoFromModal;
+  if (dayTodoModalAddSubtaskBtn) dayTodoModalAddSubtaskBtn.onclick = addDayTodoDraftSubtask;
+  if (dayTodoModalSubtaskInput) dayTodoModalSubtaskInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); addDayTodoDraftSubtask(); }
+  });
+  if (dayTodoModalText) dayTodoModalText.addEventListener('keydown', e => {
+    if (e.key === 'Enter') saveDayTodoFromModal();
+  });
+  if (dayTodoModalBackdrop) dayTodoModalBackdrop.addEventListener('click', e => {
+    if (e.target === dayTodoModalBackdrop) closeDayTodoModal();
   });
 
   document.getElementById('addTodoBtn').onclick = () => {
