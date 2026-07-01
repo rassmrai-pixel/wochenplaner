@@ -772,6 +772,49 @@
     }
 
 
+
+    .tracking-tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    .tracking-tabs button.active { background: #0284c7; border-color: #38bdf8; }
+    .tracking-tools {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      padding: 12px 14px 0;
+    }
+    .tracking-tools input,
+    .tracking-tools select { min-width: 170px; }
+    .tracking-row strong { color: var(--text); }
+    .tracking-status {
+      border: 1px solid var(--line-soft);
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .tracking-status.done { color: #bbf7d0; border-color: rgba(34,197,94,0.35); background: rgba(34,197,94,0.1); }
+    .tracking-status.open { color: #fecaca; border-color: rgba(239,68,68,0.35); background: rgba(239,68,68,0.1); }
+    .drawer-filter-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .drawer-filter-row select { width: 100%; }
+    @media (max-width: 700px) {
+      .tracking-tools { grid-template-columns: 1fr; }
+      .tracking-tools input,
+      .tracking-tools select { width: 100%; min-width: 0; }
+      .tracking-tabs button { flex: 1 1 calc(50% - 8px); }
+      .drawer-filter-row { grid-template-columns: 1fr; }
+    }
+
+
     /* Login-Maske / Auth-Gate */
     body.cloud-signed-out {
       overflow: hidden;
@@ -955,7 +998,7 @@
       <span class="week-range" id="weekRange"></span>
     </div>
 
-    <div class="view-switch">
+    <div class="view-switch" id="viewSwitch" style="display:none;">
       <button class="primary" id="calendarModeBtn">Kalender planen</button>
       <button id="taskModeBtn">Tages-Tasks abhaken</button>
       <select id="taskDaySelect" title="Tag für Tagesansicht"></select>
@@ -963,24 +1006,38 @@
 
     <section class="tracking-panel" id="trackingPanel">
       <div class="tracking-head">
-        <h2>Wochen-Tracking</h2>
-        <p>Routine-Erfolg misst deine Standardwoche. Extra-Erfolg misst zusätzliche To-dos aus der echten Kalenderwoche.</p>
+        <h2 id="trackingTitle">Tracking</h2>
+        <p id="trackingDescription">Routine-Erfolg misst deine Standardwoche. Extra-Erfolg misst zusätzliche To-dos aus der echten Kalenderwoche.</p>
+        <div class="tracking-tabs">
+          <button class="small" id="trackingTodayBtn" type="button">Heute</button>
+          <button class="small" id="trackingWeekBtn" type="button">Woche</button>
+          <button class="small" id="trackingMonthBtn" type="button">Monat</button>
+          <button class="small" id="trackingYearBtn" type="button">Jahr</button>
+        </div>
+      </div>
+      <div class="tracking-tools">
+        <input id="trackingDateInput" type="date" title="Tracking-Zeitraum über Datum wählen" />
+        <select id="trackingFilterSelect" title="Tracking-Liste filtern">
+          <option value="all">Alle Aufgaben</option>
+          <option value="open">Nur offen</option>
+          <option value="done">Nur erledigt</option>
+        </select>
       </div>
       <div class="tracking-grid">
         <div class="tracking-card">
-          <div class="tracking-label">Routine-Erfolg</div>
+          <div class="tracking-label" id="routineTrackingLabel">Routine-Erfolg</div>
           <div class="tracking-value" id="routinePercent">0%</div>
           <div class="tracking-sub" id="routineSub">0/0 erledigt</div>
           <div class="tracking-bar"><div class="tracking-fill" id="routineFill"></div></div>
         </div>
         <div class="tracking-card">
-          <div class="tracking-label">Extra-Erfolg</div>
+          <div class="tracking-label" id="extraTrackingLabel">Extra-Erfolg</div>
           <div class="tracking-value" id="extraPercent">0%</div>
           <div class="tracking-sub" id="extraSub">0/0 erledigt</div>
           <div class="tracking-bar"><div class="tracking-fill" id="extraFill"></div></div>
         </div>
         <div class="tracking-card">
-          <div class="tracking-label">Gesamt</div>
+          <div class="tracking-label" id="totalTrackingLabel">Gesamt</div>
           <div class="tracking-value" id="totalPercent">0%</div>
           <div class="tracking-sub" id="totalSub">0/0 erledigt</div>
           <div class="tracking-bar"><div class="tracking-fill" id="totalFill"></div></div>
@@ -1027,6 +1084,14 @@
         </div>
       </div>
       <section class="drawer-panel drawer-habit-panel active" id="drawerHabitPanel">
+        <div class="drawer-filter-row">
+          <select id="drawerDaySelect" title="Tag wählen"></select>
+          <select id="drawerHabitFilter" title="Tages-Habits filtern">
+            <option value="all">Alle</option>
+            <option value="open">Nur offen</option>
+            <option value="done">Nur erledigt</option>
+          </select>
+        </div>
         <div class="day-tabs" id="dayTabs"></div>
         <div class="habit-list" id="habitList"></div>
       </section>
@@ -1127,6 +1192,10 @@
     todoDrawerOpen: false,
     drawerView: 'habit',
     currentWeekStart: null,
+    trackingView: 'week',
+    trackingDate: null,
+    trackingFilter: 'all',
+    drawerHabitFilter: 'all',
     categories: {
       gym: { label: 'Gym / Sport', color: '#22c55e', habit: true },
       work: { label: 'Arbeit / Business', color: '#38bdf8', habit: true },
@@ -1180,6 +1249,8 @@
   const calendarModeBtn = document.getElementById('calendarModeBtn');
   const taskModeBtn = document.getElementById('taskModeBtn');
   const taskDaySelect = document.getElementById('taskDaySelect');
+  const drawerDaySelect = document.getElementById('drawerDaySelect');
+  const drawerHabitFilter = document.getElementById('drawerHabitFilter');
   const taskView = document.getElementById('taskView');
   const taskTitle = document.getElementById('taskTitle');
   const taskProgress = document.getElementById('taskProgress');
@@ -1215,6 +1286,17 @@
   const totalSub = document.getElementById('totalSub');
   const totalFill = document.getElementById('totalFill');
   const trackingList = document.getElementById('trackingList');
+  const trackingTitle = document.getElementById('trackingTitle');
+  const trackingDescription = document.getElementById('trackingDescription');
+  const trackingTodayBtn = document.getElementById('trackingTodayBtn');
+  const trackingWeekBtn = document.getElementById('trackingWeekBtn');
+  const trackingMonthBtn = document.getElementById('trackingMonthBtn');
+  const trackingYearBtn = document.getElementById('trackingYearBtn');
+  const trackingDateInput = document.getElementById('trackingDateInput');
+  const trackingFilterSelect = document.getElementById('trackingFilterSelect');
+  const routineTrackingLabel = document.getElementById('routineTrackingLabel');
+  const extraTrackingLabel = document.getElementById('extraTrackingLabel');
+  const totalTrackingLabel = document.getElementById('totalTrackingLabel');
   const cloudPanel = document.getElementById('cloudPanel');
   const cloudStatus = document.getElementById('cloudStatus');
   const authEmail = document.getElementById('authEmail');
@@ -1322,6 +1404,10 @@
     if (!s.categories[s.selectedCategory]) s.selectedCategory = 'gym';
     if (!['calendar', 'tasks'].includes(s.viewMode)) s.viewMode = 'calendar';
     if (!['template', 'week', 'tracking'].includes(s.plannerMode)) s.plannerMode = 'template';
+    if (!['today', 'week', 'month', 'year'].includes(s.trackingView)) s.trackingView = 'week';
+    if (!['all', 'open', 'done'].includes(s.trackingFilter)) s.trackingFilter = 'all';
+    if (!['all', 'open', 'done'].includes(s.drawerHabitFilter)) s.drawerHabitFilter = 'all';
+    if (!s.trackingDate) s.trackingDate = dateKey(new Date());
     if (s.plannerMode !== 'week' && s.viewMode === 'tasks') s.viewMode = 'calendar';
     s.todoDrawerOpen = Boolean(s.todoDrawerOpen);
     if (!['habit', 'todo'].includes(s.drawerView)) s.drawerView = 'habit';
@@ -2035,8 +2121,23 @@
     modalInfo.textContent = `${days[d] || ''}${isTemplateMode() ? '' : ' · ' + formatShortDate(getDayDate(d))} · ${timeLabel(start)}–${timeLabel(end)} · Dauer: ${durationText} · ${habitText} · ${isTemplateMode() ? 'Routine-Vorlage' : (presetSource === 'extra' ? 'Extra-To-do' : 'Kalenderwoche')}`;
   }
 
+  function fillDrawerDaySelect() {
+    if (!drawerDaySelect) return;
+    drawerDaySelect.innerHTML = '';
+    days.forEach((day, index) => {
+      const option = document.createElement('option');
+      option.value = String(index);
+      option.textContent = `${day} ${formatShortDate(getDayDate(index))}`;
+      drawerDaySelect.appendChild(option);
+    });
+    drawerDaySelect.value = String(state.activeHabitDay);
+  }
+
   function renderHabits() {
     dayTabs.innerHTML = '';
+    fillDrawerDaySelect();
+    if (drawerHabitFilter) drawerHabitFilter.value = state.drawerHabitFilter || 'all';
+
     if (state.plannerMode !== 'week') {
       habitList.innerHTML = '<div class="habit-empty">Der Habit Tracker ist für die echte Kalenderwoche gedacht. Wechsle auf „Kalenderwoche“, um Tages-Habits abzuhaken.</div>';
       return;
@@ -2049,12 +2150,14 @@
       dayTabs.appendChild(btn);
     });
 
+    const filter = state.drawerHabitFilter || 'all';
     const list = currentWeekEvents()
       .filter(ev => ev.day === state.activeHabitDay && state.categories[ev.categoryId]?.habit)
+      .filter(ev => filter === 'all' || (filter === 'done' ? ev.done : !ev.done))
       .sort((a, b) => a.start - b.start || a.end - b.end);
     habitList.innerHTML = '';
     if (!list.length) {
-      habitList.innerHTML = '<div class="habit-empty">Für diesen Tag gibt es noch keine trackbaren Blöcke. Fahrt/Wegzeit und Schlaf werden bewusst nicht als Habit gezählt.</div>';
+      habitList.innerHTML = '<div class="habit-empty">Für diesen Filter gibt es an diesem Tag keine Einträge.</div>';
       return;
     }
     list.forEach(ev => {
@@ -2177,12 +2280,121 @@
     return { total: extras.length, done, percent: makePercent(done, extras.length) };
   }
 
+  function trackingDateBase() {
+    return toLocalDate(state.trackingDate || state.currentWeekStart || new Date());
+  }
+
+  function rangeForTrackingView() {
+    const base = trackingDateBase();
+    if (state.trackingView === 'today') {
+      return { start: base, end: base, label: formatLongDate(base), title: 'Tages-Tracking' };
+    }
+    if (state.trackingView === 'month') {
+      const start = new Date(base.getFullYear(), base.getMonth(), 1);
+      const end = new Date(base.getFullYear(), base.getMonth() + 1, 0);
+      return { start, end, label: base.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }), title: 'Monats-Tracking' };
+    }
+    if (state.trackingView === 'year') {
+      const start = new Date(base.getFullYear(), 0, 1);
+      const end = new Date(base.getFullYear(), 11, 31);
+      return { start, end, label: String(base.getFullYear()), title: 'Jahres-Tracking' };
+    }
+    const start = weekStartDate(base);
+    const end = addDays(start, 6);
+    const info = getISOWeekInfo(start);
+    return { start, end, label: `KW ${info.week}/${info.year} · ${formatLongDate(start)} – ${formatLongDate(end)}`, title: 'Wochen-Tracking' };
+  }
+
+  function eachDateInRange(start, end) {
+    const out = [];
+    let d = toLocalDate(start);
+    const last = toLocalDate(end);
+    while (d <= last) {
+      out.push(toLocalDate(d));
+      d = addDays(d, 1);
+    }
+    return out;
+  }
+
+  function weekEventsForKey(weekKey) {
+    if (!state.weekEventsByWeek) state.weekEventsByWeek = {};
+    return Array.isArray(state.weekEventsByWeek[weekKey]) ? state.weekEventsByWeek[weekKey] : [];
+  }
+
+  function buildTrackingItems() {
+    const range = rangeForTrackingView();
+    const items = [];
+    const today = toLocalDate(new Date());
+    let end = toLocalDate(range.end);
+    if (state.trackingView === 'month' || state.trackingView === 'year') {
+      end = end > today ? today : end;
+    }
+
+    eachDateInRange(range.start, end).forEach(date => {
+      const weekKey = weekStartKey(date);
+      const dayIndex = (date.getDay() + 6) % 7;
+      const weekEvents = weekEventsForKey(weekKey);
+      state.templateEvents
+        .filter(ev => ev.day === dayIndex && state.categories[ev.categoryId]?.habit)
+        .forEach(templateEv => {
+          const weekEv = weekEvents.find(ev => ev.source === 'routine' && ev.templateEventId === templateEv.id);
+          items.push({
+            type: 'routine',
+            done: Boolean(weekEv?.done),
+            label: templateEv.label,
+            categoryId: templateEv.categoryId,
+            day: dayIndex,
+            date,
+            start: templateEv.start,
+            end: templateEv.end
+          });
+        });
+
+      weekEvents
+        .filter(ev => ev.day === dayIndex && ev.source === 'extra' && state.categories[ev.categoryId]?.habit)
+        .forEach(ev => {
+          items.push({
+            type: 'extra',
+            done: Boolean(ev.done),
+            label: ev.label,
+            categoryId: ev.categoryId,
+            day: ev.day,
+            date,
+            start: ev.start,
+            end: ev.end
+          });
+        });
+    });
+    return { range, items };
+  }
+
+  function statsForItems(items, type) {
+    const filtered = type ? items.filter(item => item.type === type) : items;
+    const done = filtered.filter(item => item.done).length;
+    return { total: filtered.length, done, percent: makePercent(done, filtered.length) };
+  }
+
+  function renderTrackingTabs() {
+    trackingTodayBtn.classList.toggle('active', state.trackingView === 'today');
+    trackingWeekBtn.classList.toggle('active', state.trackingView === 'week');
+    trackingMonthBtn.classList.toggle('active', state.trackingView === 'month');
+    trackingYearBtn.classList.toggle('active', state.trackingView === 'year');
+    trackingDateInput.value = dateKey(trackingDateBase());
+    trackingFilterSelect.value = state.trackingFilter || 'all';
+  }
+
   function renderTracking() {
-    const routine = routineTrackingStats();
-    const extra = extraTrackingStats();
-    const totalDone = routine.done + extra.done;
-    const total = routine.total + extra.total;
-    const totalPct = makePercent(totalDone, total);
+    renderTrackingTabs();
+    const { range, items } = buildTrackingItems();
+    const routine = statsForItems(items, 'routine');
+    const extra = statsForItems(items, 'extra');
+    const total = statsForItems(items);
+
+    trackingTitle.textContent = `${range.title} · ${range.label}`;
+    trackingDescription.textContent = 'Routine misst deine geplante Standardwoche. Extra misst zusätzliche To-dos aus der echten Kalenderwoche.';
+    routineTrackingLabel.textContent = 'Routine-Erfolg';
+    extraTrackingLabel.textContent = 'Extra-Erfolg';
+    totalTrackingLabel.textContent = 'Gesamt';
 
     routinePercent.textContent = `${routine.percent}%`;
     routineSub.textContent = `${routine.done}/${routine.total} Routine-Blöcke erledigt`;
@@ -2192,29 +2404,30 @@
     extraSub.textContent = `${extra.done}/${extra.total} Extra-To-dos erledigt`;
     extraFill.style.width = `${extra.percent}%`;
 
-    totalPercent.textContent = `${totalPct}%`;
-    totalSub.textContent = `${totalDone}/${total} insgesamt erledigt`;
-    totalFill.style.width = `${totalPct}%`;
+    totalPercent.textContent = `${total.percent}%`;
+    totalSub.textContent = `${total.done}/${total.total} insgesamt erledigt`;
+    totalFill.style.width = `${total.percent}%`;
 
-    const missingRoutine = state.templateEvents
-      .filter(ev => state.categories[ev.categoryId]?.habit)
-      .filter(templateEv => {
-        const weekEv = currentWeekEvents().find(ev => ev.source === 'routine' && ev.templateEventId === templateEv.id);
-        return !weekEv || !weekEv.done;
-      })
-      .sort((a, b) => a.day - b.day || a.start - b.start)
-      .slice(0, 8);
+    const filter = state.trackingFilter || 'all';
+    const visible = items
+      .filter(item => filter === 'all' || (filter === 'done' ? item.done : !item.done))
+      .sort((a, b) => a.date - b.date || a.start - b.start)
+      .slice(0, 80);
 
     trackingList.innerHTML = '';
-    if (!missingRoutine.length) {
-      trackingList.innerHTML = '<div class="tracking-row"><span>Routine</span><strong>Alle Routine-Blöcke erledigt oder noch keine Routine angelegt.</strong></div>';
+    if (!visible.length) {
+      trackingList.innerHTML = '<div class="tracking-row"><span>Keine Einträge</span><strong>Für diesen Zeitraum und Filter gibt es keine trackbaren Aufgaben.</strong></div>';
       return;
     }
 
-    missingRoutine.forEach(ev => {
+    visible.forEach(item => {
+      const cat = state.categories[item.categoryId] || state.categories.orga;
       const row = document.createElement('div');
       row.className = 'tracking-row';
-      row.innerHTML = `<span>${days[ev.day]} · ${eventTime(ev)}</span><strong>${escapeHtml(ev.label)}</strong>`;
+      row.innerHTML = `
+        <span>${days[item.day]} · ${formatShortDate(item.date)} · ${eventTime(item)} · ${item.type === 'extra' ? 'Extra' : 'Routine'}</span>
+        <strong>${escapeHtml(item.label)} · ${escapeHtml(cat.label)}</strong>
+        <span class="tracking-status ${item.done ? 'done' : 'open'}">${item.done ? 'Erledigt' : 'Offen'}</span>`;
       trackingList.appendChild(row);
     });
   }
@@ -2353,7 +2566,7 @@
 
         // Wenn das To-do schon als Extra-Block eingeplant ist, den Kalenderblock mit umbenennen.
         if (todo.plannedEventId) {
-          Object.values(state.weekEventsByKey || {}).forEach(list => {
+          Object.values(state.weekEventsByWeek || {}).forEach(list => {
             const ev = Array.isArray(list) ? list.find(x => x.id === todo.plannedEventId) : null;
             if (ev) ev.label = clean;
           });
@@ -2380,8 +2593,8 @@
         e.stopPropagation();
         const alsoDeleteEvent = todo.plannedEventId && confirm('Dieses To-do ist bereits eingeplant. Soll der dazugehörige Kalenderblock auch gelöscht werden?');
         if (alsoDeleteEvent) {
-          Object.keys(state.weekEventsByKey || {}).forEach(weekKey => {
-            state.weekEventsByKey[weekKey] = (state.weekEventsByKey[weekKey] || []).filter(ev => ev.id !== todo.plannedEventId);
+          Object.keys(state.weekEventsByWeek || {}).forEach(weekKey => {
+            state.weekEventsByWeek[weekKey] = (state.weekEventsByWeek[weekKey] || []).filter(ev => ev.id !== todo.plannedEventId);
           });
         }
         state.todos = state.todos.filter(t => t.id !== todo.id);
@@ -2473,6 +2686,14 @@
 
   drawerHabitBtn.onclick = () => { state.drawerView = 'habit'; saveState(); renderTodoDrawer(); renderHabits(); };
   drawerTodoBtn.onclick = () => { state.drawerView = 'todo'; saveState(); renderTodoDrawer(); setTimeout(() => todoInput.focus(), 80); };
+  drawerDaySelect.onchange = () => { state.activeHabitDay = Number(drawerDaySelect.value); saveState(); renderAll(); };
+  drawerHabitFilter.onchange = () => { state.drawerHabitFilter = drawerHabitFilter.value; saveState(); renderHabits(); };
+  trackingTodayBtn.onclick = () => { state.trackingView = 'today'; saveState(); renderAll(); };
+  trackingWeekBtn.onclick = () => { state.trackingView = 'week'; saveState(); renderAll(); };
+  trackingMonthBtn.onclick = () => { state.trackingView = 'month'; saveState(); renderAll(); };
+  trackingYearBtn.onclick = () => { state.trackingView = 'year'; saveState(); renderAll(); };
+  trackingDateInput.onchange = () => { state.trackingDate = trackingDateInput.value || dateKey(new Date()); saveState(); renderAll(); };
+  trackingFilterSelect.onchange = () => { state.trackingFilter = trackingFilterSelect.value; saveState(); renderTracking(); };
   calendarModeBtn.onclick = () => { state.viewMode = 'calendar'; saveState(); renderAll(); };
   taskModeBtn.onclick = () => { state.viewMode = 'tasks'; saveState(); renderAll(); };
   document.getElementById('taskBackToCalendarBtn').onclick = () => { state.viewMode = 'calendar'; saveState(); renderAll(); };
