@@ -320,21 +320,72 @@
       min-height: 0;
       flex: 1 1 auto;
     }
-    .todo-drawer .drawer-habit {
-      margin: 12px 16px 0;
-      border-radius: 14px;
-      background: rgba(17, 24, 39, 0.72);
+    .drawer-switch-wrap {
+      padding: 12px 16px 10px;
+      border-bottom: 1px solid var(--line-soft);
+      background: rgba(2, 6, 23, 0.16);
       flex: 0 0 auto;
     }
-    .todo-drawer .habit-toggle {
-      padding: 10px 12px;
-      border-radius: 14px 14px 0 0;
+    .drawer-switch-labels {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      margin: 0 2px 7px;
+      user-select: none;
     }
-    .todo-drawer .habit-content {
-      padding: 12px;
-      max-height: 300px;
+    .drawer-switch-labels span.active { color: var(--text); }
+    .drawer-switch {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      width: 100%;
+      min-height: 42px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.18);
+      overflow: hidden;
+    }
+    .drawer-switch::before {
+      content: "";
+      position: absolute;
+      top: 4px;
+      left: 4px;
+      width: calc(50% - 4px);
+      height: calc(100% - 8px);
+      border-radius: 999px;
+      background: #0284c7;
+      box-shadow: 0 8px 18px rgba(0,0,0,0.26);
+      transition: transform 0.2s ease;
+      z-index: 0;
+    }
+    .drawer-switch.todo-active::before { transform: translateX(100%); }
+    .drawer-switch button {
+      position: relative;
+      z-index: 1;
+      border: 0;
+      background: transparent;
+      min-height: 34px;
+      padding: 7px 10px;
+      font-weight: 900;
+      color: var(--text);
+    }
+    .drawer-panel {
+      display: none;
+      min-height: 0;
       overflow: auto;
+      flex: 1 1 auto;
     }
+    .drawer-panel.active { display: flex; flex-direction: column; }
+    .drawer-habit-panel {
+      padding: 14px 16px 22px;
+      gap: 12px;
+    }
+    .drawer-habit-panel .day-tabs { margin-bottom: 0; }
+    .drawer-habit-panel .habit-list { overflow: auto; min-height: 0; }
+    .drawer-todo-panel { min-height: 0; }
     .todo-item {
       display: grid;
       grid-template-columns: auto 1fr auto;
@@ -909,27 +960,33 @@
     <div class="todo-drawer-shell">
       <div class="todo-head">
         <div>
-          <h2>To-do Planner</h2>
+          <h2 id="drawerTitle">Tages-Habits</h2>
           <div class="todo-summary" id="todoSummary">0 offen · 0 geplant · 0 erledigt</div>
         </div>
         <button class="small ghost" id="closeTodoDrawerBtn">Einklappen</button>
       </div>
-      <section class="habit-panel drawer-habit" id="habitPanel">
-        <button class="habit-toggle" id="habitToggle">
-          <span><strong>Habit Tracker</strong> · Tagesbezogen abhaken</span>
-          <span id="habitSummary">Einklappen/Ausklappen</span>
-        </button>
-        <div class="habit-content">
-          <div class="day-tabs" id="dayTabs"></div>
-          <div class="habit-list" id="habitList"></div>
+      <div class="drawer-switch-wrap">
+        <div class="drawer-switch-labels">
+          <span id="drawerHabitLabel">Habit Tracker</span>
+          <span id="drawerTodoLabel">To-do Planner</span>
         </div>
-      </section>
-      <div class="todo-form">
-        <input id="todoInput" type="text" placeholder="To-do hinzufügen, z. B. Gewerbeanmeldung machen" />
-        <select id="todoCategorySelect" title="Kategorie"></select>
-        <button class="primary" id="addTodoBtn">To-do hinzufügen</button>
+        <div class="drawer-switch" id="drawerSwitch">
+          <button type="button" id="drawerHabitBtn">Habits</button>
+          <button type="button" id="drawerTodoBtn">To-dos</button>
+        </div>
       </div>
-      <div class="todo-list" id="todoList"></div>
+      <section class="drawer-panel drawer-habit-panel active" id="drawerHabitPanel">
+        <div class="day-tabs" id="dayTabs"></div>
+        <div class="habit-list" id="habitList"></div>
+      </section>
+      <section class="drawer-panel drawer-todo-panel" id="drawerTodoPanel">
+        <div class="todo-form">
+          <input id="todoInput" type="text" placeholder="To-do hinzufügen, z. B. Gewerbeanmeldung machen" />
+          <select id="todoCategorySelect" title="Kategorie"></select>
+          <button class="primary" id="addTodoBtn">To-do hinzufügen</button>
+        </div>
+        <div class="todo-list" id="todoList"></div>
+      </section>
     </div>
   </aside>
 
@@ -985,6 +1042,7 @@
     viewMode: 'calendar',
     plannerMode: 'template',
     todoDrawerOpen: false,
+    drawerView: 'habit',
     currentWeekStart: null,
     categories: {
       gym: { label: 'Gym / Sport', color: '#22c55e', habit: true },
@@ -1027,8 +1085,14 @@
   const modalEnd = document.getElementById('modalEnd');
   const modalInfo = document.getElementById('modalInfo');
   const deleteBlockBtn = document.getElementById('deleteBlockBtn');
-  const habitPanel = document.getElementById('habitPanel');
-  const habitSummary = document.getElementById('habitSummary');
+  const drawerTitle = document.getElementById('drawerTitle');
+  const drawerSwitch = document.getElementById('drawerSwitch');
+  const drawerHabitBtn = document.getElementById('drawerHabitBtn');
+  const drawerTodoBtn = document.getElementById('drawerTodoBtn');
+  const drawerHabitLabel = document.getElementById('drawerHabitLabel');
+  const drawerTodoLabel = document.getElementById('drawerTodoLabel');
+  const drawerHabitPanel = document.getElementById('drawerHabitPanel');
+  const drawerTodoPanel = document.getElementById('drawerTodoPanel');
   const dayTabs = document.getElementById('dayTabs');
   const habitList = document.getElementById('habitList');
   const calendarModeBtn = document.getElementById('calendarModeBtn');
@@ -1168,6 +1232,7 @@
     if (!['template', 'week', 'tracking'].includes(s.plannerMode)) s.plannerMode = 'template';
     if (s.plannerMode !== 'week' && s.viewMode === 'tasks') s.viewMode = 'calendar';
     s.todoDrawerOpen = Boolean(s.todoDrawerOpen);
+    if (!['habit', 'todo'].includes(s.drawerView)) s.drawerView = 'habit';
     const todayInfo = getTodayInfo();
     const isCurrentWeek = s.currentWeekStart === todayInfo.weekKey;
     s.activeHabitDay = isCurrentWeek ? todayInfo.dayIndex : clamp(Number(s.activeHabitDay), 0, 6);
@@ -1776,9 +1841,11 @@
   }
 
   function renderHabits() {
-    habitPanel.classList.toggle('open', Boolean(state.habitOpen));
-    habitSummary.textContent = state.habitOpen ? '▲' : '▼';
     dayTabs.innerHTML = '';
+    if (state.plannerMode !== 'week') {
+      habitList.innerHTML = '<div class="habit-empty">Der Habit Tracker ist für die echte Kalenderwoche gedacht. Wechsle auf „Kalenderwoche“, um Tages-Habits abzuhaken.</div>';
+      return;
+    }
     days.forEach((day, d) => {
       const btn = document.createElement('button');
       btn.className = `day-tab ${state.activeHabitDay === d ? 'active' : ''}`;
@@ -1885,7 +1952,6 @@
     calendar.parentElement.style.display = showCalendarArea ? '' : 'none';
     document.querySelector('.footer-note').style.display = showCalendarArea ? '' : 'none';
     taskView.classList.toggle('active', state.viewMode === 'tasks' && state.plannerMode === 'week');
-    habitPanel.style.display = state.plannerMode === 'week' ? '' : 'none';
     weekNav.style.display = state.plannerMode === 'template' ? 'none' : '';
 
     if (state.plannerMode !== 'week' && state.viewMode === 'tasks') state.viewMode = 'calendar';
@@ -2003,9 +2069,18 @@
 
 
   function renderTodoDrawer() {
-    document.body.classList.toggle('todo-drawer-open', Boolean(state.todoDrawerOpen));
-    todoDrawerToggleBtn.classList.toggle('active', Boolean(state.todoDrawerOpen));
-    todoDrawerToggleBtn.setAttribute('aria-expanded', String(Boolean(state.todoDrawerOpen)));
+    const isOpen = Boolean(state.todoDrawerOpen);
+    const view = state.drawerView === 'todo' ? 'todo' : 'habit';
+    document.body.classList.toggle('todo-drawer-open', isOpen);
+    todoDrawerToggleBtn.classList.toggle('active', isOpen);
+    todoDrawerToggleBtn.setAttribute('aria-expanded', String(isOpen));
+
+    drawerSwitch.classList.toggle('todo-active', view === 'todo');
+    drawerHabitPanel.classList.toggle('active', view === 'habit');
+    drawerTodoPanel.classList.toggle('active', view === 'todo');
+    drawerHabitLabel.classList.toggle('active', view === 'habit');
+    drawerTodoLabel.classList.toggle('active', view === 'todo');
+    drawerTitle.textContent = view === 'habit' ? 'Tages-Habits' : 'To-do Planner';
   }
 
 
@@ -2201,16 +2276,18 @@
   skipLoginBtn.onclick = skipLoginLocal;
   authPassword.addEventListener('keydown', e => { if (e.key === 'Enter') signInWithPassword(); });
 
-  document.getElementById('habitToggle').onclick = () => { state.habitOpen = !state.habitOpen; saveState(); renderHabits(); };
+  drawerHabitBtn.onclick = () => { state.drawerView = 'habit'; saveState(); renderTodoDrawer(); renderHabits(); };
+  drawerTodoBtn.onclick = () => { state.drawerView = 'todo'; saveState(); renderTodoDrawer(); setTimeout(() => todoInput.focus(), 80); };
   calendarModeBtn.onclick = () => { state.viewMode = 'calendar'; saveState(); renderAll(); };
   taskModeBtn.onclick = () => { state.viewMode = 'tasks'; saveState(); renderAll(); };
   document.getElementById('taskBackToCalendarBtn').onclick = () => { state.viewMode = 'calendar'; saveState(); renderAll(); };
   taskDaySelect.onchange = () => { state.activeHabitDay = Number(taskDaySelect.value); saveState(); renderAll(); };
   todoDrawerToggleBtn.onclick = () => {
-    state.todoDrawerOpen = !state.todoDrawerOpen;
+    const willOpen = !state.todoDrawerOpen;
+    state.todoDrawerOpen = willOpen;
+    if (willOpen) state.drawerView = 'habit';
     saveState();
     renderTodoDrawer();
-    if (state.todoDrawerOpen) setTimeout(() => todoInput.focus(), 180);
   };
   closeTodoDrawerBtn.onclick = () => {
     state.todoDrawerOpen = false;
