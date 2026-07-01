@@ -892,6 +892,86 @@
     }
 
 
+    /* Profil-Menü oben rechts */
+    .profile-menu {
+      position: relative;
+      margin-left: 8px;
+      display: none;
+    }
+    body.cloud-signed-in .profile-menu,
+    body.cloud-guest .profile-menu { display: block; }
+    .profile-button {
+      width: 46px;
+      height: 46px;
+      min-height: 46px;
+      border-radius: 999px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(180deg, rgba(31,41,55,0.95), rgba(15,23,42,0.95));
+      border: 1px solid var(--line);
+      font-weight: 900;
+      letter-spacing: -0.03em;
+      color: var(--text);
+      box-shadow: 0 8px 22px rgba(0,0,0,0.24);
+    }
+    .profile-button:hover { border-color: var(--accent); transform: translateY(-1px); }
+    .profile-button.signed-in {
+      border-color: rgba(34,197,94,0.45);
+      box-shadow: 0 0 0 2px rgba(34,197,94,0.1), 0 8px 22px rgba(0,0,0,0.24);
+    }
+    .profile-button.guest {
+      border-color: rgba(249,115,22,0.55);
+      box-shadow: 0 0 0 2px rgba(249,115,22,0.1), 0 8px 22px rgba(0,0,0,0.24);
+    }
+    .profile-dropdown {
+      position: absolute;
+      top: calc(100% + 10px);
+      right: 0;
+      width: min(300px, calc(100vw - 28px));
+      display: none;
+      z-index: 80;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(15, 23, 42, 0.98);
+      box-shadow: 0 24px 80px rgba(0,0,0,0.42);
+      overflow: hidden;
+      backdrop-filter: blur(14px);
+    }
+    .profile-menu.open .profile-dropdown { display: block; }
+    .profile-card {
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      gap: 10px;
+      align-items: center;
+      padding: 14px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+    .profile-avatar-large {
+      width: 42px;
+      height: 42px;
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(56,189,248,0.14);
+      border: 1px solid rgba(56,189,248,0.35);
+      font-weight: 900;
+    }
+    .profile-name { font-weight: 900; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .profile-sub { color: var(--muted); font-size: 12px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .profile-actions { padding: 8px; display: grid; gap: 6px; }
+    .profile-actions button { width: 100%; text-align: left; justify-content: flex-start; }
+    .profile-actions .danger { text-align: center; justify-content: center; }
+    body.cloud-signed-in .cloud-panel,
+    body.cloud-guest .cloud-panel { display: none; }
+    @media (max-width: 700px) {
+      .profile-menu { margin-left: auto; }
+      .profile-button { width: 42px; height: 42px; min-height: 42px; }
+    }
+
+
     /* Kategorie erstellen / bearbeiten */
     .category-modal-color-row {
       display: grid;
@@ -959,6 +1039,22 @@
       <input id="importFile" type="file" accept="application/json" hidden />
       <button class="danger" id="clearBtn">Alles löschen</button>
       <button id="todoDrawerToggleBtn" class="todo-drawer-trigger">To-do Planner</button>
+      <div class="profile-menu" id="profileMenu">
+        <button class="profile-button" id="profileButton" title="Profil">?</button>
+        <div class="profile-dropdown" id="profileDropdown">
+          <div class="profile-card">
+            <div class="profile-avatar-large" id="profileAvatarLarge">?</div>
+            <div>
+              <div class="profile-name" id="profileName">Profil</div>
+              <div class="profile-sub" id="profileSub">Cloud Sync</div>
+            </div>
+          </div>
+          <div class="profile-actions">
+            <button class="ghost" id="profileAccountBtn" type="button">Kontoinformationen</button>
+            <button class="danger" id="profileLogoutBtn" type="button">Ausloggen</button>
+          </div>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -1306,6 +1402,13 @@
   const magicLinkBtn = document.getElementById('magicLinkBtn');
   const skipLoginBtn = document.getElementById('skipLoginBtn');
   const logoutBtn = document.getElementById('logoutBtn');
+  const profileMenu = document.getElementById('profileMenu');
+  const profileButton = document.getElementById('profileButton');
+  const profileAvatarLarge = document.getElementById('profileAvatarLarge');
+  const profileName = document.getElementById('profileName');
+  const profileSub = document.getElementById('profileSub');
+  const profileAccountBtn = document.getElementById('profileAccountBtn');
+  const profileLogoutBtn = document.getElementById('profileLogoutBtn');
   const categoryModalBackdrop = document.getElementById('categoryModalBackdrop');
   const categoryModalTitle = document.getElementById('categoryModalTitle');
   const categoryLabel = document.getElementById('categoryLabel');
@@ -1477,6 +1580,38 @@
     cloudPanel.classList.toggle('error', mode === 'error');
   }
 
+
+
+  function profileInitials(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '?';
+    const beforeAt = raw.split('@')[0] || raw;
+    const parts = beforeAt.split(/[._\-\s]+/).filter(Boolean);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return beforeAt.slice(0, 2).toUpperCase();
+  }
+
+  function renderProfileMenu() {
+    if (!profileMenu || !profileButton) return;
+    const signedIn = Boolean(cloudUser);
+    const visible = signedIn || guestMode;
+    profileMenu.style.display = visible ? '' : 'none';
+    if (!visible) {
+      profileMenu.classList.remove('open');
+      return;
+    }
+    const label = signedIn ? (cloudUser.email || 'Nutzer') : 'Lokaler Modus';
+    const sub = signedIn ? 'Cloud Sync aktiv' : 'Nur lokale Speicherung';
+    const initials = signedIn ? profileInitials(label) : 'LO';
+    profileButton.textContent = initials;
+    profileButton.classList.toggle('signed-in', signedIn);
+    profileButton.classList.toggle('guest', !signedIn && guestMode);
+    if (profileAvatarLarge) profileAvatarLarge.textContent = initials;
+    if (profileName) profileName.textContent = label;
+    if (profileSub) profileSub.textContent = sub;
+    if (profileLogoutBtn) profileLogoutBtn.textContent = signedIn ? 'Ausloggen' : 'Zur Anmeldung';
+  }
+
   function renderAuthUi() {
     const signedIn = Boolean(cloudUser);
     const locked = !signedIn && !guestMode;
@@ -1491,6 +1626,8 @@
     logoutBtn.style.display = signedIn ? '' : 'none';
     authEmail.style.display = signedIn ? 'none' : '';
     authPassword.style.display = signedIn ? 'none' : '';
+
+    renderProfileMenu();
 
     const title = cloudPanel.querySelector('.cloud-title');
     if (title) title.textContent = signedIn ? 'Cloud Sync' : (guestMode ? 'Lokaler Modus' : 'Anmelden');
@@ -2681,6 +2818,20 @@
   signupBtn.onclick = signUpWithPassword;
   magicLinkBtn.onclick = sendMagicLink;
   logoutBtn.onclick = signOut;
+  if (profileButton) profileButton.onclick = (e) => {
+    e.stopPropagation();
+    profileMenu.classList.toggle('open');
+  };
+  if (profileLogoutBtn) profileLogoutBtn.onclick = signOut;
+  if (profileAccountBtn) profileAccountBtn.onclick = () => {
+    const signedIn = Boolean(cloudUser);
+    alert(signedIn
+      ? `Eingeloggt als ${cloudUser.email || 'Nutzer'}\nCloud Sync ist aktiv.`
+      : 'Lokaler Modus aktiv. Deine Daten werden nur in diesem Browser gespeichert.');
+  };
+  document.addEventListener('click', (e) => {
+    if (profileMenu && !profileMenu.contains(e.target)) profileMenu.classList.remove('open');
+  });
   skipLoginBtn.onclick = skipLoginLocal;
   authPassword.addEventListener('keydown', e => { if (e.key === 'Enter') signInWithPassword(); });
 
