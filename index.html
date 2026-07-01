@@ -383,9 +383,40 @@
       padding: 14px 16px 22px;
       gap: 12px;
     }
+    .drawer-progress-card {
+      border: 1px solid var(--line-soft);
+      border-radius: 14px;
+      background: rgba(2, 6, 23, 0.35);
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+    }
+    .drawer-progress-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: baseline;
+    }
+    .drawer-progress-title {
+      font-weight: 900;
+      font-size: 13px;
+    }
+    .drawer-progress-value {
+      font-weight: 950;
+      font-size: 18px;
+      letter-spacing: -0.03em;
+      white-space: nowrap;
+    }
+    .drawer-progress-sub {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .drawer-progress-card .day-progress-track { height: 8px; }
     .drawer-habit-panel .day-tabs { margin-bottom: 0; }
     .drawer-habit-panel .habit-list { overflow: auto; min-height: 0; }
     .drawer-todo-panel { min-height: 0; }
+    .drawer-todo-panel .drawer-progress-card { margin: 14px 16px 0; flex: 0 0 auto; }
     .todo-item {
       display: grid;
       grid-template-columns: auto 1fr auto;
@@ -1225,10 +1256,12 @@
             <option value="done">Nur erledigt</option>
           </select>
         </div>
+        <div class="drawer-progress-card" id="drawerHabitProgress"></div>
         <div class="day-tabs" id="dayTabs"></div>
         <div class="habit-list" id="habitList"></div>
       </section>
       <section class="drawer-panel drawer-todo-panel" id="drawerTodoPanel">
+        <div class="drawer-progress-card" id="drawerTodoProgress"></div>
         <div class="todo-form">
           <input id="todoInput" type="text" placeholder="To-do hinzufügen, z. B. Gewerbeanmeldung machen" />
           <select id="todoCategorySelect" title="Kategorie"></select>
@@ -1385,6 +1418,8 @@
   const taskDaySelect = document.getElementById('taskDaySelect');
   const drawerDaySelect = document.getElementById('drawerDaySelect');
   const drawerHabitFilter = document.getElementById('drawerHabitFilter');
+  const drawerHabitProgress = document.getElementById('drawerHabitProgress');
+  const drawerTodoProgress = document.getElementById('drawerTodoProgress');
   const taskView = document.getElementById('taskView');
   const taskTitle = document.getElementById('taskTitle');
   const taskProgress = document.getElementById('taskProgress');
@@ -1877,6 +1912,28 @@
     return { total: items.length, done, percent: makePercent(done, items.length) };
   }
 
+  function renderDrawerProgress(el, title, stats, subText) {
+    if (!el) return;
+    const colorClass = progressColorClass(stats.percent, stats.total);
+    const value = stats.total ? `${stats.percent}%` : '0%';
+    const progressWidth = stats.total ? stats.percent : 0;
+    el.innerHTML = `
+      <div class="drawer-progress-top">
+        <div class="drawer-progress-title">${escapeHtml(title)}</div>
+        <div class="drawer-progress-value">${value}</div>
+      </div>
+      <div class="day-progress-track"><div class="day-progress-fill ${colorClass}" style="width:${progressWidth}%"></div></div>
+      <div class="drawer-progress-sub">${escapeHtml(subText)}</div>`;
+  }
+
+  function todoCompletionStats() {
+    const total = state.todos.length;
+    const done = state.todos.filter(t => t.done || t.status === 'done').length;
+    const open = state.todos.filter(t => !t.done && t.status === 'open').length;
+    const planned = state.todos.filter(t => !t.done && t.status === 'planned').length;
+    return { total, done, open, planned, percent: makePercent(done, total) };
+  }
+
 
   function toLocalDate(value) {
     if (value instanceof Date) return new Date(value.getFullYear(), value.getMonth(), value.getDate());
@@ -2341,6 +2398,7 @@
     if (drawerHabitFilter) drawerHabitFilter.value = state.drawerHabitFilter || 'all';
 
     if (state.plannerMode !== 'week') {
+      renderDrawerProgress(drawerHabitProgress, 'Tagesfortschritt', { total: 0, done: 0, percent: 0 }, 'Wechsle auf „Kalender“, um Tages-Habits zu tracken.');
       habitList.innerHTML = '<div class="habit-empty">Der Habit Tracker ist für die echte Kalenderwoche gedacht. Wechsle auf „Kalender“, um Tages-Habits abzuhaken.</div>';
       return;
     }
@@ -2351,6 +2409,14 @@
       btn.onclick = () => { state.activeHabitDay = d; saveState(); renderAll(); };
       dayTabs.appendChild(btn);
     });
+
+    const stats = dayCompletionStats(state.activeHabitDay);
+    renderDrawerProgress(
+      drawerHabitProgress,
+      `${days[state.activeHabitDay]} ${formatShortDate(getDayDate(state.activeHabitDay))}`,
+      stats,
+      stats.total ? `${stats.done}/${stats.total} Tages-Habits erledigt` : 'Für diesen Tag sind noch keine trackbaren Einträge geplant.'
+    );
 
     const filter = state.drawerHabitFilter || 'all';
     const list = currentWeekEvents()
@@ -2716,6 +2782,13 @@
     const planned = state.todos.filter(t => !t.done && t.status === 'planned').length;
     const done = state.todos.filter(t => t.done || t.status === 'done').length;
     todoSummary.textContent = `${open} offen · ${planned} geplant · ${done} erledigt`;
+    const todoStats = todoCompletionStats();
+    renderDrawerProgress(
+      drawerTodoProgress,
+      'To-do Fortschritt',
+      todoStats,
+      todoStats.total ? `${todoStats.done}/${todoStats.total} erledigt · ${todoStats.open} offen · ${todoStats.planned} geplant` : 'Noch keine To-dos angelegt.'
+    );
     todoList.innerHTML = '';
 
     if (!state.todos.length) {
