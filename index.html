@@ -692,6 +692,80 @@
 
     .calendar-wrap { max-height: calc(100vh - 295px); }
     }
+
+
+    /* Login-Maske / Auth-Gate */
+    body.cloud-signed-out {
+      overflow: hidden;
+    }
+    body.cloud-signed-out::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 89;
+      background: rgba(2, 6, 23, 0.78);
+      backdrop-filter: blur(10px);
+    }
+    body.cloud-signed-out header,
+    body.cloud-signed-out main > *:not(.cloud-panel) {
+      filter: blur(3px);
+      pointer-events: none;
+      user-select: none;
+    }
+    body.cloud-signed-out .cloud-panel {
+      position: fixed;
+      z-index: 90;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: min(460px, calc(100vw - 28px));
+      display: grid;
+      gap: 16px;
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      border-radius: 22px;
+      background: rgba(15, 23, 42, 0.96);
+      box-shadow: 0 35px 120px rgba(0,0,0,0.55);
+      padding: 22px;
+      margin: 0;
+    }
+    body.cloud-signed-out .cloud-left {
+      min-width: 0;
+      display: grid;
+      gap: 6px;
+      text-align: left;
+    }
+    body.cloud-signed-out .cloud-title {
+      font-size: 24px;
+      letter-spacing: -0.04em;
+    }
+    body.cloud-signed-out .cloud-status {
+      line-height: 1.45;
+    }
+    body.cloud-signed-out .cloud-form {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+    body.cloud-signed-out .cloud-form input,
+    body.cloud-signed-out .cloud-form input[type="password"] {
+      width: 100%;
+    }
+    body.cloud-signed-out .cloud-form button {
+      width: 100%;
+    }
+    body.cloud-signed-in .cloud-panel {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      border: 1px solid var(--line-soft);
+      border-radius: 14px;
+      background: rgba(17, 24, 39, 0.58);
+      padding: 10px;
+      margin: 0 0 14px;
+    }
+
   </style>
 </head>
 <body>
@@ -1128,6 +1202,8 @@
 
   function renderAuthUi() {
     const signedIn = Boolean(cloudUser);
+    document.body.classList.toggle('cloud-signed-in', signedIn);
+    document.body.classList.toggle('cloud-signed-out', !signedIn);
     loginBtn.style.display = signedIn ? 'none' : '';
     signupBtn.style.display = signedIn ? 'none' : '';
     magicLinkBtn.style.display = signedIn ? 'none' : '';
