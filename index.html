@@ -318,6 +318,22 @@
       overflow: auto;
       align-content: start;
       min-height: 0;
+      flex: 1 1 auto;
+    }
+    .todo-drawer .drawer-habit {
+      margin: 12px 16px 0;
+      border-radius: 14px;
+      background: rgba(17, 24, 39, 0.72);
+      flex: 0 0 auto;
+    }
+    .todo-drawer .habit-toggle {
+      padding: 10px 12px;
+      border-radius: 14px 14px 0 0;
+    }
+    .todo-drawer .habit-content {
+      padding: 12px;
+      max-height: 300px;
+      overflow: auto;
     }
     .todo-item {
       display: grid;
@@ -431,7 +447,6 @@
     .task-time { font-weight: 800; white-space: nowrap; }
     .task-empty { color: var(--muted); padding: 18px 14px; font-size: 14px; }
     body.task-mode .calendar-wrap,
-    body.task-mode .habit-panel,
     body.task-mode .hint.calendar-hint,
     body.task-mode .legend { display: none; }
     body.calendar-mode .task-view { display: none; }
@@ -654,7 +669,6 @@
     .task-time { font-weight: 800; white-space: nowrap; }
     .task-empty { color: var(--muted); padding: 18px 14px; font-size: 14px; }
     body.task-mode .calendar-wrap,
-    body.task-mode .habit-panel,
     body.task-mode .hint.calendar-hint,
     body.task-mode .legend { display: none; }
     body.calendar-mode .task-view { display: none; }
@@ -884,17 +898,6 @@
       <div class="task-list" id="taskList"></div>
     </section>
 
-    <section class="habit-panel" id="habitPanel">
-      <button class="habit-toggle" id="habitToggle">
-        <span><strong>Habit Tracker</strong> · Tagesbezogen abhaken</span>
-        <span id="habitSummary">Einklappen/Ausklappen</span>
-      </button>
-      <div class="habit-content">
-        <div class="day-tabs" id="dayTabs"></div>
-        <div class="habit-list" id="habitList"></div>
-      </div>
-    </section>
-
     <div class="calendar-wrap" id="calendarWrap">
       <div class="calendar" id="calendar"></div>
     </div>
@@ -911,6 +914,16 @@
         </div>
         <button class="small ghost" id="closeTodoDrawerBtn">Einklappen</button>
       </div>
+      <section class="habit-panel drawer-habit" id="habitPanel">
+        <button class="habit-toggle" id="habitToggle">
+          <span><strong>Habit Tracker</strong> · Tagesbezogen abhaken</span>
+          <span id="habitSummary">Einklappen/Ausklappen</span>
+        </button>
+        <div class="habit-content">
+          <div class="day-tabs" id="dayTabs"></div>
+          <div class="habit-list" id="habitList"></div>
+        </div>
+      </section>
       <div class="todo-form">
         <input id="todoInput" type="text" placeholder="To-do hinzufügen, z. B. Gewerbeanmeldung machen" />
         <select id="todoCategorySelect" title="Kategorie"></select>
@@ -1872,7 +1885,7 @@
     calendar.parentElement.style.display = showCalendarArea ? '' : 'none';
     document.querySelector('.footer-note').style.display = showCalendarArea ? '' : 'none';
     taskView.classList.toggle('active', state.viewMode === 'tasks' && state.plannerMode === 'week');
-    habitPanel.style.display = state.plannerMode === 'week' && showCalendarArea ? '' : 'none';
+    habitPanel.style.display = state.plannerMode === 'week' ? '' : 'none';
     weekNav.style.display = state.plannerMode === 'template' ? 'none' : '';
 
     if (state.plannerMode !== 'week' && state.viewMode === 'tasks') state.viewMode = 'calendar';
