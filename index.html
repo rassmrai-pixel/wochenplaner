@@ -753,7 +753,8 @@
     body.cloud-signed-out .cloud-form button {
       width: 100%;
     }
-    body.cloud-signed-in .cloud-panel {
+    body.cloud-signed-in .cloud-panel,
+    body.cloud-guest .cloud-panel {
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -764,6 +765,9 @@
       background: rgba(17, 24, 39, 0.58);
       padding: 10px;
       margin: 0 0 14px;
+    }
+    body.cloud-guest .cloud-panel {
+      border-color: rgba(249, 115, 22, 0.45);
     }
 
   </style>
@@ -799,6 +803,7 @@
         <button class="primary" id="loginBtn">Einloggen</button>
         <button class="ghost" id="signupBtn">Registrieren</button>
         <button class="ghost" id="magicLinkBtn">Magic Link</button>
+        <button class="ghost" id="skipLoginBtn">Ohne Login lokal nutzen</button>
         <button class="ghost" id="logoutBtn" style="display:none;">Ausloggen</button>
       </div>
     </section>
@@ -937,10 +942,12 @@
   const slotsPerDay = 96;
   const storageKeyV2 = 'perfekte-woche-planer-v2';
   const storageKeyV1 = 'perfekte-woche-planer-v1';
+  const authModeKey = 'perfekte-woche-auth-mode';
   const SUPABASE_URL = 'https://uwynzmdsveplxfqgwzqp.supabase.co';
   const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_zIKjzTf24k4BDsVrQAyeZQ_WALpNEkH';
   const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY) : null;
   let cloudUser = null;
+  let guestMode = localStorage.getItem(authModeKey) === 'guest';
   let cloudSaveTimer = null;
   let cloudLoading = false;
   const cellHeight = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell-h')) || 18;
@@ -1043,6 +1050,7 @@
   const loginBtn = document.getElementById('loginBtn');
   const signupBtn = document.getElementById('signupBtn');
   const magicLinkBtn = document.getElementById('magicLinkBtn');
+  const skipLoginBtn = document.getElementById('skipLoginBtn');
   const logoutBtn = document.getElementById('logoutBtn');
 
   function id() { return 'e-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8); }
@@ -1202,18 +1210,28 @@
 
   function renderAuthUi() {
     const signedIn = Boolean(cloudUser);
+    const locked = !signedIn && !guestMode;
     document.body.classList.toggle('cloud-signed-in', signedIn);
-    document.body.classList.toggle('cloud-signed-out', !signedIn);
+    document.body.classList.toggle('cloud-signed-out', locked);
+    document.body.classList.toggle('cloud-guest', !signedIn && guestMode);
+
     loginBtn.style.display = signedIn ? 'none' : '';
     signupBtn.style.display = signedIn ? 'none' : '';
     magicLinkBtn.style.display = signedIn ? 'none' : '';
+    skipLoginBtn.style.display = signedIn || guestMode ? 'none' : '';
     logoutBtn.style.display = signedIn ? '' : 'none';
     authEmail.style.display = signedIn ? 'none' : '';
     authPassword.style.display = signedIn ? 'none' : '';
+
+    const title = cloudPanel.querySelector('.cloud-title');
+    if (title) title.textContent = signedIn ? 'Cloud Sync' : (guestMode ? 'Lokaler Modus' : 'Anmelden');
+
     if (signedIn) {
       setCloudStatus(`Eingeloggt als ${cloudUser.email || 'Nutzer'} · Cloud Sync aktiv.`, 'signed-in');
+    } else if (guestMode) {
+      setCloudStatus('Ohne Login aktiv · deine Daten werden nur lokal auf diesem Gerät gespeichert. Für Cloud Sync bitte einloggen.');
     } else {
-      setCloudStatus('Nicht eingeloggt · Daten sind aktuell nur lokal auf diesem Gerät.');
+      setCloudStatus('Bitte einloggen oder registrieren. Alternativ kannst du ohne Login lokal starten.');
     }
   }
 
@@ -1280,11 +1298,19 @@
     renderAuthUi();
     const { data } = await supabaseClient.auth.getSession();
     cloudUser = data.session?.user || null;
+    if (cloudUser) {
+      guestMode = false;
+      localStorage.removeItem(authModeKey);
+    }
     renderAuthUi();
     if (cloudUser) await loadCloudState();
 
     supabaseClient.auth.onAuthStateChange(async (_event, session) => {
       cloudUser = session?.user || null;
+      if (cloudUser) {
+        guestMode = false;
+        localStorage.removeItem(authModeKey);
+      }
       renderAuthUi();
       if (cloudUser) await loadCloudState();
     });
@@ -1333,6 +1359,14 @@
     if (!supabaseClient) return;
     await supabaseClient.auth.signOut();
     cloudUser = null;
+    guestMode = false;
+    localStorage.removeItem(authModeKey);
+    renderAuthUi();
+  }
+
+  function skipLoginLocal() {
+    guestMode = true;
+    localStorage.setItem(authModeKey, 'guest');
     renderAuthUi();
   }
   function clamp(n, min, max) { return Math.max(min, Math.min(max, Number.isFinite(n) ? n : min)); }
@@ -2138,6 +2172,7 @@
   signupBtn.onclick = signUpWithPassword;
   magicLinkBtn.onclick = sendMagicLink;
   logoutBtn.onclick = signOut;
+  skipLoginBtn.onclick = skipLoginLocal;
   authPassword.addEventListener('keydown', e => { if (e.key === 'Enter') signInWithPassword(); });
 
   document.getElementById('habitToggle').onclick = () => { state.habitOpen = !state.habitOpen; saveState(); renderHabits(); };
