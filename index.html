@@ -848,6 +848,59 @@
       border-color: rgba(249, 115, 22, 0.45);
     }
 
+
+    /* Kategorie erstellen / bearbeiten */
+    .category-modal-color-row {
+      display: grid;
+      grid-template-columns: 1fr 58px;
+      gap: 10px;
+      align-items: end;
+    }
+    .category-modal-color-row input[type="color"] {
+      width: 58px;
+      min-width: 58px;
+      height: 42px;
+    }
+    .category-habit-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+      padding: 10px;
+      border: 1px solid var(--line-soft);
+      border-radius: 12px;
+      background: rgba(2, 6, 23, 0.26);
+      color: var(--text);
+      font-size: 14px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .category-habit-row input {
+      width: 18px;
+      height: 18px;
+      min-height: auto;
+      accent-color: #38bdf8;
+    }
+    .category-preview {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: rgba(31, 41, 55, 0.7);
+      width: max-content;
+      max-width: 100%;
+      font-size: 13px;
+    }
+    .category-modal-note {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+      margin-top: 10px;
+    }
+
   </style>
 </head>
 <body>
@@ -857,9 +910,7 @@
       <div class="subtitle">Wochenansicht · 24 Stunden · 15-Minuten-Schritte · Kalender + Habit Tracker + To-do Planner + Tages-Taskansicht</div>
     </div>
     <div class="toolbar">
-      <input id="quickLabel" type="text" placeholder="Kategorie, z. B. Lernen" />
-      <input id="quickColor" type="color" value="#22c55e" title="Farbe" />
-      <button class="primary" id="addCategoryBtn">Kategorie hinzufügen</button>
+      <button class="primary" id="addCategoryBtn">Neue Kategorie</button>
       <button id="exportBtn">Export</button>
       <button id="importBtn">Import</button>
       <input id="importFile" type="file" accept="application/json" hidden />
@@ -1018,6 +1069,38 @@
     </div>
   </div>
 
+
+  <div class="modal-backdrop" id="categoryModalBackdrop">
+    <div class="modal">
+      <h2 id="categoryModalTitle">Neue Kategorie</h2>
+      <label for="categoryLabel">Name</label>
+      <input id="categoryLabel" type="text" placeholder="z. B. Lernen, Boxen, Einkauf" />
+      <div class="category-modal-color-row">
+        <div>
+          <label for="categoryColor">Farbe</label>
+          <input id="categoryColorText" type="text" placeholder="#22c55e" />
+        </div>
+        <input id="categoryColor" type="color" value="#22c55e" title="Farbe" />
+      </div>
+      <label class="category-habit-row" for="categoryHabit">
+        <input id="categoryHabit" type="checkbox" checked />
+        <span>Im Habit Tracker mitzählen</span>
+      </label>
+      <div class="category-preview" id="categoryPreview">
+        <span class="dot" style="background:#22c55e"></span>
+        <span>Neue Kategorie</span>
+      </div>
+      <div class="category-modal-note" id="categoryModalNote">
+        Tipp: Wenn du eine Kategorie löschst, bleiben bestehende Blöcke erhalten und werden automatisch auf „Orga / To-dos“ umgestellt.
+      </div>
+      <div class="modal-actions">
+        <button class="danger" id="deleteCategoryBtn">Kategorie löschen</button>
+        <button class="ghost" id="cancelCategoryModalBtn">Abbrechen</button>
+        <button class="primary" id="saveCategoryBtn">Speichern</button>
+      </div>
+    </div>
+  </div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 (() => {
@@ -1067,6 +1150,7 @@
   let dragStart = null;
   let dragEnd = null;
   let editingId = null;
+  let editingCategoryId = null;
   let pendingTodoId = null;
   let presetSource = null;
   let lastAutoScrollKey = null;
@@ -1074,8 +1158,6 @@
   const calendar = document.getElementById('calendar');
   const calendarWrap = document.getElementById('calendarWrap');
   const legend = document.getElementById('legend');
-  const quickLabel = document.getElementById('quickLabel');
-  const quickColor = document.getElementById('quickColor');
   const modalBackdrop = document.getElementById('modalBackdrop');
   const modalTitle = document.getElementById('modalTitle');
   const modalLabel = document.getElementById('modalLabel');
@@ -1142,6 +1224,16 @@
   const magicLinkBtn = document.getElementById('magicLinkBtn');
   const skipLoginBtn = document.getElementById('skipLoginBtn');
   const logoutBtn = document.getElementById('logoutBtn');
+  const categoryModalBackdrop = document.getElementById('categoryModalBackdrop');
+  const categoryModalTitle = document.getElementById('categoryModalTitle');
+  const categoryLabel = document.getElementById('categoryLabel');
+  const categoryColor = document.getElementById('categoryColor');
+  const categoryColorText = document.getElementById('categoryColorText');
+  const categoryHabit = document.getElementById('categoryHabit');
+  const categoryPreview = document.getElementById('categoryPreview');
+  const deleteCategoryBtn = document.getElementById('deleteCategoryBtn');
+  const cancelCategoryModalBtn = document.getElementById('cancelCategoryModalBtn');
+  const saveCategoryBtn = document.getElementById('saveCategoryBtn');
 
   function id() { return 'e-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8); }
   function clone(x) { return JSON.parse(JSON.stringify(x)); }
@@ -1602,10 +1694,113 @@
     Object.entries(state.categories).forEach(([catId, cat]) => {
       const pill = document.createElement('div');
       pill.className = `pill ${state.selectedCategory === catId ? 'active' : ''}`;
+      pill.title = 'Kategorie auswählen, bearbeiten oder löschen';
       pill.innerHTML = `<span class="dot" style="background:${cat.color}"></span>${escapeHtml(cat.label)}${cat.habit ? '' : ' · kein Habit'}`;
-      pill.onclick = () => { state.selectedCategory = catId; saveState(); renderLegend(); };
+      pill.onclick = () => {
+        state.selectedCategory = catId;
+        saveState();
+        renderLegend();
+        openCategoryEditor(catId);
+      };
       legend.appendChild(pill);
     });
+  }
+
+  function normalizeHexColor(value, fallback = '#22c55e') {
+    const raw = String(value || '').trim();
+    if (/^#[0-9a-f]{6}$/i.test(raw)) return raw;
+    if (/^[0-9a-f]{6}$/i.test(raw)) return `#${raw}`;
+    return fallback;
+  }
+
+  function updateCategoryPreview() {
+    const color = normalizeHexColor(categoryColorText.value || categoryColor.value, categoryColor.value || '#22c55e');
+    const label = categoryLabel.value.trim() || 'Neue Kategorie';
+    categoryColor.value = color;
+    categoryColorText.value = color;
+    categoryPreview.innerHTML = `<span class="dot" style="background:${color}"></span><span>${escapeHtml(label)}${categoryHabit.checked ? '' : ' · kein Habit'}</span>`;
+  }
+
+  function openCategoryEditor(catId = null) {
+    editingCategoryId = catId;
+    const cat = catId ? state.categories[catId] : null;
+    categoryModalTitle.textContent = cat ? 'Kategorie bearbeiten' : 'Neue Kategorie';
+    categoryLabel.value = cat?.label || '';
+    categoryColor.value = normalizeHexColor(cat?.color || '#22c55e');
+    categoryColorText.value = categoryColor.value;
+    categoryHabit.checked = cat ? Boolean(cat.habit) : true;
+    deleteCategoryBtn.style.display = cat ? '' : 'none';
+    updateCategoryPreview();
+    categoryModalBackdrop.style.display = 'flex';
+    setTimeout(() => categoryLabel.focus(), 50);
+  }
+
+  function closeCategoryModal() {
+    categoryModalBackdrop.style.display = 'none';
+    editingCategoryId = null;
+  }
+
+  function createCategoryId(label) {
+    const base = label.toLowerCase()
+      .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+      .replace(/[^a-z0-9]+/gi, '-')
+      .replace(/^-|-$/g, '') || 'kategorie';
+    let candidate = base;
+    let counter = 2;
+    while (state.categories[candidate]) {
+      candidate = `${base}-${counter}`;
+      counter++;
+    }
+    return candidate;
+  }
+
+  function saveCategoryFromModal() {
+    const label = categoryLabel.value.trim();
+    if (!label) { alert('Bitte gib einen Namen für die Kategorie ein.'); return; }
+    const color = normalizeHexColor(categoryColorText.value || categoryColor.value);
+    const payload = { label, color, habit: Boolean(categoryHabit.checked) };
+
+    const catId = editingCategoryId || createCategoryId(label);
+    state.categories[catId] = payload;
+    state.selectedCategory = catId;
+    closeCategoryModal();
+    saveState();
+    renderAll();
+  }
+
+  function deleteCategoryFromModal() {
+    const catId = editingCategoryId;
+    if (!catId || !state.categories[catId]) return;
+    const remainingIds = Object.keys(state.categories).filter(id => id !== catId);
+    if (!remainingIds.length) {
+      alert('Du brauchst mindestens eine Kategorie.');
+      return;
+    }
+    const catLabel = state.categories[catId].label;
+    const replacementId = remainingIds.includes('orga') ? 'orga' : remainingIds[0];
+    const replacementLabel = state.categories[replacementId]?.label || 'eine andere Kategorie';
+    if (!confirm(`Kategorie „${catLabel}“ wirklich löschen? Bestehende Blöcke und To-dos werden auf „${replacementLabel}“ umgestellt.`)) return;
+
+    function replaceEventCategory(ev) {
+      if (ev.categoryId === catId) ev.categoryId = replacementId;
+      return ev;
+    }
+    state.templateEvents = (state.templateEvents || []).map(replaceEventCategory);
+    if (state.weekEventsByWeek && typeof state.weekEventsByWeek === 'object') {
+      Object.keys(state.weekEventsByWeek).forEach(weekKey => {
+        state.weekEventsByWeek[weekKey] = (state.weekEventsByWeek[weekKey] || []).map(replaceEventCategory);
+      });
+    }
+    state.todos = (state.todos || []).map(todo => {
+      if (todo.categoryId === catId) todo.categoryId = replacementId;
+      return todo;
+    });
+    delete state.categories[catId];
+    if (state.selectedCategory === catId) state.selectedCategory = replacementId;
+    currentWeekEvents();
+    closeCategoryModal();
+    saveState();
+    renderAll();
   }
 
   function autoScrollCalendarToMorning() {
@@ -2299,16 +2494,19 @@
     saveState();
     renderTodoDrawer();
   };
-  document.getElementById('addCategoryBtn').onclick = () => {
-    const label = quickLabel.value.trim();
-    if (!label) { alert('Bitte gib einen Namen für die Kategorie ein.'); return; }
-    const catId = label.toLowerCase().replace(/[^a-z0-9äöüß]+/gi, '-').replace(/^-|-$/g, '') + '-' + Date.now().toString(36);
-    state.categories[catId] = { label, color: quickColor.value, habit: true };
-    state.selectedCategory = catId;
-    quickLabel.value = '';
-    saveState();
-    renderAll();
-  };
+  document.getElementById('addCategoryBtn').onclick = () => openCategoryEditor(null);
+
+  cancelCategoryModalBtn.onclick = closeCategoryModal;
+  saveCategoryBtn.onclick = saveCategoryFromModal;
+  deleteCategoryBtn.onclick = deleteCategoryFromModal;
+  categoryLabel.addEventListener('input', updateCategoryPreview);
+  categoryColor.addEventListener('input', () => { categoryColorText.value = categoryColor.value; updateCategoryPreview(); });
+  categoryColorText.addEventListener('input', updateCategoryPreview);
+  categoryHabit.addEventListener('change', updateCategoryPreview);
+  categoryModalBackdrop.addEventListener('click', e => { if (e.target === categoryModalBackdrop) closeCategoryModal(); });
+  categoryLabel.addEventListener('keydown', e => { if (e.key === 'Enter') saveCategoryFromModal(); });
+
+
 
   document.getElementById('addTodoBtn').onclick = () => {
     const text = todoInput.value.trim();
