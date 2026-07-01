@@ -1078,10 +1078,10 @@
     <div class="legend" id="legend"></div>
 
     <div class="planner-switch">
-      <button id="templateModeBtn">Routine-Vorlage</button>
       <button class="primary" id="weekModeBtn">Kalender</button>
       <button id="trackingModeBtn">Tracking</button>
-      <button class="ghost" id="applyTemplateBtn">Vorlage übernehmen</button>
+      <button id="templateModeBtn">Routine-Vorlage</button>
+      <button class="ghost" id="applyTemplateBtn">Aktuelle Vorlage übernehmen</button>
       <span class="planner-note" id="plannerNote">Kalenderwoche als Hauptansicht.</span>
     </div>
 
@@ -2398,9 +2398,9 @@
     taskDaySelect.disabled = state.plannerMode !== 'week';
 
     if (state.plannerMode === 'template') {
-      plannerNote.textContent = 'Routine-Vorlage bearbeiten. Hier legst du deine ideale Standardwoche fest, hier wird noch nichts getrackt.';
+      plannerNote.textContent = 'Routine-Vorlage bearbeiten. Hier legst du deine ideale Standardwoche fest.';
     } else if (state.plannerMode === 'week') {
-      plannerNote.textContent = `Kalenderwoche abhaken · KW ${weekInfo.week}/${weekInfo.year}`;
+      plannerNote.textContent = `Kalender · KW ${weekInfo.week}/${weekInfo.year}`;
     } else {
       plannerNote.textContent = `Auswertung für KW ${weekInfo.week}/${weekInfo.year}: Routine und Extra-To-dos getrennt.`;
     }
