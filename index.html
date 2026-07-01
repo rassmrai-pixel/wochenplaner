@@ -513,7 +513,7 @@
     .calendar {
       display: grid;
       grid-template-columns: var(--time-w) repeat(7, minmax(var(--day-min-w), 1fr));
-      grid-template-rows: 44px calc(96 * var(--cell-h));
+      grid-template-rows: 62px calc(96 * var(--cell-h));
       min-width: calc(var(--time-w) + 7 * var(--day-min-w));
       position: relative;
     }
@@ -524,11 +524,48 @@
       background: #111827;
       border-bottom: 1px solid var(--line);
       border-right: 1px solid var(--line);
-      padding: 12px 10px;
+      padding: 9px 10px 8px;
       text-align: center;
       font-weight: 700;
       font-size: 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 5px;
     }
+
+    .day-progress-wrap {
+      display: grid;
+      gap: 3px;
+      width: 100%;
+    }
+    .day-progress-meta {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 800;
+      line-height: 1;
+      white-space: nowrap;
+    }
+    .day-progress-track {
+      width: 100%;
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.18);
+      overflow: hidden;
+    }
+    .day-progress-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 999px;
+      transition: width 0.22s ease, background 0.22s ease;
+      background: #64748b;
+    }
+    .day-progress-fill.progress-red { background: #ef4444; }
+    .day-progress-fill.progress-orange { background: #f97316; }
+    .day-progress-fill.progress-yellow { background: #eab308; }
+    .day-progress-fill.progress-lightgreen { background: #84cc16; }
+    .day-progress-fill.progress-darkgreen { background: #16a34a; }
+    .head-cell.today .day-progress-meta { color: rgba(255,255,255,0.86); }
     .time-grid {
       grid-column: 1;
       grid-row: 2;
@@ -1824,6 +1861,22 @@
     return total ? Math.round((done / total) * 100) : 0;
   }
 
+  function progressColorClass(percent, total) {
+    if (!total) return '';
+    if (percent >= 100) return 'progress-darkgreen';
+    if (percent >= 75) return 'progress-lightgreen';
+    if (percent >= 50) return 'progress-yellow';
+    if (percent >= 25) return 'progress-orange';
+    return 'progress-red';
+  }
+
+  function dayCompletionStats(dayIndex) {
+    if (!isWeekMode()) return { total: 0, done: 0, percent: 0 };
+    const items = currentWeekEvents().filter(ev => ev.day === dayIndex && state.categories[ev.categoryId]?.habit);
+    const done = items.filter(ev => ev.done).length;
+    return { total: items.length, done, percent: makePercent(done, items.length) };
+  }
+
 
   function toLocalDate(value) {
     if (value instanceof Date) return new Date(value.getFullYear(), value.getMonth(), value.getDate());
@@ -2095,7 +2148,15 @@
     } else if (isTemplateMode()) {
       div.textContent = text;
     } else {
-      div.innerHTML = `${text}<span class="day-date">${formatShortDate(getDayDate(dayIndex))}${isToday ? ' · Heute' : ''}</span>`;
+      const stats = dayCompletionStats(dayIndex);
+      const colorClass = progressColorClass(stats.percent, stats.total);
+      const progressLabel = stats.total ? `${stats.percent}% · ${stats.done}/${stats.total}` : '0 Aufgaben';
+      div.innerHTML = `
+        <div>${text}<span class="day-date">${formatShortDate(getDayDate(dayIndex))}${isToday ? ' · Heute' : ''}</span></div>
+        <div class="day-progress-wrap" title="${stats.done}/${stats.total} erledigt">
+          <div class="day-progress-track"><div class="day-progress-fill ${colorClass}" style="width:${stats.percent}%"></div></div>
+          <div class="day-progress-meta">${progressLabel}</div>
+        </div>`;
     }
     return div;
   }
