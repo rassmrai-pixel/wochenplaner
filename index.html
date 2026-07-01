@@ -463,7 +463,20 @@
       font-weight: 700;
       font-size: 14px;
     }
-    .time-grid { grid-column: 1; grid-row: 2; }
+    .time-grid {
+      grid-column: 1;
+      grid-row: 2;
+      position: sticky;
+      left: 0;
+      z-index: 18;
+      background: rgba(15, 23, 42, 0.96);
+      box-shadow: 2px 0 0 var(--line);
+    }
+    .calendar > .head-cell:first-child {
+      left: 0;
+      z-index: 28;
+      box-shadow: 2px 0 0 var(--line), 0 1px 0 var(--line);
+    }
     .time-cell {
       height: var(--cell-h);
       border-right: 1px solid var(--line);
