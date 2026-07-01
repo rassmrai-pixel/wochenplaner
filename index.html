@@ -433,6 +433,54 @@
     .todo-main { min-width: 0; }
     .todo-name { font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .todo-meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .todo-subtask-summary { color: var(--muted); font-size: 12px; margin-top: 5px; }
+    .todo-subtasks {
+      grid-column: 1 / -1;
+      display: grid;
+      gap: 8px;
+      border-top: 1px solid var(--line-soft);
+      padding-top: 8px;
+      margin-top: 2px;
+    }
+    .todo-subtask-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .todo-subtask-list { display: grid; gap: 6px; }
+    .todo-subtask {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 8px;
+      align-items: center;
+      border: 1px solid var(--line-soft);
+      border-radius: 10px;
+      padding: 7px 8px;
+      background: rgba(15, 23, 42, 0.45);
+    }
+    .todo-subtask.done { opacity: 0.68; }
+    .todo-subtask.done .todo-subtask-text { text-decoration: line-through; }
+    .todo-subtask input { width: 16px; height: 16px; min-height: auto; accent-color: #38bdf8; }
+    .todo-subtask-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+    .todo-subtask-actions { display: flex; gap: 5px; align-items: center; }
+    .todo-subtask-actions button { padding: 4px 7px; min-height: 26px; font-size: 11px; }
+    .todo-auto-badge {
+      border: 1px solid var(--line-soft);
+      border-radius: 999px;
+      padding: 4px 7px;
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .todo-auto-badge.active {
+      color: #bbf7d0;
+      border-color: rgba(34,197,94,0.42);
+      background: rgba(34,197,94,0.12);
+    }
     .todo-status {
       border: 1px solid var(--line-soft);
       border-radius: 999px;
@@ -1576,8 +1624,15 @@
       done: Boolean(todo.done || todo.status === 'done'),
       plannedEventId: todo.plannedEventId || null,
       plannedWeekStart: todo.plannedWeekStart || null,
+      autoComplete: Boolean(todo.autoComplete),
+      subtasks: Array.isArray(todo.subtasks) ? todo.subtasks.map(sub => ({
+        id: sub.id || id(),
+        text: sub.text || 'Untertask',
+        done: Boolean(sub.done),
+        createdAt: sub.createdAt || new Date().toISOString()
+      })) : [],
       createdAt: todo.createdAt || new Date().toISOString()
-    })) : [];
+    })).map(todo => syncTodoAutoComplete(todo)) : [];
 
     if (!s.categories[s.selectedCategory]) s.selectedCategory = 'gym';
     if (!['calendar', 'tasks'].includes(s.viewMode)) s.viewMode = 'calendar';
@@ -1926,11 +1981,35 @@
       <div class="drawer-progress-sub">${escapeHtml(subText)}</div>`;
   }
 
+  function subtaskStats(todo) {
+    const subtasks = Array.isArray(todo.subtasks) ? todo.subtasks : [];
+    const total = subtasks.length;
+    const done = subtasks.filter(sub => sub.done).length;
+    return { total, done, percent: makePercent(done, total) };
+  }
+
+  function syncTodoAutoComplete(todo) {
+    if (!todo) return todo;
+    if (!Array.isArray(todo.subtasks)) todo.subtasks = [];
+    if (todo.autoComplete && todo.subtasks.length) {
+      const allDone = todo.subtasks.every(sub => sub.done);
+      todo.done = allDone;
+      todo.status = allDone ? 'done' : (todo.plannedEventId ? 'planned' : 'open');
+    }
+    return todo;
+  }
+
+  function isTodoDone(todo) {
+    syncTodoAutoComplete(todo);
+    return Boolean(todo.done || todo.status === 'done');
+  }
+
   function todoCompletionStats() {
+    state.todos.forEach(syncTodoAutoComplete);
     const total = state.todos.length;
-    const done = state.todos.filter(t => t.done || t.status === 'done').length;
-    const open = state.todos.filter(t => !t.done && t.status === 'open').length;
-    const planned = state.todos.filter(t => !t.done && t.status === 'planned').length;
+    const done = state.todos.filter(t => isTodoDone(t)).length;
+    const open = state.todos.filter(t => !isTodoDone(t) && t.status === 'open').length;
+    const planned = state.todos.filter(t => !isTodoDone(t) && t.status === 'planned').length;
     return { total, done, open, planned, percent: makePercent(done, total) };
   }
 
@@ -2772,15 +2851,17 @@
   }
 
   function todoStatusLabel(todo) {
-    if (todo.done || todo.status === 'done') return 'Erledigt';
+    syncTodoAutoComplete(todo);
+    if (isTodoDone(todo)) return 'Erledigt';
     if (todo.status === 'planned') return 'Geplant';
     return 'Offen';
   }
 
   function renderTodos() {
-    const open = state.todos.filter(t => !t.done && t.status === 'open').length;
-    const planned = state.todos.filter(t => !t.done && t.status === 'planned').length;
-    const done = state.todos.filter(t => t.done || t.status === 'done').length;
+    state.todos.forEach(syncTodoAutoComplete);
+    const open = state.todos.filter(t => !isTodoDone(t) && t.status === 'open').length;
+    const planned = state.todos.filter(t => !isTodoDone(t) && t.status === 'planned').length;
+    const done = state.todos.filter(t => isTodoDone(t)).length;
     todoSummary.textContent = `${open} offen · ${planned} geplant · ${done} erledigt`;
     const todoStats = todoCompletionStats();
     renderDrawerProgress(
@@ -2798,31 +2879,63 @@
 
     const sorted = [...state.todos].sort((a, b) => {
       const order = { open: 0, planned: 1, done: 2 };
-      const aStatus = a.done ? 'done' : a.status;
-      const bStatus = b.done ? 'done' : b.status;
+      const aStatus = isTodoDone(a) ? 'done' : a.status;
+      const bStatus = isTodoDone(b) ? 'done' : b.status;
       return (order[aStatus] ?? 0) - (order[bStatus] ?? 0) || String(a.createdAt).localeCompare(String(b.createdAt));
     });
 
     sorted.forEach(todo => {
+      syncTodoAutoComplete(todo);
       const cat = state.categories[todo.categoryId] || state.categories.orga;
-      const item = document.createElement('label');
-      item.className = `todo-item ${todo.done || todo.status === 'done' ? 'done' : ''}`;
+      const subStats = subtaskStats(todo);
+      const doneState = isTodoDone(todo);
+      const autoDisabled = todo.autoComplete && subStats.total > 0;
+      const item = document.createElement('div');
+      item.className = `todo-item ${doneState ? 'done' : ''}`;
       item.style.borderLeft = `5px solid ${cat.color}`;
+      const subtaskSummary = subStats.total
+        ? `<div class="todo-subtask-summary">Untertasks: ${subStats.done}/${subStats.total} erledigt · ${subStats.percent}%</div>`
+        : '<div class="todo-subtask-summary">Noch keine Untertasks</div>';
+      const autoBadge = `<span class="todo-auto-badge ${todo.autoComplete ? 'active' : ''}">${todo.autoComplete ? 'Auto-Erledigen an' : 'Manuell abhaken'}</span>`;
+      const subtasksHtml = subStats.total ? `
+        <div class="todo-subtask-list">
+          ${todo.subtasks.map(sub => `
+            <div class="todo-subtask ${sub.done ? 'done' : ''}" data-subtask-id="${sub.id}">
+              <input class="todo-subtask-check" type="checkbox" ${sub.done ? 'checked' : ''} />
+              <div class="todo-subtask-text" title="${escapeHtml(sub.text)}">${escapeHtml(sub.text)}</div>
+              <div class="todo-subtask-actions">
+                <button type="button" class="ghost todo-subtask-edit">Edit</button>
+                <button type="button" class="danger todo-subtask-delete">×</button>
+              </div>
+            </div>`).join('')}
+        </div>` : '';
+
       item.innerHTML = `
-        <input type="checkbox" ${todo.done || todo.status === 'done' ? 'checked' : ''} />
+        <input class="todo-main-check" type="checkbox" ${doneState ? 'checked' : ''} ${autoDisabled ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : ''} />
         <div class="todo-main">
           <div class="todo-name" title="Doppelklick zum Umbenennen">${escapeHtml(todo.text)}</div>
           <div class="todo-meta">${escapeHtml(cat.label)}</div>
+          ${subtaskSummary}
         </div>
         <span class="todo-status">${todoStatusLabel(todo)}</span>
+        <div class="todo-subtasks">
+          <div class="todo-subtask-head">
+            <span>${subStats.total ? `Untertasks · ${subStats.done}/${subStats.total}` : 'Untertasks hinzufügen'}</span>
+            ${autoBadge}
+          </div>
+          ${subtasksHtml}
+        </div>
         <div class="todo-actions">
+          <button type="button" class="small ghost todo-add-subtask-btn">+ Untertask</button>
+          <button type="button" class="small ghost todo-auto-btn">${todo.autoComplete ? 'Auto aus' : 'Auto an'}</button>
           <button type="button" class="small ghost todo-plan-btn">${todo.status === 'planned' ? 'Erneut planen' : 'Einplanen'}</button>
           <button type="button" class="small ghost todo-edit-btn">Umbenennen</button>
           <button type="button" class="small danger todo-delete-btn">Löschen</button>
         </div>`;
 
-      const cb = item.querySelector('input');
+      const cb = item.querySelector('.todo-main-check');
       cb.addEventListener('change', () => {
+        if (todo.autoComplete && todo.subtasks.length) return;
         todo.done = cb.checked;
         todo.status = cb.checked ? 'done' : (todo.plannedEventId ? 'planned' : 'open');
         saveState();
@@ -2855,6 +2968,62 @@
         e.preventDefault();
         e.stopPropagation();
         renameTodo();
+      });
+
+      item.querySelector('.todo-add-subtask-btn').addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        const text = prompt('Untertask hinzufügen, z. B. saugen, Wäsche, lüften:');
+        if (text === null) return;
+        const clean = text.trim();
+        if (!clean) return alert('Der Untertask braucht einen Namen.');
+        if (!Array.isArray(todo.subtasks)) todo.subtasks = [];
+        todo.subtasks.push({ id: id(), text: clean, done: false, createdAt: new Date().toISOString() });
+        syncTodoAutoComplete(todo);
+        saveState();
+        renderAll();
+      });
+
+      item.querySelector('.todo-auto-btn').addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        todo.autoComplete = !todo.autoComplete;
+        syncTodoAutoComplete(todo);
+        saveState();
+        renderAll();
+      });
+
+      item.querySelectorAll('.todo-subtask').forEach(row => {
+        const subId = row.dataset.subtaskId;
+        const sub = todo.subtasks.find(x => x.id === subId);
+        if (!sub) return;
+        row.querySelector('.todo-subtask-check').addEventListener('change', e => {
+          e.stopPropagation();
+          sub.done = e.target.checked;
+          syncTodoAutoComplete(todo);
+          saveState();
+          renderAll();
+        });
+        row.querySelector('.todo-subtask-edit').addEventListener('click', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          const next = prompt('Untertask bearbeiten:', sub.text);
+          if (next === null) return;
+          const clean = next.trim();
+          if (!clean) return alert('Der Untertask braucht einen Namen.');
+          sub.text = clean;
+          saveState();
+          renderAll();
+        });
+        row.querySelector('.todo-subtask-delete').addEventListener('click', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!confirm('Diesen Untertask löschen?')) return;
+          todo.subtasks = todo.subtasks.filter(x => x.id !== subId);
+          syncTodoAutoComplete(todo);
+          saveState();
+          renderAll();
+        });
       });
 
       item.querySelector('.todo-edit-btn').addEventListener('click', e => {
@@ -3028,6 +3197,8 @@
       status: 'open',
       done: false,
       plannedEventId: null,
+      autoComplete: false,
+      subtasks: [],
       createdAt: new Date().toISOString()
     });
     todoInput.value = '';
