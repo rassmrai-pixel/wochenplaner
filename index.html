@@ -1205,6 +1205,75 @@
       flex-wrap: wrap;
     }
 
+
+    /* Drawer Tagesstruktur: Habits / geplante To-dos / To-dos ohne Uhrzeit */
+    .day-tabs {
+      align-items: center;
+    }
+    .day-add-tab-btn {
+      width: 44px;
+      min-width: 44px;
+      height: 44px;
+      border-radius: 999px;
+      padding: 0;
+      font-size: 22px;
+      font-weight: 900;
+      line-height: 1;
+    }
+    .drawer-day-sections {
+      display: grid;
+      gap: 14px;
+    }
+    .drawer-task-section {
+      display: grid;
+      gap: 8px;
+    }
+    .drawer-task-section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      color: var(--text);
+      font-weight: 950;
+      font-size: 15px;
+      padding: 2px 2px 0;
+    }
+    .drawer-task-section-sub {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+      margin-top: -4px;
+      padding: 0 2px;
+    }
+    .drawer-section-badge {
+      border: 1px solid var(--line-soft);
+      background: rgba(148, 163, 184, 0.10);
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-size: 12px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+    .habit-item.routine-item {
+      border-left: 5px solid #f97316;
+    }
+    .habit-item.scheduled-todo-item {
+      border-left: 5px solid rgba(148, 163, 184, 0.75);
+      background: rgba(15, 23, 42, 0.48);
+    }
+    .day-todo-form.compact-hidden {
+      display: none;
+    }
+    .drawer-day-todos.no-time-section {
+      border-top: 1px solid var(--line-soft);
+      margin-top: 2px;
+    }
+    .day-todo-card.unscheduled-todo-card {
+      border-style: dashed;
+      background: rgba(15, 23, 42, 0.28);
+    }
+
   </style>
 </head>
 <body>
@@ -1372,13 +1441,13 @@
         <div class="drawer-progress-card" id="drawerHabitProgress"></div>
         <div class="day-tabs" id="dayTabs"></div>
         <div class="habit-list" id="habitList"></div>
-        <div class="drawer-day-todos" id="drawerDayTodos">
+        <div class="drawer-day-todos no-time-section" id="drawerDayTodos">
           <div class="drawer-section-head">
-            <span>To-dos für diesen Tag</span>
+            <span>To-dos ohne Uhrzeit</span>
             <span id="dayTodoCount" class="todo-status">0</span>
           </div>
-          <div class="drawer-section-sub">Für Aufgaben, die an diesem Tag sichtbar sein sollen, aber noch keine feste Uhrzeit haben.</div>
-          <div class="day-todo-form">
+          <div class="drawer-section-sub">Für Aufgaben, die heute sichtbar sein sollen, aber noch nicht zeitlich im Kalender liegen.</div>
+          <div class="day-todo-form compact-hidden">
             <input id="dayTodoInput" type="text" placeholder="Tages-To-do hinzufügen, z. B. Wohnung aufräumen" />
             <select id="dayTodoCategorySelect" title="Kategorie"></select>
             <button class="small primary" id="addDayTodoBtn">+ Tages-To-do</button>
@@ -2560,6 +2629,46 @@
     drawerDaySelect.value = String(state.activeHabitDay);
   }
 
+  function createDrawerEventItem(ev, type = 'routine') {
+    const cat = state.categories[ev.categoryId] || state.categories.orga;
+    const item = document.createElement('label');
+    item.className = `habit-item ${type === 'scheduled' ? 'scheduled-todo-item' : 'routine-item'}`;
+    item.innerHTML = `
+      <input type="checkbox" ${ev.done ? 'checked' : ''} />
+      <div>
+        <div class="habit-name">${escapeHtml(ev.label)}</div>
+        <div class="habit-meta">${eventTime(ev)} · ${escapeHtml(cat.label)}${type === 'scheduled' ? ' · eingeplant' : ' · Routine'}</div>
+      </div>
+      <button type="button" class="small ghost">Bearbeiten</button>`;
+    const cb = item.querySelector('input');
+    cb.addEventListener('change', () => toggleDone(ev.id, cb.checked));
+    item.querySelector('button').addEventListener('click', e => { e.preventDefault(); openEditor(ev.id); });
+    return item;
+  }
+
+  function addDayTodoQuick() {
+    if (!isWeekMode()) return alert('Tages-To-dos kannst du in der Kalenderwoche hinzufügen.');
+    const text = prompt(`${days[state.activeHabitDay]} ${formatShortDate(getDayDate(state.activeHabitDay))}: Tages-To-do ohne Uhrzeit hinzufügen`);
+    if (text === null) return;
+    const clean = text.trim();
+    if (!clean) return alert('Bitte gib ein Tages-To-do ein.');
+    state.todos.push({
+      id: id(),
+      text: clean,
+      categoryId: state.selectedCategory || 'orga',
+      status: 'planned',
+      done: false,
+      plannedEventId: null,
+      plannedWeekStart: state.currentWeekStart,
+      plannedDay: state.activeHabitDay,
+      autoComplete: false,
+      subtasks: [],
+      createdAt: new Date().toISOString()
+    });
+    saveState();
+    renderAll();
+  }
+
   function renderHabits() {
     dayTabs.innerHTML = '';
     fillDrawerDaySelect();
@@ -2571,6 +2680,7 @@
       renderDayTodos();
       return;
     }
+
     days.forEach((day, d) => {
       const btn = document.createElement('button');
       btn.className = `day-tab ${state.activeHabitDay === d ? 'active' : ''}`;
@@ -2578,42 +2688,72 @@
       btn.onclick = () => { state.activeHabitDay = d; saveState(); renderAll(); };
       dayTabs.appendChild(btn);
     });
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'day-tab day-add-tab-btn primary';
+    addBtn.title = 'Tages-To-do ohne Uhrzeit hinzufügen';
+    addBtn.textContent = '+';
+    addBtn.onclick = addDayTodoQuick;
+    dayTabs.appendChild(addBtn);
 
     const stats = dayCompletionStats(state.activeHabitDay);
     renderDrawerProgress(
       drawerHabitProgress,
       `${days[state.activeHabitDay]} ${formatShortDate(getDayDate(state.activeHabitDay))}`,
       stats,
-      stats.total ? `${stats.done}/${stats.total} Tages-Habits erledigt` : 'Für diesen Tag sind noch keine trackbaren Einträge geplant.'
+      stats.total ? `${stats.done}/${stats.total} Tagesaufgaben erledigt` : 'Für diesen Tag sind noch keine trackbaren Einträge geplant.'
     );
 
     const filter = state.drawerHabitFilter || 'all';
-    const list = currentWeekEvents()
-      .filter(ev => ev.day === state.activeHabitDay && state.categories[ev.categoryId]?.habit)
+    const dayEvents = currentWeekEvents()
+      .filter(ev => ev.day === state.activeHabitDay)
       .filter(ev => filter === 'all' || (filter === 'done' ? ev.done : !ev.done))
       .sort((a, b) => a.start - b.start || a.end - b.end);
+
+    const routineList = dayEvents.filter(ev => ev.source !== 'extra' && state.categories[ev.categoryId]?.habit);
+    const scheduledTodos = dayEvents.filter(ev => ev.source === 'extra');
+
     habitList.innerHTML = '';
-    if (!list.length) {
-      habitList.innerHTML = '<div class="habit-empty">Für diesen Filter gibt es an diesem Tag keine Habit-Einträge.</div>';
-      renderDayTodos();
-      return;
+    const wrap = document.createElement('div');
+    wrap.className = 'drawer-day-sections';
+
+    const routineSection = document.createElement('section');
+    routineSection.className = 'drawer-task-section';
+    routineSection.innerHTML = `
+      <div class="drawer-task-section-head">
+        <span>Habits / Routine</span>
+        <span class="drawer-section-badge">${routineList.filter(ev => ev.done).length}/${routineList.length}</span>
+      </div>
+      <div class="drawer-task-section-sub">Feste Bestandteile deiner Routine-Vorlage. Orange markiert.</div>`;
+    if (!routineList.length) {
+      const empty = document.createElement('div');
+      empty.className = 'habit-empty';
+      empty.textContent = 'Für diesen Filter gibt es keine Routine-Habits an diesem Tag.';
+      routineSection.appendChild(empty);
+    } else {
+      routineList.forEach(ev => routineSection.appendChild(createDrawerEventItem(ev, 'routine')));
     }
-    list.forEach(ev => {
-      const cat = state.categories[ev.categoryId];
-      const item = document.createElement('label');
-      item.className = 'habit-item';
-      item.innerHTML = `
-        <input type="checkbox" ${ev.done ? 'checked' : ''} />
-        <div>
-          <div class="habit-name">${escapeHtml(ev.label)}</div>
-          <div class="habit-meta">${eventTime(ev)} · ${escapeHtml(cat.label)}</div>
-        </div>
-        <button type="button" class="small ghost">Bearbeiten</button>`;
-      const cb = item.querySelector('input');
-      cb.addEventListener('change', () => toggleDone(ev.id, cb.checked));
-      item.querySelector('button').addEventListener('click', e => { e.preventDefault(); openEditor(ev.id); });
-      habitList.appendChild(item);
-    });
+    wrap.appendChild(routineSection);
+
+    const scheduledSection = document.createElement('section');
+    scheduledSection.className = 'drawer-task-section';
+    scheduledSection.innerHTML = `
+      <div class="drawer-task-section-head">
+        <span>To-dos mit Uhrzeit</span>
+        <span class="drawer-section-badge">${scheduledTodos.filter(ev => ev.done).length}/${scheduledTodos.length}</span>
+      </div>
+      <div class="drawer-task-section-sub">Spontane oder geplante Aufgaben, die schon als Kalenderblock eingeplant sind.</div>`;
+    if (!scheduledTodos.length) {
+      const empty = document.createElement('div');
+      empty.className = 'habit-empty';
+      empty.textContent = 'Keine zeitlich eingeplanten To-dos für diesen Filter.';
+      scheduledSection.appendChild(empty);
+    } else {
+      scheduledTodos.forEach(ev => scheduledSection.appendChild(createDrawerEventItem(ev, 'scheduled')));
+    }
+    wrap.appendChild(scheduledSection);
+
+    habitList.appendChild(wrap);
     renderDayTodos();
   }
 
@@ -2710,7 +2850,7 @@
       const doneState = isTodoDone(todo);
       const autoDisabled = todo.autoComplete && subStats.total > 0;
       const card = document.createElement('div');
-      card.className = `day-todo-card ${doneState ? 'done' : ''}`;
+      card.className = `day-todo-card unscheduled-todo-card ${doneState ? 'done' : ''}`;
       card.style.borderLeft = `5px solid ${cat.color}`;
       const subtasksHtml = subStats.total ? `
         <div class="day-todo-subtasks">
