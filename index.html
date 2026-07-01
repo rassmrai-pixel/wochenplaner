@@ -1140,6 +1140,71 @@
       margin-top: 10px;
     }
 
+
+    /* Tages-To-dos im Habit-Drawer */
+    .drawer-day-todos {
+      border-top: 1px solid var(--line-soft);
+      margin: 14px 0 0;
+      padding: 14px 0 0;
+      display: grid;
+      gap: 10px;
+    }
+    .drawer-section-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      color: var(--text);
+      font-weight: 900;
+      padding: 0 0 2px;
+    }
+    .drawer-section-sub {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: -4px;
+      line-height: 1.35;
+    }
+    .day-todo-form {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    .day-todo-form input[type="text"] { width: 100%; }
+    .day-todo-list { display: grid; gap: 8px; }
+    .day-todo-card {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 10px;
+      align-items: start;
+      border: 1px solid var(--line-soft);
+      background: rgba(2, 6, 23, 0.35);
+      padding: 10px;
+      border-radius: 12px;
+    }
+    .day-todo-card.done { opacity: 0.64; }
+    .day-todo-card.done .day-todo-name { text-decoration: line-through; }
+    .day-todo-card input[type="checkbox"] { width: 18px; height: 18px; min-height: auto; accent-color: #38bdf8; margin-top: 3px; }
+    .day-todo-main { min-width: 0; }
+    .day-todo-name { font-weight: 850; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .day-todo-meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .day-todo-subtasks { grid-column: 1 / -1; display: grid; gap: 6px; margin-left: 28px; }
+    .day-todo-subtask {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 8px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .day-todo-subtask.done .day-todo-subtask-text { text-decoration: line-through; }
+    .day-todo-actions {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 7px;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
+
   </style>
 </head>
 <body>
@@ -1307,6 +1372,19 @@
         <div class="drawer-progress-card" id="drawerHabitProgress"></div>
         <div class="day-tabs" id="dayTabs"></div>
         <div class="habit-list" id="habitList"></div>
+        <div class="drawer-day-todos" id="drawerDayTodos">
+          <div class="drawer-section-head">
+            <span>To-dos für diesen Tag</span>
+            <span id="dayTodoCount" class="todo-status">0</span>
+          </div>
+          <div class="drawer-section-sub">Für Aufgaben, die an diesem Tag sichtbar sein sollen, aber noch keine feste Uhrzeit haben.</div>
+          <div class="day-todo-form">
+            <input id="dayTodoInput" type="text" placeholder="Tages-To-do hinzufügen, z. B. Wohnung aufräumen" />
+            <select id="dayTodoCategorySelect" title="Kategorie"></select>
+            <button class="small primary" id="addDayTodoBtn">+ Tages-To-do</button>
+          </div>
+          <div class="day-todo-list" id="dayTodoList"></div>
+        </div>
       </section>
       <section class="drawer-panel drawer-todo-panel" id="drawerTodoPanel">
         <div class="drawer-progress-card" id="drawerTodoProgress"></div>
@@ -1468,6 +1546,12 @@
   const drawerHabitFilter = document.getElementById('drawerHabitFilter');
   const drawerHabitProgress = document.getElementById('drawerHabitProgress');
   const drawerTodoProgress = document.getElementById('drawerTodoProgress');
+  const drawerDayTodos = document.getElementById('drawerDayTodos');
+  const dayTodoInput = document.getElementById('dayTodoInput');
+  const dayTodoCategorySelect = document.getElementById('dayTodoCategorySelect');
+  const addDayTodoBtn = document.getElementById('addDayTodoBtn');
+  const dayTodoList = document.getElementById('dayTodoList');
+  const dayTodoCount = document.getElementById('dayTodoCount');
   const taskView = document.getElementById('taskView');
   const taskTitle = document.getElementById('taskTitle');
   const taskProgress = document.getElementById('taskProgress');
@@ -1624,6 +1708,7 @@
       done: Boolean(todo.done || todo.status === 'done'),
       plannedEventId: todo.plannedEventId || null,
       plannedWeekStart: todo.plannedWeekStart || null,
+      plannedDay: todo.plannedDay === null || todo.plannedDay === undefined ? null : clamp(Number(todo.plannedDay), 0, 6),
       autoComplete: Boolean(todo.autoComplete),
       subtasks: Array.isArray(todo.subtasks) ? todo.subtasks.map(sub => ({
         id: sub.id || id(),
@@ -1962,9 +2047,13 @@
 
   function dayCompletionStats(dayIndex) {
     if (!isWeekMode()) return { total: 0, done: 0, percent: 0 };
-    const items = currentWeekEvents().filter(ev => ev.day === dayIndex && state.categories[ev.categoryId]?.habit);
-    const done = items.filter(ev => ev.done).length;
-    return { total: items.length, done, percent: makePercent(done, items.length) };
+    const habitItems = currentWeekEvents().filter(ev => ev.day === dayIndex && state.categories[ev.categoryId]?.habit);
+    const dayTodos = state.todos
+      .map(syncTodoAutoComplete)
+      .filter(todo => todo.plannedWeekStart === state.currentWeekStart && Number(todo.plannedDay) === Number(dayIndex) && !todo.plannedEventId);
+    const total = habitItems.length + dayTodos.length;
+    const done = habitItems.filter(ev => ev.done).length + dayTodos.filter(todo => isTodoDone(todo)).length;
+    return { total, done, percent: makePercent(done, total) };
   }
 
   function renderDrawerProgress(el, title, stats, subText) {
@@ -1994,7 +2083,7 @@
     if (todo.autoComplete && todo.subtasks.length) {
       const allDone = todo.subtasks.every(sub => sub.done);
       todo.done = allDone;
-      todo.status = allDone ? 'done' : (todo.plannedEventId ? 'planned' : 'open');
+      todo.status = allDone ? 'done' : ((todo.plannedEventId || todo.plannedDay !== null && todo.plannedDay !== undefined) ? 'planned' : 'open');
     }
     return todo;
   }
@@ -2479,6 +2568,7 @@
     if (state.plannerMode !== 'week') {
       renderDrawerProgress(drawerHabitProgress, 'Tagesfortschritt', { total: 0, done: 0, percent: 0 }, 'Wechsle auf „Kalender“, um Tages-Habits zu tracken.');
       habitList.innerHTML = '<div class="habit-empty">Der Habit Tracker ist für die echte Kalenderwoche gedacht. Wechsle auf „Kalender“, um Tages-Habits abzuhaken.</div>';
+      renderDayTodos();
       return;
     }
     days.forEach((day, d) => {
@@ -2504,7 +2594,8 @@
       .sort((a, b) => a.start - b.start || a.end - b.end);
     habitList.innerHTML = '';
     if (!list.length) {
-      habitList.innerHTML = '<div class="habit-empty">Für diesen Filter gibt es an diesem Tag keine Einträge.</div>';
+      habitList.innerHTML = '<div class="habit-empty">Für diesen Filter gibt es an diesem Tag keine Habit-Einträge.</div>';
+      renderDayTodos();
       return;
     }
     list.forEach(ev => {
@@ -2522,6 +2613,168 @@
       cb.addEventListener('change', () => toggleDone(ev.id, cb.checked));
       item.querySelector('button').addEventListener('click', e => { e.preventDefault(); openEditor(ev.id); });
       habitList.appendChild(item);
+    });
+    renderDayTodos();
+  }
+
+
+  function fillDayTodoCategorySelect() {
+    if (!dayTodoCategorySelect) return;
+    dayTodoCategorySelect.innerHTML = '';
+    Object.entries(state.categories).forEach(([catId, cat]) => {
+      const option = document.createElement('option');
+      option.value = catId;
+      option.textContent = cat.label;
+      if (catId === 'orga') option.selected = true;
+      dayTodoCategorySelect.appendChild(option);
+    });
+  }
+
+  function dayTodosForActiveDay() {
+    if (!isWeekMode()) return [];
+    return state.todos
+      .map(syncTodoAutoComplete)
+      .filter(todo => todo.plannedWeekStart === state.currentWeekStart && Number(todo.plannedDay) === Number(state.activeHabitDay) && !todo.plannedEventId);
+  }
+
+  function addSubtaskToTodo(todo) {
+    const text = prompt('Untertask hinzufügen, z. B. saugen, Wäsche, lüften:');
+    if (text === null) return;
+    const clean = text.trim();
+    if (!clean) return alert('Der Untertask braucht einen Namen.');
+    if (!Array.isArray(todo.subtasks)) todo.subtasks = [];
+    todo.subtasks.push({ id: id(), text: clean, done: false, createdAt: new Date().toISOString() });
+    syncTodoAutoComplete(todo);
+    saveState();
+    renderAll();
+  }
+
+  function renameTodoGlobal(todo) {
+    const nextText = prompt('To-do umbenennen:', todo.text);
+    if (nextText === null) return;
+    const clean = nextText.trim();
+    if (!clean) return alert('Das To-do braucht einen Namen.');
+    todo.text = clean;
+    if (todo.plannedEventId) {
+      Object.values(state.weekEventsByWeek || {}).forEach(list => {
+        const ev = Array.isArray(list) ? list.find(x => x.id === todo.plannedEventId) : null;
+        if (ev) ev.label = clean;
+      });
+    }
+    saveState();
+    renderAll();
+  }
+
+  function planTodoAsCalendarBlock(todo) {
+    pendingTodoId = todo.id;
+    state.plannerMode = 'week';
+    state.viewMode = 'calendar';
+    if (todo.plannedDay !== null && todo.plannedDay !== undefined) state.activeHabitDay = Number(todo.plannedDay);
+    saveState();
+    renderAll();
+    const start = 36;
+    openEditor(null, {
+      day: state.activeHabitDay,
+      start,
+      end: start + 4,
+      label: todo.text,
+      categoryId: todo.categoryId,
+      source: 'extra'
+    });
+  }
+
+  function renderDayTodos() {
+    if (!dayTodoList || !dayTodoCount) return;
+    fillDayTodoCategorySelect();
+    if (!isWeekMode()) {
+      if (drawerDayTodos) drawerDayTodos.style.display = 'none';
+      return;
+    }
+    if (drawerDayTodos) drawerDayTodos.style.display = '';
+    const filter = state.drawerHabitFilter || 'all';
+    const all = dayTodosForActiveDay();
+    const visible = all
+      .filter(todo => filter === 'all' || (filter === 'done' ? isTodoDone(todo) : !isTodoDone(todo)))
+      .sort((a, b) => Number(isTodoDone(a)) - Number(isTodoDone(b)) || String(a.createdAt).localeCompare(String(b.createdAt)));
+    const done = all.filter(isTodoDone).length;
+    dayTodoCount.textContent = `${done}/${all.length}`;
+    dayTodoList.innerHTML = '';
+    if (!visible.length) {
+      dayTodoList.innerHTML = '<div class="todo-empty">Noch keine Tages-To-dos für diesen Filter.</div>';
+      return;
+    }
+    visible.forEach(todo => {
+      syncTodoAutoComplete(todo);
+      const cat = state.categories[todo.categoryId] || state.categories.orga;
+      const subStats = subtaskStats(todo);
+      const doneState = isTodoDone(todo);
+      const autoDisabled = todo.autoComplete && subStats.total > 0;
+      const card = document.createElement('div');
+      card.className = `day-todo-card ${doneState ? 'done' : ''}`;
+      card.style.borderLeft = `5px solid ${cat.color}`;
+      const subtasksHtml = subStats.total ? `
+        <div class="day-todo-subtasks">
+          ${todo.subtasks.map(sub => `
+            <div class="day-todo-subtask ${sub.done ? 'done' : ''}" data-subtask-id="${sub.id}">
+              <input class="day-subtask-check" type="checkbox" ${sub.done ? 'checked' : ''} />
+              <span class="day-todo-subtask-text">${escapeHtml(sub.text)}</span>
+              <button type="button" class="ghost day-subtask-edit">Edit</button>
+            </div>`).join('')}
+        </div>` : '';
+      card.innerHTML = `
+        <input class="day-todo-check" type="checkbox" ${doneState ? 'checked' : ''} ${autoDisabled ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : ''} />
+        <div class="day-todo-main">
+          <div class="day-todo-name">${escapeHtml(todo.text)}</div>
+          <div class="day-todo-meta">${escapeHtml(cat.label)}${subStats.total ? ` · Untertasks ${subStats.done}/${subStats.total}` : ''}${todo.autoComplete ? ' · Auto' : ''}</div>
+        </div>
+        <span class="todo-status">${todoStatusLabel(todo)}</span>
+        ${subtasksHtml}
+        <div class="day-todo-actions">
+          <button type="button" class="small ghost day-add-subtask-btn">+ Untertask</button>
+          <button type="button" class="small ghost day-auto-btn">${todo.autoComplete ? 'Auto aus' : 'Auto an'}</button>
+          <button type="button" class="small ghost day-plan-btn">Uhrzeit planen</button>
+          <button type="button" class="small ghost day-edit-btn">Bearbeiten</button>
+          <button type="button" class="small danger day-delete-btn">Löschen</button>
+        </div>`;
+      const mainCheck = card.querySelector('.day-todo-check');
+      mainCheck.addEventListener('change', () => {
+        if (todo.autoComplete && todo.subtasks.length) return;
+        todo.done = mainCheck.checked;
+        todo.status = mainCheck.checked ? 'done' : 'planned';
+        saveState();
+        renderAll();
+      });
+      card.querySelector('.day-add-subtask-btn').onclick = e => { e.preventDefault(); e.stopPropagation(); addSubtaskToTodo(todo); };
+      card.querySelector('.day-auto-btn').onclick = e => { e.preventDefault(); e.stopPropagation(); todo.autoComplete = !todo.autoComplete; syncTodoAutoComplete(todo); saveState(); renderAll(); };
+      card.querySelector('.day-plan-btn').onclick = e => { e.preventDefault(); e.stopPropagation(); planTodoAsCalendarBlock(todo); };
+      card.querySelector('.day-edit-btn').onclick = e => { e.preventDefault(); e.stopPropagation(); renameTodoGlobal(todo); };
+      card.querySelector('.day-delete-btn').onclick = e => {
+        e.preventDefault(); e.stopPropagation();
+        if (!confirm('Dieses Tages-To-do löschen?')) return;
+        state.todos = state.todos.filter(t => t.id !== todo.id);
+        saveState(); renderAll();
+      };
+      card.querySelectorAll('.day-todo-subtask').forEach(row => {
+        const subId = row.dataset.subtaskId;
+        const sub = todo.subtasks.find(x => x.id === subId);
+        if (!sub) return;
+        row.querySelector('.day-subtask-check').addEventListener('change', e => {
+          e.stopPropagation();
+          sub.done = e.target.checked;
+          syncTodoAutoComplete(todo);
+          saveState(); renderAll();
+        });
+        row.querySelector('.day-subtask-edit').addEventListener('click', e => {
+          e.preventDefault(); e.stopPropagation();
+          const next = prompt('Untertask bearbeiten:', sub.text);
+          if (next === null) return;
+          const clean = next.trim();
+          if (!clean) return alert('Der Untertask braucht einen Namen.');
+          sub.text = clean;
+          saveState(); renderAll();
+        });
+      });
+      dayTodoList.appendChild(card);
     });
   }
 
@@ -2841,6 +3094,7 @@
 
   function fillTodoCategorySelect() {
     todoCategorySelect.innerHTML = '';
+    fillDayTodoCategorySelect();
     Object.entries(state.categories).forEach(([catId, cat]) => {
       const option = document.createElement('option');
       option.value = catId;
@@ -2853,6 +3107,8 @@
   function todoStatusLabel(todo) {
     syncTodoAutoComplete(todo);
     if (isTodoDone(todo)) return 'Erledigt';
+    if (todo.plannedEventId) return 'Eingeplant';
+    if (todo.plannedDay !== null && todo.plannedDay !== undefined) return 'Tages-To-do';
     if (todo.status === 'planned') return 'Geplant';
     return 'Offen';
   }
@@ -3187,6 +3443,30 @@
 
 
 
+  if (addDayTodoBtn) addDayTodoBtn.onclick = () => {
+    const text = dayTodoInput.value.trim();
+    if (!text) { alert('Bitte gib ein Tages-To-do ein.'); return; }
+    state.todos.push({
+      id: id(),
+      text,
+      categoryId: dayTodoCategorySelect.value || 'orga',
+      status: 'planned',
+      done: false,
+      plannedEventId: null,
+      plannedWeekStart: state.currentWeekStart,
+      plannedDay: state.activeHabitDay,
+      autoComplete: false,
+      subtasks: [],
+      createdAt: new Date().toISOString()
+    });
+    dayTodoInput.value = '';
+    saveState();
+    renderAll();
+  };
+  if (dayTodoInput) dayTodoInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') addDayTodoBtn.click();
+  });
+
   document.getElementById('addTodoBtn').onclick = () => {
     const text = todoInput.value.trim();
     if (!text) { alert('Bitte gib ein To-do ein.'); return; }
@@ -3197,6 +3477,8 @@
       status: 'open',
       done: false,
       plannedEventId: null,
+      plannedWeekStart: null,
+      plannedDay: null,
       autoComplete: false,
       subtasks: [],
       createdAt: new Date().toISOString()
@@ -3259,6 +3541,7 @@
           todo.done = false;
           todo.plannedEventId = newEventId;
           todo.plannedWeekStart = state.currentWeekStart;
+          todo.plannedDay = day;
         }
         pendingTodoId = null;
       }
