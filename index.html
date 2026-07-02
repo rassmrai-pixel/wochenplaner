@@ -280,6 +280,186 @@
       border-radius: 999px;
       transition: width 0.25s ease;
     }
+
+
+    /* Tracking Visuals */
+    .tracking-visuals {
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.9fr);
+      gap: 12px;
+      padding: 0 14px 14px;
+    }
+    .tracking-chart-card {
+      border: 1px solid var(--line-soft);
+      border-radius: 16px;
+      background: rgba(2, 6, 23, 0.26);
+      padding: 14px;
+      min-width: 0;
+    }
+    .tracking-chart-card.wide {
+      grid-column: 1 / -1;
+    }
+    .tracking-chart-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: baseline;
+      margin-bottom: 12px;
+    }
+    .tracking-chart-title {
+      font-size: 15px;
+      font-weight: 950;
+      letter-spacing: -0.02em;
+    }
+    .tracking-chart-sub {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .tracking-timeline {
+      display: grid;
+      gap: 9px;
+    }
+    .tracking-bucket-row {
+      display: grid;
+      grid-template-columns: 78px 1fr 44px;
+      gap: 10px;
+      align-items: center;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .tracking-bucket-label {
+      color: var(--text);
+      font-weight: 900;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tracking-bucket-bars {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+    .tracking-mini-bar {
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.14);
+      overflow: hidden;
+      position: relative;
+    }
+    .tracking-mini-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 999px;
+      transition: width 0.22s ease;
+    }
+    .tracking-mini-fill.routine { background: #38bdf8; }
+    .tracking-mini-fill.extra { background: #a855f7; }
+    .tracking-mini-fill.total { background: #22c55e; }
+    .tracking-bucket-value {
+      text-align: right;
+      color: var(--text);
+      font-weight: 950;
+      white-space: nowrap;
+    }
+    .tracking-legend-mini {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 10px;
+    }
+    .tracking-legend-mini span {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .tracking-legend-mini i {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      display: inline-block;
+    }
+    .tracking-legend-mini .routine i { background: #38bdf8; }
+    .tracking-legend-mini .extra i { background: #a855f7; }
+    .tracking-legend-mini .total i { background: #22c55e; }
+    .tracking-category-list {
+      display: grid;
+      gap: 10px;
+    }
+    .tracking-category-row {
+      display: grid;
+      gap: 6px;
+    }
+    .tracking-category-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .tracking-category-name {
+      color: var(--text);
+      font-weight: 900;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tracking-heatmap {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(18px, 1fr));
+      gap: 6px;
+    }
+    .tracking-heat-cell {
+      aspect-ratio: 1;
+      min-height: 18px;
+      border-radius: 6px;
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      background: rgba(148, 163, 184, 0.08);
+      cursor: default;
+    }
+    .tracking-heat-cell.empty { opacity: 0.38; }
+    .tracking-heat-cell.level-0 { background: rgba(239, 68, 68, 0.18); border-color: rgba(239, 68, 68, 0.22); }
+    .tracking-heat-cell.level-1 { background: rgba(249, 115, 22, 0.26); border-color: rgba(249, 115, 22, 0.28); }
+    .tracking-heat-cell.level-2 { background: rgba(234, 179, 8, 0.28); border-color: rgba(234, 179, 8, 0.28); }
+    .tracking-heat-cell.level-3 { background: rgba(132, 204, 22, 0.30); border-color: rgba(132, 204, 22, 0.30); }
+    .tracking-heat-cell.level-4 { background: rgba(34, 197, 94, 0.42); border-color: rgba(34, 197, 94, 0.42); }
+    .tracking-insights {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      padding: 0 14px 14px;
+    }
+    .tracking-insight-card {
+      border: 1px solid var(--line-soft);
+      border-radius: 14px;
+      background: rgba(2, 6, 23, 0.22);
+      padding: 12px;
+      min-width: 0;
+    }
+    .tracking-insight-label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 5px;
+    }
+    .tracking-insight-value {
+      color: var(--text);
+      font-weight: 950;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    @media (max-width: 1000px) {
+      .tracking-visuals { grid-template-columns: 1fr; }
+      .tracking-insights { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 700px) {
+      .tracking-bucket-row { grid-template-columns: 58px 1fr 40px; gap: 8px; }
+      .tracking-insights { grid-template-columns: 1fr; }
+      .tracking-heatmap { grid-template-columns: repeat(auto-fill, minmax(16px, 1fr)); gap: 5px; }
+    }
+
     .tracking-list {
       padding: 0 14px 14px;
       display: grid;
@@ -1659,6 +1839,43 @@
           <div class="tracking-bar"><div class="tracking-fill" id="totalFill"></div></div>
         </div>
       </div>
+
+      <div class="tracking-visuals">
+        <div class="tracking-chart-card wide">
+          <div class="tracking-chart-head">
+            <div>
+              <div class="tracking-chart-title">Erfolg pro Zeitraum</div>
+              <div class="tracking-chart-sub" id="trackingTimelineSub">Routine, Extra und Gesamt im Vergleich.</div>
+            </div>
+          </div>
+          <div class="tracking-timeline" id="trackingTimelineChart"></div>
+          <div class="tracking-legend-mini">
+            <span class="routine"><i></i>Routine</span>
+            <span class="extra"><i></i>Extra</span>
+            <span class="total"><i></i>Gesamt</span>
+          </div>
+        </div>
+        <div class="tracking-chart-card">
+          <div class="tracking-chart-head">
+            <div>
+              <div class="tracking-chart-title">Kategorien</div>
+              <div class="tracking-chart-sub">Welche Bereiche laufen gut?</div>
+            </div>
+          </div>
+          <div class="tracking-category-list" id="trackingCategoryChart"></div>
+        </div>
+        <div class="tracking-chart-card">
+          <div class="tracking-chart-head">
+            <div>
+              <div class="tracking-chart-title">Heatmap</div>
+              <div class="tracking-chart-sub">Jeder Tag als kleines Feld.</div>
+            </div>
+          </div>
+          <div class="tracking-heatmap" id="trackingHeatmap"></div>
+        </div>
+      </div>
+      <div class="tracking-insights" id="trackingInsights"></div>
+
       <div class="tracking-list" id="trackingList"></div>
     </section>
 
@@ -2013,6 +2230,11 @@
   const routineTrackingLabel = document.getElementById('routineTrackingLabel');
   const extraTrackingLabel = document.getElementById('extraTrackingLabel');
   const totalTrackingLabel = document.getElementById('totalTrackingLabel');
+  const trackingTimelineChart = document.getElementById('trackingTimelineChart');
+  const trackingTimelineSub = document.getElementById('trackingTimelineSub');
+  const trackingCategoryChart = document.getElementById('trackingCategoryChart');
+  const trackingHeatmap = document.getElementById('trackingHeatmap');
+  const trackingInsights = document.getElementById('trackingInsights');
   const cloudPanel = document.getElementById('cloudPanel');
   const cloudStatus = document.getElementById('cloudStatus');
   const authEmail = document.getElementById('authEmail');
@@ -3679,6 +3901,209 @@
     trackingFilterSelect.value = state.trackingFilter || 'all';
   }
 
+
+  function dateLabelForTracking(date) {
+    if (state.trackingView === 'year') return date.toLocaleDateString('de-DE', { month: 'short' });
+    if (state.trackingView === 'month') return String(date.getDate()).padStart(2, '0');
+    return days[(date.getDay() + 6) % 7];
+  }
+
+  function trackingEndForRange(range) {
+    const today = toLocalDate(new Date());
+    let end = toLocalDate(range.end);
+    if (state.trackingView === 'month' || state.trackingView === 'year') end = end > today ? today : end;
+    return end;
+  }
+
+  function buildTrackingBuckets(range, items) {
+    const end = trackingEndForRange(range);
+    const buckets = [];
+
+    if (state.trackingView === 'year') {
+      const base = trackingDateBase();
+      const lastMonth = base.getFullYear() === new Date().getFullYear() ? new Date().getMonth() : 11;
+      for (let month = 0; month <= lastMonth; month++) {
+        const monthStart = new Date(base.getFullYear(), month, 1);
+        const monthEnd = new Date(base.getFullYear(), month + 1, 0);
+        const bucketItems = items.filter(item => item.date.getFullYear() === base.getFullYear() && item.date.getMonth() === month);
+        buckets.push({
+          key: `${base.getFullYear()}-${month}`,
+          label: monthStart.toLocaleDateString('de-DE', { month: 'short' }),
+          date: monthStart,
+          routine: statsForItems(bucketItems, 'routine'),
+          extra: statsForItems(bucketItems, 'extra'),
+          total: statsForItems(bucketItems)
+        });
+      }
+      return buckets;
+    }
+
+    eachDateInRange(range.start, end).forEach(date => {
+      const key = dateKey(date);
+      const bucketItems = items.filter(item => dateKey(item.date) === key);
+      buckets.push({
+        key,
+        label: dateLabelForTracking(date),
+        date,
+        routine: statsForItems(bucketItems, 'routine'),
+        extra: statsForItems(bucketItems, 'extra'),
+        total: statsForItems(bucketItems)
+      });
+    });
+    return buckets;
+  }
+
+  function renderTrackingTimeline(buckets) {
+    if (!trackingTimelineChart) return;
+    trackingTimelineChart.innerHTML = '';
+    if (trackingTimelineSub) {
+      trackingTimelineSub.textContent = state.trackingView === 'year'
+        ? 'Jeder Balken steht für einen Monat. Die drei Linien zeigen Routine, Extra und Gesamt.'
+        : 'Jeder Balken steht für einen Tag. Die drei Linien zeigen Routine, Extra und Gesamt.';
+    }
+
+    if (!buckets.length) {
+      trackingTimelineChart.innerHTML = '<div class="tracking-row"><span>Keine Daten</span><strong>Noch keine trackbaren Einträge.</strong></div>';
+      return;
+    }
+
+    buckets.forEach(bucket => {
+      const row = document.createElement('div');
+      row.className = 'tracking-bucket-row';
+      const title = state.trackingView === 'year'
+        ? bucket.date.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })
+        : formatLongDate(bucket.date);
+      row.title = `${title}: Gesamt ${bucket.total.percent}% (${bucket.total.done}/${bucket.total.total})`;
+      row.innerHTML = `
+        <div class="tracking-bucket-label">${escapeHtml(bucket.label)}</div>
+        <div class="tracking-bucket-bars">
+          <div class="tracking-mini-bar"><div class="tracking-mini-fill routine" style="width:${bucket.routine.percent}%"></div></div>
+          <div class="tracking-mini-bar"><div class="tracking-mini-fill extra" style="width:${bucket.extra.percent}%"></div></div>
+          <div class="tracking-mini-bar"><div class="tracking-mini-fill total" style="width:${bucket.total.percent}%"></div></div>
+        </div>
+        <div class="tracking-bucket-value">${bucket.total.percent}%</div>`;
+      trackingTimelineChart.appendChild(row);
+    });
+  }
+
+  function renderTrackingCategories(items) {
+    if (!trackingCategoryChart) return;
+    trackingCategoryChart.innerHTML = '';
+    const groups = new Map();
+    items.forEach(item => {
+      const key = item.categoryId || 'orga';
+      if (!groups.has(key)) groups.set(key, { categoryId: key, total: 0, done: 0 });
+      const group = groups.get(key);
+      group.total += 1;
+      if (item.done) group.done += 1;
+    });
+
+    const rows = Array.from(groups.values())
+      .map(group => ({ ...group, percent: makePercent(group.done, group.total) }))
+      .sort((a, b) => b.total - a.total || b.percent - a.percent)
+      .slice(0, 8);
+
+    if (!rows.length) {
+      trackingCategoryChart.innerHTML = '<div class="tracking-row"><span>Keine Kategorien</span><strong>Noch keine trackbaren Aufgaben.</strong></div>';
+      return;
+    }
+
+    rows.forEach(group => {
+      const cat = state.categories[group.categoryId] || state.categories.orga;
+      const row = document.createElement('div');
+      row.className = 'tracking-category-row';
+      row.innerHTML = `
+        <div class="tracking-category-top">
+          <span class="tracking-category-name">${escapeHtml(cat.label)}</span>
+          <strong>${group.percent}% · ${group.done}/${group.total}</strong>
+        </div>
+        <div class="tracking-mini-bar"><div class="tracking-mini-fill total" style="width:${group.percent}%"></div></div>`;
+      trackingCategoryChart.appendChild(row);
+    });
+  }
+
+  function heatLevel(percent, total) {
+    if (!total) return 'empty';
+    if (percent >= 90) return 'level-4';
+    if (percent >= 70) return 'level-3';
+    if (percent >= 45) return 'level-2';
+    if (percent > 0) return 'level-1';
+    return 'level-0';
+  }
+
+  function renderTrackingHeatmap(buckets) {
+    if (!trackingHeatmap) return;
+    trackingHeatmap.innerHTML = '';
+    if (!buckets.length) {
+      trackingHeatmap.innerHTML = '<div class="tracking-row"><span>Keine Daten</span></div>';
+      return;
+    }
+    buckets.forEach(bucket => {
+      const cell = document.createElement('div');
+      cell.className = `tracking-heat-cell ${heatLevel(bucket.total.percent, bucket.total.total)}`;
+      const title = state.trackingView === 'year'
+        ? bucket.date.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })
+        : formatLongDate(bucket.date);
+      cell.title = `${title}: ${bucket.total.percent}% (${bucket.total.done}/${bucket.total.total})`;
+      trackingHeatmap.appendChild(cell);
+    });
+  }
+
+  function bestStreakFromBuckets(buckets, threshold = 80) {
+    let best = 0;
+    let current = 0;
+    buckets.forEach(bucket => {
+      if (bucket.total.total > 0 && bucket.total.percent >= threshold) {
+        current += 1;
+        best = Math.max(best, current);
+      } else {
+        current = 0;
+      }
+    });
+    return best;
+  }
+
+  function renderTrackingInsights(buckets, items) {
+    if (!trackingInsights) return;
+    const bucketsWithData = buckets.filter(bucket => bucket.total.total > 0);
+    const bestBucket = bucketsWithData.slice().sort((a, b) => b.total.percent - a.total.percent)[0];
+    const weakBucket = bucketsWithData.slice().sort((a, b) => a.total.percent - b.total.percent)[0];
+
+    const categoryGroups = new Map();
+    items.forEach(item => {
+      const key = item.categoryId || 'orga';
+      if (!categoryGroups.has(key)) categoryGroups.set(key, { categoryId: key, total: 0, done: 0 });
+      const group = categoryGroups.get(key);
+      group.total += 1;
+      if (item.done) group.done += 1;
+    });
+    const catRows = Array.from(categoryGroups.values())
+      .map(group => ({ ...group, percent: makePercent(group.done, group.total) }))
+      .filter(group => group.total > 0)
+      .sort((a, b) => b.percent - a.percent || b.total - a.total);
+    const bestCat = catRows[0];
+    const weakCat = catRows.slice().reverse()[0];
+    const streak = bestStreakFromBuckets(buckets);
+
+    const labelForBucket = bucket => !bucket ? '—' : (state.trackingView === 'year'
+      ? bucket.date.toLocaleDateString('de-DE', { month: 'short' })
+      : `${days[(bucket.date.getDay() + 6) % 7]} ${formatShortDate(bucket.date)}`);
+    const catLabel = group => group ? (state.categories[group.categoryId]?.label || 'Kategorie') : '—';
+
+    const cards = [
+      { label: 'Bester Zeitraum', value: bestBucket ? `${labelForBucket(bestBucket)} · ${bestBucket.total.percent}%` : 'Noch keine Daten' },
+      { label: 'Schwächster Zeitraum', value: weakBucket ? `${labelForBucket(weakBucket)} · ${weakBucket.total.percent}%` : 'Noch keine Daten' },
+      { label: 'Stärkste Kategorie', value: bestCat ? `${catLabel(bestCat)} · ${bestCat.percent}%` : 'Noch keine Daten' },
+      { label: 'Serie über 80%', value: streak ? `${streak} am Stück` : 'Noch keine Serie' }
+    ];
+
+    trackingInsights.innerHTML = cards.map(card => `
+      <div class="tracking-insight-card">
+        <div class="tracking-insight-label">${escapeHtml(card.label)}</div>
+        <div class="tracking-insight-value">${escapeHtml(card.value)}</div>
+      </div>`).join('');
+  }
+
   function renderTracking() {
     renderTrackingTabs();
     const { range, items } = buildTrackingItems();
@@ -3703,6 +4128,12 @@
     totalPercent.textContent = `${total.percent}%`;
     totalSub.textContent = `${total.done}/${total.total} insgesamt erledigt`;
     totalFill.style.width = `${total.percent}%`;
+
+    const buckets = buildTrackingBuckets(range, items);
+    renderTrackingTimeline(buckets);
+    renderTrackingCategories(items);
+    renderTrackingHeatmap(buckets);
+    renderTrackingInsights(buckets, items);
 
     const filter = state.trackingFilter || 'all';
     const visible = items
