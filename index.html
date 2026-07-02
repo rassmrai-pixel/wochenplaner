@@ -1328,6 +1328,59 @@
       background: rgba(15, 23, 42, 0.28);
     }
 
+
+    /* Mobile: Tages-/Filterauswahl im Habit-Drawer einklappbar */
+    .drawer-filter-mobile-toggle {
+      display: none;
+    }
+
+    @media (max-width: 700px) {
+      .drawer-filter-mobile-toggle {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        border: 1px solid var(--line);
+        background: var(--panel-2);
+        color: var(--text);
+        border-radius: 14px;
+        padding: 12px 14px;
+        min-height: 46px;
+        font-weight: 850;
+        margin-bottom: 10px;
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .drawer-filter-mobile-toggle span:first-child {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .drawer-filter-mobile-toggle span:last-child {
+        font-size: 18px;
+        line-height: 1;
+        transition: transform 0.18s ease;
+      }
+
+      .drawer-habit-panel.filter-open .drawer-filter-mobile-toggle span:last-child {
+        transform: rotate(180deg);
+      }
+
+      .drawer-filter-row {
+        display: none;
+        grid-template-columns: 1fr;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+
+      .drawer-habit-panel.filter-open .drawer-filter-row {
+        display: grid;
+      }
+    }
+
   </style>
 </head>
 <body>
@@ -1484,14 +1537,19 @@
         </div>
       </div>
       <section class="drawer-panel drawer-habit-panel active" id="drawerHabitPanel">
-        <div class="drawer-filter-row">
-          <select id="drawerDaySelect" title="Tag wählen"></select>
-          <select id="drawerHabitFilter" title="Tages-Habits filtern">
-            <option value="all">Alle</option>
-            <option value="open">Nur offen</option>
-            <option value="done">Nur erledigt</option>
-          </select>
-        </div>
+        <div class="drawer-filter-mobile-toggle" id="drawerFilterMobileToggle">
+  <span id="drawerFilterMobileLabel">Mi 01.07. · Alle</span>
+  <span id="drawerFilterMobileIcon">▾</span>
+</div>
+
+<div class="drawer-filter-row" id="drawerFilterRow">
+  <select id="drawerDaySelect" title="Tag wählen"></select>
+  <select id="drawerHabitFilter" title="Tages-Habits filtern">
+    <option value="all">Alle</option>
+    <option value="open">Nur offen</option>
+    <option value="done">Nur erledigt</option>
+  </select>
+</div>
         <div class="drawer-progress-card" id="drawerHabitProgress"></div>
         <div class="day-tabs" id="dayTabs"></div>
         <div class="habit-list" id="habitList"></div>
@@ -1700,6 +1758,9 @@
   const taskDaySelect = document.getElementById('taskDaySelect');
   const drawerDaySelect = document.getElementById('drawerDaySelect');
   const drawerHabitFilter = document.getElementById('drawerHabitFilter');
+  const drawerFilterMobileToggle = document.getElementById('drawerFilterMobileToggle');
+  const drawerFilterMobileLabel = document.getElementById('drawerFilterMobileLabel');
+  const drawerFilterRow = document.getElementById('drawerFilterRow');
   const drawerHabitProgress = document.getElementById('drawerHabitProgress');
   const drawerTodoProgress = document.getElementById('drawerTodoProgress');
   const drawerDayTodos = document.getElementById('drawerDayTodos');
@@ -2727,6 +2788,16 @@
     drawerDaySelect.value = String(state.activeHabitDay);
   }
 
+
+  function updateDrawerFilterMobileLabel() {
+    if (!drawerFilterMobileLabel || !drawerDaySelect || !drawerHabitFilter) return;
+
+    const dayText = drawerDaySelect.options[drawerDaySelect.selectedIndex]?.textContent || 'Tag';
+    const filterText = drawerHabitFilter.options[drawerHabitFilter.selectedIndex]?.textContent || 'Alle';
+
+    drawerFilterMobileLabel.textContent = `${dayText} · ${filterText}`;
+  }
+
   function createDrawerEventItem(ev, type = 'routine') {
     const cat = state.categories[ev.categoryId] || state.categories.orga;
     const item = document.createElement('label');
@@ -2831,6 +2902,7 @@
     dayTabs.innerHTML = '';
     fillDrawerDaySelect();
     if (drawerHabitFilter) drawerHabitFilter.value = state.drawerHabitFilter || 'all';
+    updateDrawerFilterMobileLabel();
 
     if (state.plannerMode !== 'week') {
       renderDrawerProgress(drawerHabitProgress, 'Tagesfortschritt', { total: 0, done: 0, percent: 0 }, 'Wechsle auf „Kalender“, um Tages-Habits zu tracken.');
@@ -3698,8 +3770,13 @@
 
   drawerHabitBtn.onclick = () => { state.drawerView = 'habit'; saveState(); renderTodoDrawer(); renderHabits(); };
   drawerTodoBtn.onclick = () => { state.drawerView = 'todo'; saveState(); renderTodoDrawer(); setTimeout(() => todoInput.focus(), 80); };
-  drawerDaySelect.onchange = () => { state.activeHabitDay = Number(drawerDaySelect.value); saveState(); renderAll(); };
-  drawerHabitFilter.onchange = () => { state.drawerHabitFilter = drawerHabitFilter.value; saveState(); renderHabits(); };
+  if (drawerFilterMobileToggle && drawerHabitPanel) {
+    drawerFilterMobileToggle.onclick = () => {
+      drawerHabitPanel.classList.toggle('filter-open');
+    };
+  }
+  drawerDaySelect.onchange = () => { state.activeHabitDay = Number(drawerDaySelect.value); updateDrawerFilterMobileLabel(); saveState(); renderAll(); };
+  drawerHabitFilter.onchange = () => { state.drawerHabitFilter = drawerHabitFilter.value; updateDrawerFilterMobileLabel(); saveState(); renderHabits(); };
   trackingTodayBtn.onclick = () => { state.trackingView = 'today'; saveState(); renderAll(); };
   trackingWeekBtn.onclick = () => { state.trackingView = 'week'; saveState(); renderAll(); };
   trackingMonthBtn.onclick = () => { state.trackingView = 'month'; saveState(); renderAll(); };
