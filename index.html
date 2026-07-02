@@ -318,49 +318,95 @@
     }
     .tracking-timeline {
       display: grid;
-      gap: 9px;
+      gap: 12px;
+      overflow-x: auto;
+      padding: 4px 2px 2px;
     }
-    .tracking-bucket-row {
+    .tracking-column-chart {
+      display: flex;
+      align-items: end;
+      gap: 14px;
+      min-height: 260px;
+      min-width: max-content;
+      padding: 12px 4px 2px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+    }
+    .tracking-bucket-column {
       display: grid;
-      grid-template-columns: 78px 1fr 44px;
-      gap: 10px;
-      align-items: center;
-      font-size: 12px;
+      grid-template-rows: 1fr auto auto;
+      gap: 8px;
+      align-items: end;
+      justify-items: center;
+      min-width: 72px;
+      height: 238px;
       color: var(--muted);
-    }
-    .tracking-bucket-label {
-      color: var(--text);
-      font-weight: 900;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      font-size: 12px;
     }
     .tracking-bucket-bars {
-      display: grid;
-      gap: 4px;
-      min-width: 0;
+      display: flex;
+      align-items: end;
+      justify-content: center;
+      gap: 5px;
+      height: 170px;
+      width: 100%;
+      padding: 0 4px;
+      border-radius: 14px;
+      background: linear-gradient(180deg, rgba(148, 163, 184, 0.07), rgba(148, 163, 184, 0.025));
     }
     .tracking-mini-bar {
-      height: 8px;
+      width: 14px;
+      height: 100%;
       border-radius: 999px;
       background: rgba(148, 163, 184, 0.14);
       overflow: hidden;
       position: relative;
+      display: flex;
+      align-items: flex-end;
     }
     .tracking-mini-fill {
-      height: 100%;
-      width: 0%;
+      width: 100%;
+      height: 0%;
+      min-height: 0;
       border-radius: 999px;
-      transition: width 0.22s ease;
+      transition: height 0.22s ease;
     }
     .tracking-mini-fill.routine { background: #38bdf8; }
     .tracking-mini-fill.extra { background: #a855f7; }
     .tracking-mini-fill.total { background: #22c55e; }
     .tracking-bucket-value {
-      text-align: right;
       color: var(--text);
       font-weight: 950;
       white-space: nowrap;
+      line-height: 1;
+    }
+    .tracking-bucket-label {
+      color: var(--text);
+      font-weight: 900;
+      white-space: nowrap;
+      line-height: 1;
+    }
+    .tracking-bucket-column.empty .tracking-bucket-bars {
+      opacity: 0.62;
+    }
+    .tracking-bucket-column.empty .tracking-bucket-value {
+      color: var(--muted);
+      opacity: 0.8;
+    }
+    @media (max-width: 700px) {
+      .tracking-column-chart {
+        gap: 10px;
+        min-height: 230px;
+      }
+      .tracking-bucket-column {
+        min-width: 58px;
+        height: 215px;
+      }
+      .tracking-bucket-bars {
+        height: 150px;
+      }
+      .tracking-mini-bar {
+        width: 11px;
+      }
     }
     .tracking-legend-mini {
       display: flex;
@@ -3958,8 +4004,8 @@
     trackingTimelineChart.innerHTML = '';
     if (trackingTimelineSub) {
       trackingTimelineSub.textContent = state.trackingView === 'year'
-        ? 'Jeder Balken steht für einen Monat. Die drei Linien zeigen Routine, Extra und Gesamt.'
-        : 'Jeder Balken steht für einen Tag. Die drei Linien zeigen Routine, Extra und Gesamt.';
+        ? 'Jede Säule steht für einen Monat. Drei senkrechte Balken zeigen Routine, Extra und Gesamt.'
+        : 'Jede Säule steht für einen Tag. Drei senkrechte Balken zeigen Routine, Extra und Gesamt.';
     }
 
     if (!buckets.length) {
@@ -3967,23 +4013,28 @@
       return;
     }
 
+    const chart = document.createElement('div');
+    chart.className = 'tracking-column-chart';
+
     buckets.forEach(bucket => {
-      const row = document.createElement('div');
-      row.className = 'tracking-bucket-row';
+      const column = document.createElement('div');
+      column.className = `tracking-bucket-column ${bucket.total.total ? '' : 'empty'}`.trim();
       const title = state.trackingView === 'year'
         ? bucket.date.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })
         : formatLongDate(bucket.date);
-      row.title = `${title}: Gesamt ${bucket.total.percent}% (${bucket.total.done}/${bucket.total.total})`;
-      row.innerHTML = `
-        <div class="tracking-bucket-label">${escapeHtml(bucket.label)}</div>
-        <div class="tracking-bucket-bars">
-          <div class="tracking-mini-bar"><div class="tracking-mini-fill routine" style="width:${bucket.routine.percent}%"></div></div>
-          <div class="tracking-mini-bar"><div class="tracking-mini-fill extra" style="width:${bucket.extra.percent}%"></div></div>
-          <div class="tracking-mini-bar"><div class="tracking-mini-fill total" style="width:${bucket.total.percent}%"></div></div>
+      column.title = `${title}: Routine ${bucket.routine.percent}% (${bucket.routine.done}/${bucket.routine.total}) · Extra ${bucket.extra.percent}% (${bucket.extra.done}/${bucket.extra.total}) · Gesamt ${bucket.total.percent}% (${bucket.total.done}/${bucket.total.total})`;
+      column.innerHTML = `
+        <div class="tracking-bucket-bars" aria-label="${escapeHtml(column.title)}">
+          <div class="tracking-mini-bar" title="Routine ${bucket.routine.percent}%"><div class="tracking-mini-fill routine" style="height:${bucket.routine.percent}%"></div></div>
+          <div class="tracking-mini-bar" title="Extra ${bucket.extra.percent}%"><div class="tracking-mini-fill extra" style="height:${bucket.extra.percent}%"></div></div>
+          <div class="tracking-mini-bar" title="Gesamt ${bucket.total.percent}%"><div class="tracking-mini-fill total" style="height:${bucket.total.percent}%"></div></div>
         </div>
-        <div class="tracking-bucket-value">${bucket.total.percent}%</div>`;
-      trackingTimelineChart.appendChild(row);
+        <div class="tracking-bucket-value">${bucket.total.percent}%</div>
+        <div class="tracking-bucket-label">${escapeHtml(bucket.label)}</div>`;
+      chart.appendChild(column);
     });
+
+    trackingTimelineChart.appendChild(chart);
   }
 
   function renderTrackingCategories(items) {
