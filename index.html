@@ -61,6 +61,9 @@
     button.danger { background: #7f1d1d; border-color: #dc2626; }
     button.ghost { background: transparent; }
     button.small { padding: 7px 10px; min-height: 34px; font-size: 13px; }
+    @media (max-width: 700px) {
+      .toolbar { width: 100%; margin-left: 0; padding-top: 0; justify-content: space-between; }
+    }
     .todo-drawer-trigger { margin-left: auto; }
     .todo-drawer-trigger.active { background: #0284c7; border-color: #38bdf8; }
     .app { padding: 16px 24px 32px; }
@@ -1423,6 +1426,62 @@
     }
 
 
+    /* Untertasks für Routine-/Habit-Blöcke */
+    .habit-subtask-summary {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 4px;
+    }
+    .habit-subtasks {
+      grid-column: 1 / -1;
+      display: grid;
+      gap: 6px;
+      margin-left: 28px;
+      border-top: 1px solid var(--line-soft);
+      padding-top: 8px;
+    }
+    .habit-subtask {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 8px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .habit-subtask.done .habit-subtask-text { text-decoration: line-through; }
+    .habit-subtask input { width: 16px; height: 16px; min-height: auto; accent-color: #38bdf8; }
+    .habit-subtask-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .habit-actions {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 7px;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
+    .event-modal-options {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .event-modal-options label {
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      color: var(--text);
+      border: 1px solid var(--line-soft);
+      border-radius: 12px;
+      padding: 10px;
+      background: rgba(2, 6, 23, 0.22);
+    }
+    .event-modal-options input {
+      width: 18px;
+      height: 18px;
+      min-height: auto;
+      accent-color: #38bdf8;
+    }
+
+
     /* Mobile: Tages-/Filterauswahl im Habit-Drawer einklappbar */
     .drawer-filter-mobile-toggle {
       display: none;
@@ -1703,6 +1762,21 @@
         </div>
       </div>
       <div class="footer-note" id="modalInfo">Zeiten werden in 15-Minuten-Schritten gespeichert.</div>
+
+      <div class="event-modal-options">
+        <label for="modalAutoComplete">
+          <input id="modalAutoComplete" type="checkbox" />
+          <span>Auto-Erledigen, wenn alle Untertasks erledigt sind</span>
+        </label>
+      </div>
+
+      <label for="modalSubtaskInput">Untertasks</label>
+      <div class="day-todo-modal-subtask-row">
+        <input id="modalSubtaskInput" type="text" placeholder="z. B. Bett machen, Sport, Frühstück, duschen" />
+        <button class="small ghost" id="modalAddSubtaskBtn" type="button">+ Untertask</button>
+      </div>
+      <div class="day-todo-modal-subtask-list" id="modalSubtaskList"></div>
+
       <div class="modal-actions">
         <button class="danger" id="deleteBlockBtn">Block löschen</button>
         <button class="ghost" id="cancelModalBtn">Abbrechen</button>
@@ -1834,6 +1908,7 @@
   let presetSource = null;
   let lastAutoScrollKey = null;
   let dayTodoDraftSubtasks = [];
+  let eventDraftSubtasks = [];
 
   const calendar = document.getElementById('calendar');
   const calendarWrap = document.getElementById('calendarWrap');
@@ -1847,6 +1922,10 @@
   const modalStart = document.getElementById('modalStart');
   const modalEnd = document.getElementById('modalEnd');
   const modalInfo = document.getElementById('modalInfo');
+  const modalAutoComplete = document.getElementById('modalAutoComplete');
+  const modalSubtaskInput = document.getElementById('modalSubtaskInput');
+  const modalAddSubtaskBtn = document.getElementById('modalAddSubtaskBtn');
+  const modalSubtaskList = document.getElementById('modalSubtaskList');
   const deleteBlockBtn = document.getElementById('deleteBlockBtn');
   const drawerTitle = document.getElementById('drawerTitle');
   const drawerSwitch = document.getElementById('drawerSwitch');
@@ -1998,6 +2077,13 @@
         done: Boolean(ev.done),
         source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
         templateEventId: ev.templateEventId || null,
+        autoComplete: Boolean(ev.autoComplete),
+        subtasks: Array.isArray(ev.subtasks) ? ev.subtasks.map(sub => ({
+          id: sub.id || id(),
+          text: sub.text || 'Untertask',
+          done: Boolean(sub.done),
+          createdAt: sub.createdAt || new Date().toISOString()
+        })) : [],
         createdAt: ev.createdAt || new Date().toISOString()
       };
     }
@@ -2383,7 +2469,7 @@
 
   function dayCompletionStats(dayIndex) {
     if (!isWeekMode()) return { total: 0, done: 0, percent: 0 };
-    const habitItems = currentWeekEvents().filter(ev => ev.day === dayIndex && state.categories[ev.categoryId]?.habit);
+    const habitItems = currentWeekEvents().filter(ev => ev.day === dayIndex && state.categories[ev.categoryId]?.habit).map(syncEventAutoComplete);
     const dayTodos = state.todos
       .map(syncTodoAutoComplete)
       .filter(todo => todo.plannedWeekStart === state.currentWeekStart && Number(todo.plannedDay) === Number(dayIndex) && !todo.plannedEventId);
@@ -2422,6 +2508,33 @@
       todo.status = allDone ? 'done' : ((todo.plannedEventId || todo.plannedDay !== null && todo.plannedDay !== undefined) ? 'planned' : 'open');
     }
     return todo;
+  }
+
+
+
+  function eventSubtaskStats(ev) {
+    const subtasks = Array.isArray(ev?.subtasks) ? ev.subtasks : [];
+    const total = subtasks.length;
+    const done = subtasks.filter(sub => sub.done).length;
+    return { total, done, percent: makePercent(done, total) };
+  }
+
+  function syncEventAutoComplete(ev) {
+    if (!ev) return ev;
+    if (!Array.isArray(ev.subtasks)) ev.subtasks = [];
+    if (ev.autoComplete && ev.subtasks.length) {
+      ev.done = ev.subtasks.every(sub => sub.done);
+    }
+    return ev;
+  }
+
+  function cloneEventSubtasks(ev) {
+    return Array.isArray(ev?.subtasks) ? ev.subtasks.map(sub => ({
+      id: sub.id || id(),
+      text: sub.text || 'Untertask',
+      done: Boolean(sub.done),
+      createdAt: sub.createdAt || new Date().toISOString()
+    })) : [];
   }
 
   function isTodoDone(todo) {
@@ -2797,6 +2910,7 @@
   }
 
   function eventEl(ev) {
+    syncEventAutoComplete(ev);
     const cat = state.categories[ev.categoryId] || state.categories.orga;
     const div = document.createElement('div');
     div.className = `event ${ev.done ? 'done' : ''} ${ev.source === 'extra' ? 'extra-event' : ''}`;
@@ -2818,7 +2932,7 @@
     const trackable = isWeekMode() && Boolean(cat.habit);
     div.innerHTML = `
       <div class="event-title-row">
-        ${trackable ? `<input class="event-check" type="checkbox" ${ev.done ? 'checked' : ''} title="Abhaken" />` : ''}
+        ${trackable ? `<input class="event-check" type="checkbox" ${ev.done ? 'checked' : ''} ${ev.autoComplete && Array.isArray(ev.subtasks) && ev.subtasks.length ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : 'title="Abhaken"'} />` : ''}
         <span class="event-title">${escapeHtml(ev.label)}</span>
       </div>
       <div class="event-time">${eventTime(ev)}</div>`;
@@ -2848,11 +2962,17 @@
       categoryId: preset.categoryId || state.selectedCategory,
       done: false,
       source: preset?.source || (isTemplateMode() ? 'routine' : 'extra'),
-      templateEventId: null
+      templateEventId: null,
+      autoComplete: false,
+      subtasks: []
     };
     if (!ev) return;
 
     modalTitle.textContent = eventId ? 'Block bearbeiten' : 'Neuen Block erstellen';
+    eventDraftSubtasks = cloneEventSubtasks(ev);
+    if (modalAutoComplete) modalAutoComplete.checked = Boolean(ev.autoComplete);
+    if (modalSubtaskInput) modalSubtaskInput.value = '';
+    renderEventDraftSubtasks();
     modalLabel.value = ev.label;
     modalCategory.innerHTML = '';
     Object.entries(state.categories).forEach(([catId, cat]) => {
@@ -2873,7 +2993,38 @@
     modalBackdrop.style.display = 'flex';
   }
 
-  function closeModal() { modalBackdrop.style.display = 'none'; editingId = null; pendingTodoId = null; presetSource = null; }
+  function closeModal() { modalBackdrop.style.display = 'none'; editingId = null; pendingTodoId = null; presetSource = null; eventDraftSubtasks = []; }
+
+
+  function renderEventDraftSubtasks() {
+    if (!modalSubtaskList) return;
+    modalSubtaskList.innerHTML = '';
+    if (!eventDraftSubtasks.length) {
+      modalSubtaskList.innerHTML = '<div class="category-modal-note">Noch keine Untertasks. Beispiel: aufstehen, Bett machen, Sport, Frühstück, duschen.</div>';
+      return;
+    }
+    eventDraftSubtasks.forEach((sub, index) => {
+      const row = document.createElement('div');
+      row.className = 'day-todo-modal-subtask-item';
+      row.innerHTML = `<span>${escapeHtml(sub.text)}</span><button class="small ghost" type="button">Entfernen</button>`;
+      row.querySelector('button').onclick = () => {
+        eventDraftSubtasks.splice(index, 1);
+        renderEventDraftSubtasks();
+      };
+      modalSubtaskList.appendChild(row);
+    });
+  }
+
+  function addEventDraftSubtask() {
+    if (!modalSubtaskInput) return;
+    const text = modalSubtaskInput.value.trim();
+    if (!text) return;
+    eventDraftSubtasks.push({ id: id(), text, done: false, createdAt: new Date().toISOString() });
+    modalSubtaskInput.value = '';
+    renderEventDraftSubtasks();
+    modalSubtaskInput.focus();
+  }
+
   function updateModalInfo() {
     const d = Number(modalDay.value), start = Number(modalStart.value), end = Number(modalEnd.value);
     const durationMinutes = Math.max(0, end - start) * 15;
@@ -2907,20 +3058,75 @@
   }
 
   function createDrawerEventItem(ev, type = 'routine') {
+    syncEventAutoComplete(ev);
     const cat = state.categories[ev.categoryId] || state.categories.orga;
-    const item = document.createElement('label');
-    item.className = `habit-item ${type === 'scheduled' ? 'scheduled-todo-item' : 'routine-item'}`;
+    const item = document.createElement('div');
+    const stats = eventSubtaskStats(ev);
+    const autoDisabled = ev.autoComplete && stats.total > 0;
+    item.className = `habit-item ${type === 'scheduled' ? 'scheduled-todo-item' : 'routine-item'} ${ev.done ? 'done' : ''}`;
+    const subtasksHtml = stats.total ? `
+      <div class="habit-subtasks">
+        ${ev.subtasks.map(sub => `
+          <div class="habit-subtask ${sub.done ? 'done' : ''}" data-subtask-id="${sub.id}">
+            <input class="habit-subtask-check" type="checkbox" ${sub.done ? 'checked' : ''} />
+            <span class="habit-subtask-text">${escapeHtml(sub.text)}</span>
+            <button type="button" class="ghost habit-subtask-edit">Edit</button>
+          </div>`).join('')}
+      </div>` : '';
     item.innerHTML = `
-      <input type="checkbox" ${ev.done ? 'checked' : ''} />
+      <input class="habit-main-check" type="checkbox" ${ev.done ? 'checked' : ''} ${autoDisabled ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : ''} />
       <div>
         <div class="habit-name">${escapeHtml(ev.label)}</div>
-        <div class="habit-meta">${eventTime(ev)} · ${escapeHtml(cat.label)}${type === 'scheduled' ? ' · eingeplant' : ' · Routine'}</div>
+        <div class="habit-meta">${eventTime(ev)} · ${escapeHtml(cat.label)}${type === 'scheduled' ? ' · eingeplant' : ' · Routine'}${stats.total ? ` · Untertasks ${stats.done}/${stats.total}` : ''}${ev.autoComplete ? ' · Auto' : ''}</div>
+        ${stats.total ? `<div class="habit-subtask-summary">${stats.done}/${stats.total} erledigt · ${stats.percent}%</div>` : ''}
       </div>
-      <button type="button" class="small ghost">Bearbeiten</button>`;
-    const cb = item.querySelector('input');
-    cb.addEventListener('change', () => toggleDone(ev.id, cb.checked));
-    item.querySelector('button').addEventListener('click', e => { e.preventDefault(); openEditor(ev.id); });
+      <button type="button" class="small ghost habit-edit-btn">Bearbeiten</button>
+      ${subtasksHtml}
+      <div class="habit-actions">
+        <button type="button" class="small ghost habit-add-subtask-btn">+ Untertask</button>
+        <button type="button" class="small ghost habit-auto-btn">${ev.autoComplete ? 'Auto aus' : 'Auto an'}</button>
+      </div>`;
+    const cb = item.querySelector('.habit-main-check');
+    cb.addEventListener('change', () => {
+      if (ev.autoComplete && ev.subtasks.length) return;
+      toggleDone(ev.id, cb.checked);
+    });
+    item.querySelector('.habit-edit-btn').addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); openEditor(ev.id); });
+    item.querySelector('.habit-add-subtask-btn').addEventListener('click', e => {
+      e.preventDefault(); e.stopPropagation(); addSubtaskToEvent(ev);
+    });
+    item.querySelector('.habit-auto-btn').addEventListener('click', e => {
+      e.preventDefault(); e.stopPropagation(); ev.autoComplete = !ev.autoComplete; syncEventAutoComplete(ev); saveState(); renderAll();
+    });
+    item.querySelectorAll('.habit-subtask').forEach(row => {
+      const subId = row.dataset.subtaskId;
+      const sub = ev.subtasks.find(x => x.id === subId);
+      if (!sub) return;
+      row.querySelector('.habit-subtask-check').addEventListener('change', e => {
+        e.stopPropagation(); sub.done = e.target.checked; syncEventAutoComplete(ev); saveState(); renderAll();
+      });
+      row.querySelector('.habit-subtask-edit').addEventListener('click', e => {
+        e.preventDefault(); e.stopPropagation();
+        const next = prompt('Untertask bearbeiten:', sub.text);
+        if (next === null) return;
+        const clean = next.trim();
+        if (!clean) return alert('Der Untertask braucht einen Namen.');
+        sub.text = clean; saveState(); renderAll();
+      });
+    });
     return item;
+  }
+
+  function addSubtaskToEvent(ev) {
+    const text = prompt('Untertask hinzufügen, z. B. Bett machen, Sport, Frühstück, duschen:');
+    if (text === null) return;
+    const clean = text.trim();
+    if (!clean) return alert('Der Untertask braucht einen Namen.');
+    if (!Array.isArray(ev.subtasks)) ev.subtasks = [];
+    ev.subtasks.push({ id: id(), text: clean, done: false, createdAt: new Date().toISOString() });
+    syncEventAutoComplete(ev);
+    saveState();
+    renderAll();
   }
 
   function fillDayTodoModalCategorySelect() {
@@ -3335,13 +3541,12 @@
     taskView.classList.toggle('active', state.viewMode === 'tasks' && state.plannerMode === 'week');
     weekNav.style.display = isTracking ? 'none' : '';
     const showWeekControls = state.plannerMode === 'week';
-
-prevWeekBtn.style.display = showWeekControls ? '' : 'none';
-todayWeekBtn.style.display = showWeekControls ? '' : 'none';
-nextWeekBtn.style.display = showWeekControls ? '' : 'none';
-weekDateInput.style.display = showWeekControls ? '' : 'none';
-weekLabel.style.display = showWeekControls ? '' : 'none';
-weekRange.style.display = showWeekControls ? '' : 'none';
+    prevWeekBtn.style.display = showWeekControls ? '' : 'none';
+    todayWeekBtn.style.display = showWeekControls ? '' : 'none';
+    nextWeekBtn.style.display = showWeekControls ? '' : 'none';
+    weekDateInput.style.display = showWeekControls ? '' : 'none';
+    weekLabel.style.display = showWeekControls ? '' : 'none';
+    weekRange.style.display = showWeekControls ? '' : 'none';
 
     if (state.plannerMode !== 'week' && state.viewMode === 'tasks') state.viewMode = 'calendar';
     taskModeBtn.disabled = state.plannerMode !== 'week';
@@ -3542,6 +3747,8 @@ weekRange.style.display = showWeekControls ? '' : 'none';
       done: false,
       source: 'routine',
       templateEventId: templateEv.id,
+      autoComplete: Boolean(templateEv.autoComplete),
+      subtasks: cloneEventSubtasks(templateEv).map(sub => ({ ...sub, done: false })),
       createdAt: new Date().toISOString()
     })));
     state.plannerMode = 'week';
@@ -3819,6 +4026,7 @@ weekRange.style.display = showWeekControls ? '' : 'none';
   function toggleDone(eventId, done) {
     const ev = currentEvents().find(x => x.id === eventId);
     if (!ev) return;
+    if (ev.autoComplete && Array.isArray(ev.subtasks) && ev.subtasks.length) return;
     ev.done = Boolean(done);
     saveState();
     renderCalendar();
@@ -4016,6 +4224,8 @@ weekRange.style.display = showWeekControls ? '' : 'none';
       renderAll();
     } catch (err) { alert('Import fehlgeschlagen: ' + err.message); }
   };
+  if (modalAddSubtaskBtn) modalAddSubtaskBtn.onclick = addEventDraftSubtask;
+  if (modalSubtaskInput) modalSubtaskInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addEventDraftSubtask(); } });
   document.getElementById('cancelModalBtn').onclick = closeModal;
   document.getElementById('saveModalBtn').onclick = () => {
     const categoryId = modalCategory.value;
@@ -4029,10 +4239,10 @@ weekRange.style.display = showWeekControls ? '' : 'none';
     }
     if (editingId) {
       const ev = currentEvents().find(x => x.id === editingId);
-      if (ev) Object.assign(ev, { day, start, end, label, categoryId });
+      if (ev) { Object.assign(ev, { day, start, end, label, categoryId, autoComplete: Boolean(modalAutoComplete?.checked), subtasks: cloneEventSubtasks({ subtasks: eventDraftSubtasks }) }); syncEventAutoComplete(ev); }
     } else {
       const newEventId = id();
-      currentEvents().push({ id: newEventId, day, start, end, label, categoryId, done: false, source: (presetSource || (isTemplateMode() ? 'routine' : 'extra')), templateEventId: null, createdAt: new Date().toISOString() });
+      currentEvents().push({ id: newEventId, day, start, end, label, categoryId, done: false, source: (presetSource || (isTemplateMode() ? 'routine' : 'extra')), templateEventId: null, autoComplete: Boolean(modalAutoComplete?.checked), subtasks: cloneEventSubtasks({ subtasks: eventDraftSubtasks }), createdAt: new Date().toISOString() });
       if (pendingTodoId) {
         const todo = state.todos.find(t => t.id === pendingTodoId);
         if (todo) {
