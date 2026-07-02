@@ -66,6 +66,58 @@
     .app { padding: 16px 24px 32px; }
     .hint { margin: 0 0 14px; color: var(--muted); font-size: 14px; line-height: 1.45; }
     .legend { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+    .legend { 
+  display: flex; 
+  gap: 8px; 
+  flex-wrap: wrap; 
+  margin-bottom: 14px; 
+}
+
+/* Kategorien ein-/ausklappen */
+.category-toggle-row {
+  display: flex;
+  justify-content: flex-start;
+  margin: 0 0 10px;
+}
+
+#categoryToggleBtn {
+  border-radius: 999px;
+  font-weight: 850;
+}
+
+.legend.category-collapsed {
+  display: none;
+}
+
+.legend.category-open {
+  display: flex;
+}
+
+@media (max-width: 700px) {
+  .category-toggle-row {
+    margin-bottom: 8px;
+  }
+
+  #categoryToggleBtn {
+    width: 100%;
+    justify-content: space-between;
+    text-align: left;
+    border-radius: 14px;
+    min-height: 44px;
+  }
+
+  .legend.category-open {
+    display: flex;
+    max-height: 180px;
+    overflow: auto;
+    padding-bottom: 4px;
+  }
+}
+
+.pill {
+  border: 1px solid var(--line);
+  padding: 8px 10px;
+  border-radius: 999px;
     .pill {
       border: 1px solid var(--line);
       padding: 8px 10px;
@@ -1432,7 +1484,13 @@
         <button class="ghost" id="logoutBtn" style="display:none;">Ausloggen</button>
       </div>
     </section>
-    <div class="legend" id="legend"></div>
+    <div class="category-toggle-row">
+  <button class="small ghost" id="categoryToggleBtn" type="button">
+    Kategorien anzeigen ▾
+  </button>
+</div>
+
+<div class="legend category-collapsed" id="legend"></div>
 
     <div class="planner-switch">
       <button class="primary" id="weekModeBtn">Kalender</button>
@@ -1734,6 +1792,7 @@
   const calendar = document.getElementById('calendar');
   const calendarWrap = document.getElementById('calendarWrap');
   const legend = document.getElementById('legend');
+  const categoryToggleBtn = document.getElementById('categoryToggleBtn');
   const modalBackdrop = document.getElementById('modalBackdrop');
   const modalTitle = document.getElementById('modalTitle');
   const modalLabel = document.getElementById('modalLabel');
@@ -3925,6 +3984,17 @@
     renderAll();
     closeModal();
   };
+  if (categoryToggleBtn && legend) {
+  categoryToggleBtn.addEventListener('click', () => {
+    const isOpen = legend.classList.toggle('category-open');
+    legend.classList.toggle('category-collapsed', !isOpen);
+    categoryToggleBtn.textContent = isOpen ? 'Kategorien ausblenden ▴' : 'Kategorien anzeigen ▾';
+  });
+}
+
+[modalDay, modalStart, modalEnd, modalCategory].forEach(el => el.addEventListener('change', updateModalInfo));
+modalBackdrop.addEventListener('click', (e) => { if (e.target === modalBackdrop) closeModal(); });
+document.addEventListener('keydown', e => {
   [modalDay, modalStart, modalEnd, modalCategory].forEach(el => el.addEventListener('change', updateModalInfo));
   modalBackdrop.addEventListener('click', (e) => { if (e.target === modalBackdrop) closeModal(); });
   document.addEventListener('keydown', e => {
