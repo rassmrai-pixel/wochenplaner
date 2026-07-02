@@ -3333,7 +3333,15 @@
     calendar.parentElement.style.display = showCalendarArea ? '' : 'none';
     document.querySelector('.footer-note').style.display = showCalendarArea ? '' : 'none';
     taskView.classList.toggle('active', state.viewMode === 'tasks' && state.plannerMode === 'week');
-    weekNav.style.display = state.plannerMode === 'template' ? 'none' : '';
+    weekNav.style.display = isTracking ? 'none' : '';
+    const showWeekControls = state.plannerMode === 'week';
+
+prevWeekBtn.style.display = showWeekControls ? '' : 'none';
+todayWeekBtn.style.display = showWeekControls ? '' : 'none';
+nextWeekBtn.style.display = showWeekControls ? '' : 'none';
+weekDateInput.style.display = showWeekControls ? '' : 'none';
+weekLabel.style.display = showWeekControls ? '' : 'none';
+weekRange.style.display = showWeekControls ? '' : 'none';
 
     if (state.plannerMode !== 'week' && state.viewMode === 'tasks') state.viewMode = 'calendar';
     taskModeBtn.disabled = state.plannerMode !== 'week';
