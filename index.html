@@ -1072,6 +1072,42 @@
     .event.done { opacity: 0.64; }
     .event.done .event-title { text-decoration: line-through; }
 
+    .event.done { opacity: 0.64; }
+.event.done .event-title { text-decoration: line-through; }
+
+.event.missed {
+  opacity: 0.82;
+  border-color: rgba(239, 68, 68, 0.75);
+  box-shadow: 0 8px 18px rgba(0,0,0,0.26), inset 0 0 0 2px rgba(239,68,68,0.38);
+}
+
+.event.missed .event-title {
+  text-decoration: line-through;
+}
+
+.event-missed-btn {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  min-height: 18px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(127, 29, 29, 0.82);
+  border-color: rgba(248, 113, 113, 0.85);
+  color: #fecaca;
+}
+
+.event-missed-btn.active {
+  background: #dc2626;
+  border-color: #fecaca;
+  color: white;
+}
+
     .modal-backdrop {
       display: none;
       position: fixed;
@@ -2736,15 +2772,27 @@
   }
 
   function dayCompletionStats(dayIndex) {
-    if (!isWeekMode()) return { total: 0, done: 0, percent: 0 };
-    const habitItems = currentWeekEvents().filter(ev => ev.day === dayIndex && state.categories[ev.categoryId]?.habit).map(syncEventAutoComplete);
-    const dayTodos = state.todos
-      .map(syncTodoAutoComplete)
-      .filter(todo => todo.plannedWeekStart === state.currentWeekStart && Number(todo.plannedDay) === Number(dayIndex) && !todo.plannedEventId);
-    const total = habitItems.length + dayTodos.length;
-    const done = habitItems.filter(ev => ev.done).length + dayTodos.filter(todo => isTodoDone(todo)).length;
-    return { total, done, percent: makePercent(done, total) };
-  }
+  if (!isWeekMode()) return { total: 0, done: 0, missed: 0, open: 0, percent: 0 };
+
+  const habitItems = currentWeekEvents()
+    .filter(ev => ev.day === dayIndex && state.categories[ev.categoryId]?.habit)
+    .map(syncEventAutoComplete);
+
+  const dayTodos = state.todos
+    .map(syncTodoAutoComplete)
+    .filter(todo =>
+      todo.plannedWeekStart === state.currentWeekStart &&
+      Number(todo.plannedDay) === Number(dayIndex) &&
+      !todo.plannedEventId
+    );
+
+  const total = habitItems.length + dayTodos.length;
+  const done = habitItems.filter(ev => ev.done).length + dayTodos.filter(todo => isTodoDone(todo)).length;
+  const missed = habitItems.filter(ev => ev.missed).length;
+  const open = Math.max(0, total - done - missed);
+
+  return { total, done, missed, open, percent: makePercent(done, total) };
+}
 
   function renderDrawerProgress(el, title, stats, subText) {
     if (!el) return;
@@ -3181,7 +3229,7 @@
     syncEventAutoComplete(ev);
     const cat = state.categories[ev.categoryId] || state.categories.orga;
     const div = document.createElement('div');
-    div.className = `event ${ev.done ? 'done' : ''} ${ev.source === 'extra' ? 'extra-event' : ''}`;
+    div.className = `event ${ev.done ? 'done' : ''} ${ev.missed ? 'missed' : ''} ${ev.source === 'extra' ? 'extra-event' : ''}`;
     div.dataset.id = ev.id;
     const gap = 3;
     const laneCount = ev._laneCount || 1;
@@ -3229,6 +3277,7 @@
       label: preset.label || state.categories[preset.categoryId || state.selectedCategory]?.label || 'Block',
       categoryId: preset.categoryId || state.selectedCategory,
       done: false,
+      missed: false,
       source: preset?.source || (isTemplateMode() ? 'routine' : 'extra'),
       templateEventId: null,
       autoComplete: false,
@@ -4505,16 +4554,31 @@
     });
   }
 
-  function toggleDone(eventId, done) {
-    const ev = currentEvents().find(x => x.id === eventId);
-    if (!ev) return;
-    if (ev.autoComplete && Array.isArray(ev.subtasks) && ev.subtasks.length) return;
-    ev.done = Boolean(done);
-    saveState();
-    renderCalendar();
-    renderHabits();
-    renderTaskView();
-  }
+ function toggleDone(eventId, done) {
+  const ev = currentEvents().find(x => x.id === eventId);
+  if (!ev) return;
+
+  ev.done = Boolean(done);
+
+  // Wenn erledigt, dann nicht mehr als "nicht eingehalten" zählen
+  if (ev.done) ev.missed = false;
+
+  saveState();
+  renderAll();
+}
+
+function toggleMissed(eventId) {
+  const ev = currentEvents().find(x => x.id === eventId);
+  if (!ev) return;
+
+  ev.missed = !Boolean(ev.missed);
+
+  // Wenn nicht eingehalten, dann nicht gleichzeitig erledigt
+  if (ev.missed) ev.done = false;
+
+  saveState();
+  renderAll();
+}
 
   templateModeBtn.onclick = () => {
     state.plannerMode = 'template';
