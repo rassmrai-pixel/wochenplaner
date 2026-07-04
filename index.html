@@ -1945,10 +1945,10 @@
     }
 
     .event.external-calendar-event {
-      border-left-color: rgba(191, 219, 254, 0.95);
-      box-shadow: 0 8px 18px rgba(0,0,0,0.26), inset 0 0 0 2px rgba(191,219,254,0.22);
-      cursor: default;
-    }
+  border-left-color: rgba(191, 219, 254, 0.95);
+  box-shadow: 0 8px 18px rgba(0,0,0,0.26), inset 0 0 0 2px rgba(191,219,254,0.22);
+  cursor: pointer;
+}
 
     .event.external-calendar-event .event-title::before {
       content: "ICS · ";
@@ -2350,7 +2350,7 @@
       orga: { label: 'Orga / To-dos', color: '#94a3b8', habit: true },
       social: { label: 'Social / Dating', color: '#ec4899', habit: true },
       focus: { label: 'Deep Work', color: '#a855f7', habit: true },
-      external: { label: 'Externer Kalender', color: '#2563eb', habit: false }
+      external: { label: 'Externer Kalender', color: '#2563eb', habit: true }
     },
     events: [],
     templateEvents: [],
@@ -5097,15 +5097,21 @@ function toggleMissed(eventId) {
   }
 
   function ensureExternalCalendarCategory() {
-    if (!state.categories) state.categories = {};
-    if (!state.categories.external) {
-      state.categories.external = {
-        label: 'Externer Kalender',
-        color: '#2563eb',
-        habit: false
-      };
-    }
+  if (!state.categories) state.categories = {};
+
+  if (!state.categories.external) {
+    state.categories.external = {
+      label: 'Externer Kalender',
+      color: '#2563eb',
+      habit: true
+    };
+    return;
   }
+
+  state.categories.external.habit = true;
+  state.categories.external.label = state.categories.external.label || 'Externer Kalender';
+  state.categories.external.color = state.categories.external.color || '#2563eb';
+}
 
   function clearImportedIcsEvents() {
     if (!state.weekEventsByWeek) state.weekEventsByWeek = {};
@@ -5128,47 +5134,83 @@ function toggleMissed(eventId) {
     const externalId = icsEvent.id || icsEvent.uid || `ics_${index}_${eventDateKey}_${start}`;
 
     return {
-      id: `ics_import_${externalId}`.replace(/[^a-zA-Z0-9_-]/g, '_'),
-      day,
-      start,
-      end,
-      label: icsEvent.title || 'Kalendertermin',
-      categoryId: 'external',
-      done: false,
-      missed: false,
-      source: 'extra',
-      templateEventId: null,
-      importSource: 'ics',
-      provider: icsEvent.provider || 'outlook',
-      externalId,
-      editable: false,
-      autoComplete: false,
-      subtasks: [],
-      createdAt: new Date().toISOString()
-    };
-  }
+  id: `ics_import_${externalId}`.replace(/[^a-zA-Z0-9_-]/g, '_'),
+  day,
+  start,
+  end,
+  label: icsEvent.title || 'Kalendertermin',
+  categoryId: 'external',
+
+  // wichtig: ICS-Termine sollen wie Planner-Events trackbar sein
+  done: false,
+  missed: false,
+  source: 'extra',
+  templateEventId: null,
+
+  // Herkunft bleibt markiert
+  importSource: 'ics',
+  provider: icsEvent.provider || 'outlook',
+  externalId,
+
+  // true = Doppelklick öffnet Editor, falls du später Kategorie/Subtasks ändern willst
+  editable: true,
+
+  // gleiche Logik wie deine normalen Events
+  autoComplete: false,
+  subtasks: [],
+
+  createdAt: new Date().toISOString()
+};
 
   function importIcsEventsIntoPlanner(icsEvents) {
-    ensureExternalCalendarCategory();
-    clearImportedIcsEvents();
+  ensureExternalCalendarCategory();
 
-    const events = Array.isArray(icsEvents) ? icsEvents : [];
+  const existingByExternalId = {};
 
-    events.forEach((icsEvent, index) => {
-      if (!icsEvent || !icsEvent.date) return;
+  if (!state.weekEventsByWeek) state.weekEventsByWeek = {};
 
-      const plannerEvent = plannerEventFromIcsEvent(icsEvent, index);
-      const eventDateKey = icsEvent.date || dateKey(new Date());
-      const weekKey = weekStartKey(dateKeyToLocalDate(eventDateKey));
+  Object.keys(state.weekEventsByWeek).forEach((weekKey) => {
+    const events = Array.isArray(state.weekEventsByWeek[weekKey]) ? state.weekEventsByWeek[weekKey] : [];
 
-      if (!state.weekEventsByWeek[weekKey]) state.weekEventsByWeek[weekKey] = [];
-      state.weekEventsByWeek[weekKey].push(plannerEvent);
+    events.forEach((ev) => {
+      if (ev.importSource === 'ics' && ev.externalId) {
+        existingByExternalId[ev.externalId] = {
+          done: Boolean(ev.done),
+          missed: Boolean(ev.missed),
+          categoryId: ev.categoryId || 'external',
+          subtasks: Array.isArray(ev.subtasks) ? ev.subtasks : [],
+          autoComplete: Boolean(ev.autoComplete),
+          editable: ev.editable !== false
+        };
+      }
     });
+  });
 
-    currentWeekEvents();
-    saveState();
-    renderAll();
-  }
+  clearImportedIcsEvents();
+
+  (icsEvents || []).forEach((icsEvent, index) => {
+    const plannerEvent = plannerEventFromIcsEvent(icsEvent, index);
+    const previous = existingByExternalId[plannerEvent.externalId];
+
+    if (previous) {
+      plannerEvent.done = previous.done;
+      plannerEvent.missed = previous.missed;
+      plannerEvent.categoryId = previous.categoryId;
+      plannerEvent.subtasks = previous.subtasks;
+      plannerEvent.autoComplete = previous.autoComplete;
+      plannerEvent.editable = previous.editable;
+    }
+
+    const weekKey = weekStartKey(dateKeyToLocalDate(icsEvent.date || dateKey(new Date())));
+
+    if (!state.weekEventsByWeek[weekKey]) state.weekEventsByWeek[weekKey] = [];
+    state.weekEventsByWeek[weekKey].push(plannerEvent);
+  });
+
+  currentWeekEvents();
+  saveState();
+  renderAll();
+}
 
   function setIcsStatus(message) {
     const status = document.getElementById('icsStatus');
