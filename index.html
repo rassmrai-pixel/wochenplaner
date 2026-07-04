@@ -4964,5 +4964,25 @@ function toggleMissed(eventId) {
   initCloudSync();
 })();
 </script>
+  <div id="icsModal" class="modal hidden">
+  <div class="modal-card">
+    <h2>ICS-Kalender verbinden</h2>
+    <p>Füge deinen Outlook-ICS-Link ein. Die Termine werden nur gelesen und in deinem Planner angezeigt.</p>
+
+    <input
+      id="icsUrlInput"
+      type="url"
+      placeholder="https://...calendar.ics"
+      class="modal-input"
+    />
+
+    <div class="modal-actions">
+      <button id="syncIcsBtn" class="primary-btn" type="button">Synchronisieren</button>
+      <button id="closeIcsModalBtn" class="secondary-btn" type="button">Abbrechen</button>
+    </div>
+
+    <p id="icsStatus" class="modal-status"></p>
+  </div>
+</div>
 </body>
 </html>
