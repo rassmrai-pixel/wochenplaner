@@ -373,12 +373,41 @@
     .tracking-mini-fill.routine { background: #38bdf8; }
     .tracking-mini-fill.extra { background: #a855f7; }
     .tracking-mini-fill.total { background: #22c55e; }
+    .tracking-bucket-bars.stacked {
+  justify-content: center;
+}
+
+.tracking-stacked-bar {
+  width: 34px;
+  height: 170px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.14);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.tracking-stacked-fill {
+  width: 100%;
+  min-height: 0;
+  transition: height 0.22s ease;
+}
+
+.tracking-stacked-fill.routine {
+  background: #38bdf8;
+}
+
+.tracking-stacked-fill.extra {
+  background: #a855f7;
+}
     .tracking-bucket-value {
       color: var(--text);
       font-weight: 950;
       white-space: nowrap;
       line-height: 1;
     }
+    
     .tracking-bucket-label {
       color: var(--text);
       font-weight: 900;
@@ -4120,8 +4149,8 @@ return div;
     trackingTimelineChart.innerHTML = '';
     if (trackingTimelineSub) {
       trackingTimelineSub.textContent = state.trackingView === 'year'
-        ? 'Jede Säule steht für einen Monat. Drei senkrechte Balken zeigen Routine, Extra und Gesamt.'
-        : 'Jede Säule steht für einen Tag. Drei senkrechte Balken zeigen Routine, Extra und Gesamt.';
+        ? 'Jede Säule steht für einen Monat. Routine unten, Extra oben.'
+: 'Jede Säule steht für einen Tag. Routine unten, Extra oben.';
     }
 
     if (!buckets.length) {
@@ -4139,14 +4168,23 @@ return div;
         ? bucket.date.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })
         : formatLongDate(bucket.date);
       column.title = `${title}: Routine ${bucket.routine.percent}% (${bucket.routine.done}/${bucket.routine.total}) · Extra ${bucket.extra.percent}% (${bucket.extra.done}/${bucket.extra.total}) · Gesamt ${bucket.total.percent}% (${bucket.total.done}/${bucket.total.total})`;
-      column.innerHTML = `
-        <div class="tracking-bucket-bars" aria-label="${escapeHtml(column.title)}">
-          <div class="tracking-mini-bar" title="Routine ${bucket.routine.percent}%"><div class="tracking-mini-fill routine" style="height:${bucket.routine.percent}%"></div></div>
-          <div class="tracking-mini-bar" title="Extra ${bucket.extra.percent}%"><div class="tracking-mini-fill extra" style="height:${bucket.extra.percent}%"></div></div>
-          <div class="tracking-mini-bar" title="Gesamt ${bucket.total.percent}%"><div class="tracking-mini-fill total" style="height:${bucket.total.percent}%"></div></div>
-        </div>
-        <div class="tracking-bucket-value">${bucket.total.percent}%</div>
-        <div class="tracking-bucket-label">${escapeHtml(bucket.label)}</div>`;
+      const routineShare = bucket.total.total
+  ? Math.round((bucket.routine.done / bucket.total.total) * 100)
+  : 0;
+
+const extraShare = bucket.total.total
+  ? Math.round((bucket.extra.done / bucket.total.total) * 100)
+  : 0;
+
+column.innerHTML = `
+  <div class="tracking-bucket-bars stacked" aria-label="${escapeHtml(column.title)}">
+    <div class="tracking-stacked-bar" title="Routine ${bucket.routine.done}/${bucket.routine.total} · Extra ${bucket.extra.done}/${bucket.extra.total}">
+      <div class="tracking-stacked-fill extra" style="height:${extraShare}%"></div>
+      <div class="tracking-stacked-fill routine" style="height:${routineShare}%"></div>
+    </div>
+  </div>
+  <div class="tracking-bucket-value">${bucket.total.percent}%</div>
+  <div class="tracking-bucket-label">${escapeHtml(bucket.label)}</div>`;
       chart.appendChild(column);
     });
 
