@@ -2379,7 +2379,8 @@
         label: ev.label || 'Block',
         categoryId: s.categories[ev.categoryId] ? ev.categoryId : 'orga',
         done: Boolean(ev.done),
-        source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
+missed: Boolean(ev.missed),
+source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
         templateEventId: ev.templateEventId || null,
         autoComplete: Boolean(ev.autoComplete),
         subtasks: Array.isArray(ev.subtasks) ? ev.subtasks.map(sub => ({
@@ -2839,7 +2840,8 @@
     if (!ev) return ev;
     if (!Array.isArray(ev.subtasks)) ev.subtasks = [];
     if (ev.autoComplete && ev.subtasks.length) {
-      ev.done = ev.subtasks.every(sub => sub.done);
+  ev.done = ev.subtasks.every(sub => sub.done);
+  if (ev.done) ev.missed = false;
     }
     return ev;
   }
@@ -4805,6 +4807,7 @@ function toggleMissed(eventId) {
         if (todo) {
           todo.status = 'planned';
           todo.done = false;
+          missed: false,
           todo.plannedEventId = newEventId;
           todo.plannedWeekStart = state.currentWeekStart;
           todo.plannedDay = day;
