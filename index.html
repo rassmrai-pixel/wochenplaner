@@ -5308,6 +5308,27 @@ function clearImportedIcsEvents() {
   setIcsStatus('Importierte ICS-Termine wurden entfernt.');
 }
 
+async function syncSavedIcsCalendar() {
+  const savedUrl = localStorage.getItem('perfekte-woche-ics-url') || '';
+  const input = document.getElementById('icsUrlInput');
+  const modal = document.getElementById('icsModal');
+
+  if (input) input.value = savedUrl;
+
+  // Wenn noch kein ICS-Link gespeichert ist, Modal öffnen
+  if (!savedUrl) {
+    if (modal) {
+      modal.classList.remove('hidden');
+      setIcsStatus('Bitte füge zuerst deinen ICS-Link ein.');
+      setTimeout(() => input?.focus(), 50);
+    }
+    return;
+  }
+
+  // Wenn Link gespeichert ist, direkt synchronisieren
+  await syncIcsCalendarFromModal();
+}
+  
   function initIcsCalendarIntegration() {
     const openBtn = document.getElementById('openIcsModalBtn');
     const closeBtn = document.getElementById('closeIcsModalBtn');
