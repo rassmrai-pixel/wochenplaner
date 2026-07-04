@@ -375,10 +375,11 @@
     .tracking-mini-fill.total { background: #22c55e; }
     .tracking-bucket-bars.stacked {
   justify-content: center;
+  align-items: end;
 }
 
 .tracking-stacked-bar {
-  width: 34px;
+  width: 38px;
   height: 170px;
   border-radius: 999px;
   background: rgba(148, 163, 184, 0.14);
@@ -386,6 +387,7 @@
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
 }
 
 .tracking-stacked-fill {
@@ -394,38 +396,24 @@
   transition: height 0.22s ease;
 }
 
-.tracking-stacked-fill.routine {
-  background: #38bdf8;
+.tracking-stacked-fill.extra {
+  background: linear-gradient(180deg, #c084fc, #9333ea);
 }
 
-.tracking-stacked-fill.extra {
-  background: #a855f7;
+.tracking-stacked-fill.routine {
+  background: linear-gradient(180deg, #7dd3fc, #0284c7);
 }
-    .tracking-bucket-value {
-      color: var(--text);
-      font-weight: 950;
-      white-space: nowrap;
-      line-height: 1;
-    }
-    
-    .tracking-bucket-label {
-      color: var(--text);
-      font-weight: 900;
-      white-space: nowrap;
-      line-height: 1;
-    }
-    .tracking-bucket-column.empty .tracking-bucket-bars {
-      opacity: 0.62;
-    }
-    .tracking-bucket-column.empty .tracking-bucket-value {
-      color: var(--muted);
-      opacity: 0.8;
-    }
-    @media (max-width: 700px) {
-      .tracking-column-chart {
-        gap: 10px;
-        min-height: 230px;
-      }
+
+.tracking-bucket-column.empty .tracking-stacked-bar {
+  opacity: 0.45;
+}
+
+@media (max-width: 700px) {
+  .tracking-stacked-bar {
+    width: 30px;
+    height: 150px;
+  }
+}
       .tracking-bucket-column {
         min-width: 58px;
         height: 215px;
@@ -4145,51 +4133,61 @@ return div;
   }
 
   function renderTrackingTimeline(buckets) {
-    if (!trackingTimelineChart) return;
-    trackingTimelineChart.innerHTML = '';
-    if (trackingTimelineSub) {
-      trackingTimelineSub.textContent = state.trackingView === 'year'
-        ? 'Jede Säule steht für einen Monat. Routine unten, Extra oben.'
-: 'Jede Säule steht für einen Tag. Routine unten, Extra oben.';
-    }
+  if (!trackingTimelineChart) return;
+  trackingTimelineChart.innerHTML = '';
 
-    if (!buckets.length) {
-      trackingTimelineChart.innerHTML = '<div class="tracking-row"><span>Keine Daten</span><strong>Noch keine trackbaren Einträge.</strong></div>';
-      return;
-    }
-
-    const chart = document.createElement('div');
-    chart.className = 'tracking-column-chart';
-
-    buckets.forEach(bucket => {
-      const column = document.createElement('div');
-      column.className = `tracking-bucket-column ${bucket.total.total ? '' : 'empty'}`.trim();
-      const title = state.trackingView === 'year'
-        ? bucket.date.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })
-        : formatLongDate(bucket.date);
-      column.title = `${title}: Routine ${bucket.routine.percent}% (${bucket.routine.done}/${bucket.routine.total}) · Extra ${bucket.extra.percent}% (${bucket.extra.done}/${bucket.extra.total}) · Gesamt ${bucket.total.percent}% (${bucket.total.done}/${bucket.total.total})`;
-      const routineShare = bucket.total.total
-  ? Math.round((bucket.routine.done / bucket.total.total) * 100)
-  : 0;
-
-const extraShare = bucket.total.total
-  ? Math.round((bucket.extra.done / bucket.total.total) * 100)
-  : 0;
-
-column.innerHTML = `
-  <div class="tracking-bucket-bars stacked" aria-label="${escapeHtml(column.title)}">
-    <div class="tracking-stacked-bar" title="Routine ${bucket.routine.done}/${bucket.routine.total} · Extra ${bucket.extra.done}/${bucket.extra.total}">
-      <div class="tracking-stacked-fill extra" style="height:${extraShare}%"></div>
-      <div class="tracking-stacked-fill routine" style="height:${routineShare}%"></div>
-    </div>
-  </div>
-  <div class="tracking-bucket-value">${bucket.total.percent}%</div>
-  <div class="tracking-bucket-label">${escapeHtml(bucket.label)}</div>`;
-      chart.appendChild(column);
-    });
-
-    trackingTimelineChart.appendChild(chart);
+  if (trackingTimelineSub) {
+    trackingTimelineSub.textContent = state.trackingView === 'year'
+      ? 'Jede Säule steht für einen Monat. Routine unten, Extra oben.'
+      : 'Jede Säule steht für einen Tag. Routine unten, Extra oben.';
   }
+
+  if (!buckets.length) {
+    trackingTimelineChart.innerHTML = '<div class="tracking-row"><span>Keine Daten</span><strong>Noch keine trackbaren Einträge.</strong></div>';
+    return;
+  }
+
+  const chart = document.createElement('div');
+  chart.className = 'tracking-column-chart';
+
+  buckets.forEach(bucket => {
+    const column = document.createElement('div');
+    column.className = `tracking-bucket-column ${bucket.total.total ? '' : 'empty'}`.trim();
+
+    const title = state.trackingView === 'year'
+      ? bucket.date.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })
+      : formatLongDate(bucket.date);
+
+    const totalItems = bucket.total.total || 0;
+
+    const routineShare = totalItems
+      ? Math.round((bucket.routine.done / totalItems) * 100)
+      : 0;
+
+    const extraShare = totalItems
+      ? Math.round((bucket.extra.done / totalItems) * 100)
+      : 0;
+
+    const tooltip = `${title}: Routine ${bucket.routine.done}/${bucket.routine.total} · Extra ${bucket.extra.done}/${bucket.extra.total} · Gesamt ${bucket.total.done}/${bucket.total.total}`;
+
+    column.title = tooltip;
+
+    column.innerHTML = `
+      <div class="tracking-bucket-bars stacked" aria-label="${escapeHtml(tooltip)}">
+        <div class="tracking-stacked-bar" title="${escapeHtml(tooltip)}">
+          <div class="tracking-stacked-fill extra" style="height:${extraShare}%"></div>
+          <div class="tracking-stacked-fill routine" style="height:${routineShare}%"></div>
+        </div>
+      </div>
+      <div class="tracking-bucket-value">${bucket.total.percent}%</div>
+      <div class="tracking-bucket-label">${escapeHtml(bucket.label)}</div>
+    `;
+
+    chart.appendChild(column);
+  });
+
+  trackingTimelineChart.appendChild(chart);
+}
 
   function renderTrackingCategories(items) {
     if (!trackingCategoryChart) return;
