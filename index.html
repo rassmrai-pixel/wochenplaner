@@ -5339,15 +5339,14 @@ function clearImportedIcsEvents() {
     }
 
     if (syncBtn) {
-      syncBtn.addEventListener('click', syncIcsCalendarFromModal);
-    }
-  }
+  syncBtn.addEventListener('click', syncIcsCalendarFromModal);
+}
 
-  if (quickSyncBtn) {
+if (quickSyncBtn) {
   quickSyncBtn.addEventListener('click', syncSavedIcsCalendar);
 }
-  
-  if (removeBtn) {
+
+if (removeBtn) {
   removeBtn.addEventListener('click', removeIcsCalendarEvents);
 }
 
