@@ -1858,6 +1858,104 @@
       }
     }
 
+    /* ICS-Kalender-Integration */
+    .ics-modal.hidden {
+      display: none;
+    }
+
+    .ics-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      padding: 18px;
+    }
+
+    .ics-modal-card {
+      width: min(440px, 100%);
+      background: #ffffff;
+      color: #111827;
+      border-radius: 18px;
+      padding: 22px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+    }
+
+    .ics-modal-card h2 {
+      margin: 0 0 8px;
+      font-size: 20px;
+      font-weight: 900;
+    }
+
+    .ics-modal-card p {
+      margin: 0 0 14px;
+      color: #64748b;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .ics-modal-input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid #cbd5e1;
+      font-size: 14px;
+      outline: none;
+      color: #111827;
+      background: #ffffff;
+    }
+
+    .ics-modal-input:focus {
+      border-color: #2563eb;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+    }
+
+    .ics-modal-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .ics-primary-btn,
+    .ics-secondary-btn {
+      border: 0;
+      border-radius: 12px;
+      padding: 10px 14px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .ics-primary-btn {
+      background: #111827;
+      color: white;
+    }
+
+    .ics-secondary-btn {
+      background: #e5e7eb;
+      color: #111827;
+    }
+
+    .ics-modal-status {
+      margin-top: 12px !important;
+      margin-bottom: 0 !important;
+      font-size: 13px !important;
+    }
+
+    .event.external-calendar-event {
+      border-left-color: rgba(191, 219, 254, 0.95);
+      box-shadow: 0 8px 18px rgba(0,0,0,0.26), inset 0 0 0 2px rgba(191,219,254,0.22);
+      cursor: default;
+    }
+
+    .event.external-calendar-event .event-title::before {
+      content: "ICS · ";
+      opacity: 0.8;
+      font-weight: 900;
+    }
+
   </style>
 </head>
 <body>
@@ -2251,7 +2349,8 @@
       commute: { label: 'Fahrt / Wegzeit', color: '#64748b', habit: false },
       orga: { label: 'Orga / To-dos', color: '#94a3b8', habit: true },
       social: { label: 'Social / Dating', color: '#ec4899', habit: true },
-      focus: { label: 'Deep Work', color: '#a855f7', habit: true }
+      focus: { label: 'Deep Work', color: '#a855f7', habit: true },
+      external: { label: 'Externer Kalender', color: '#2563eb', habit: false }
     },
     events: [],
     templateEvents: [],
@@ -3295,7 +3394,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     syncEventAutoComplete(ev);
     const cat = state.categories[ev.categoryId] || state.categories.orga;
     const div = document.createElement('div');
-    div.className = `event ${ev.done ? 'done' : ''} ${ev.missed ? 'missed' : ''} ${ev.source === 'extra' ? 'extra-event' : ''}`;
+    div.className = `event ${ev.done ? 'done' : ''} ${ev.missed ? 'missed' : ''} ${ev.source === 'extra' ? 'extra-event' : ''} ${ev.importSource === 'ics' ? 'external-calendar-event' : ''}`;
     div.dataset.id = ev.id;
     const gap = 3;
     const laneCount = ev._laneCount || 1;
@@ -3322,7 +3421,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
 
     div.addEventListener('mousedown', e => e.stopPropagation());
     div.addEventListener('click', e => e.stopPropagation());
-    div.addEventListener('dblclick', e => { e.preventDefault(); e.stopPropagation(); openEditor(ev.id); });
+    div.addEventListener('dblclick', e => { e.preventDefault(); e.stopPropagation(); if (ev.editable !== false) openEditor(ev.id); });
     const checkbox = div.querySelector('.event-check');
 if (checkbox) {
   checkbox.addEventListener('click', e => {
@@ -4958,31 +5057,224 @@ function toggleMissed(eventId) {
   });
   window.addEventListener('resize', renderCalendar);
 
+
+  /* ICS-Kalender-Integration */
+  function timeValueToSlot(value, fallbackSlot = 36) {
+    if (!value) return fallbackSlot;
+
+    const raw = String(value).trim();
+    let hours = null;
+    let minutes = null;
+
+    if (raw.includes('T')) {
+      const parsed = new Date(raw);
+      if (!Number.isNaN(parsed.getTime())) {
+        hours = parsed.getHours();
+        minutes = parsed.getMinutes();
+      }
+    } else {
+      const match = raw.match(/(\d{1,2}):(\d{2})/);
+      if (match) {
+        hours = Number(match[1]);
+        minutes = Number(match[2]);
+      }
+    }
+
+    if (hours === null || minutes === null) return fallbackSlot;
+    return clamp(Math.round(((hours * 60) + minutes) / 15), 0, slotsPerDay);
+  }
+
+  function dateKeyToLocalDate(key) {
+    const [year, month, day] = String(key || '').split('-').map(Number);
+    if (!year || !month || !day) return new Date();
+    return new Date(year, month - 1, day);
+  }
+
+  function dayIndexInWeek(dateKeyValue, weekKeyValue) {
+    const eventDate = dateKeyToLocalDate(dateKeyValue);
+    const weekDate = dateKeyToLocalDate(weekKeyValue);
+    return Math.round((eventDate - weekDate) / (24 * 60 * 60 * 1000));
+  }
+
+  function ensureExternalCalendarCategory() {
+    if (!state.categories) state.categories = {};
+    if (!state.categories.external) {
+      state.categories.external = {
+        label: 'Externer Kalender',
+        color: '#2563eb',
+        habit: false
+      };
+    }
+  }
+
+  function clearImportedIcsEvents() {
+    if (!state.weekEventsByWeek) state.weekEventsByWeek = {};
+    Object.keys(state.weekEventsByWeek).forEach((weekKey) => {
+      const events = Array.isArray(state.weekEventsByWeek[weekKey]) ? state.weekEventsByWeek[weekKey] : [];
+      state.weekEventsByWeek[weekKey] = events.filter(ev => ev.importSource !== 'ics');
+    });
+    currentWeekEvents();
+  }
+
+  function plannerEventFromIcsEvent(icsEvent, index) {
+    const eventDateKey = icsEvent.date || dateKey(new Date());
+    const weekKey = weekStartKey(dateKeyToLocalDate(eventDateKey));
+    const day = clamp(dayIndexInWeek(eventDateKey, weekKey), 0, 6);
+
+    const start = timeValueToSlot(icsEvent.startTime, 36);
+    let end = timeValueToSlot(icsEvent.endTime, start + 4);
+    if (end <= start) end = Math.min(start + 4, slotsPerDay);
+
+    const externalId = icsEvent.id || icsEvent.uid || `ics_${index}_${eventDateKey}_${start}`;
+
+    return {
+      id: `ics_import_${externalId}`.replace(/[^a-zA-Z0-9_-]/g, '_'),
+      day,
+      start,
+      end,
+      label: icsEvent.title || 'Kalendertermin',
+      categoryId: 'external',
+      done: false,
+      missed: false,
+      source: 'extra',
+      templateEventId: null,
+      importSource: 'ics',
+      provider: icsEvent.provider || 'outlook',
+      externalId,
+      editable: false,
+      autoComplete: false,
+      subtasks: [],
+      createdAt: new Date().toISOString()
+    };
+  }
+
+  function importIcsEventsIntoPlanner(icsEvents) {
+    ensureExternalCalendarCategory();
+    clearImportedIcsEvents();
+
+    const events = Array.isArray(icsEvents) ? icsEvents : [];
+
+    events.forEach((icsEvent, index) => {
+      if (!icsEvent || !icsEvent.date) return;
+
+      const plannerEvent = plannerEventFromIcsEvent(icsEvent, index);
+      const eventDateKey = icsEvent.date || dateKey(new Date());
+      const weekKey = weekStartKey(dateKeyToLocalDate(eventDateKey));
+
+      if (!state.weekEventsByWeek[weekKey]) state.weekEventsByWeek[weekKey] = [];
+      state.weekEventsByWeek[weekKey].push(plannerEvent);
+    });
+
+    currentWeekEvents();
+    saveState();
+    renderAll();
+  }
+
+  function setIcsStatus(message) {
+    const status = document.getElementById('icsStatus');
+    if (status) status.textContent = message || '';
+  }
+
+  async function syncIcsCalendarFromModal() {
+    const input = document.getElementById('icsUrlInput');
+    const icsUrl = input ? input.value.trim() : '';
+
+    if (!icsUrl) {
+      setIcsStatus('Bitte füge zuerst einen ICS-Link ein.');
+      return;
+    }
+
+    if (!icsUrl.startsWith('https://')) {
+      setIcsStatus('Bitte nutze den HTTPS-ICS-Link aus Outlook.');
+      return;
+    }
+
+    try {
+      setIcsStatus('Kalender wird synchronisiert...');
+
+      const response = await fetch('/api/ics-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ icsUrl })
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || 'ICS-Synchronisation fehlgeschlagen.');
+      }
+
+      importIcsEventsIntoPlanner(data.events || []);
+      localStorage.setItem('perfekte-woche-ics-url', icsUrl);
+      setIcsStatus(`${(data.events || []).length} Termine importiert.`);
+    } catch (error) {
+      console.error(error);
+      setIcsStatus(error.message || 'Fehler beim Import. Prüfe den ICS-Link.');
+    }
+  }
+
+  function initIcsCalendarIntegration() {
+    const openBtn = document.getElementById('openIcsModalBtn');
+    const closeBtn = document.getElementById('closeIcsModalBtn');
+    const syncBtn = document.getElementById('syncIcsBtn');
+    const modal = document.getElementById('icsModal');
+    const input = document.getElementById('icsUrlInput');
+
+    if (input) input.value = localStorage.getItem('perfekte-woche-ics-url') || '';
+
+    if (openBtn && modal) {
+      openBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        profileMenu?.classList.remove('open');
+        modal.classList.remove('hidden');
+        setIcsStatus('');
+        setTimeout(() => input?.focus(), 50);
+      });
+    }
+
+    if (closeBtn && modal) {
+      closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
+    }
+
+    if (modal) {
+      modal.addEventListener('click', (event) => {
+        if (event.target === modal) modal.classList.add('hidden');
+      });
+    }
+
+    if (syncBtn) {
+      syncBtn.addEventListener('click', syncIcsCalendarFromModal);
+    }
+  }
+
+
   function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); }
   fillTaskDaySelect();
   renderAll();
   initCloudSync();
+  initIcsCalendarIntegration();
 })();
 </script>
-  <div id="icsModal" class="modal hidden">
-  <div class="modal-card">
-    <h2>ICS-Kalender verbinden</h2>
-    <p>Füge deinen Outlook-ICS-Link ein. Die Termine werden nur gelesen und in deinem Planner angezeigt.</p>
+  <div id="icsModal" class="ics-modal hidden">
+    <div class="ics-modal-card">
+      <h2>ICS-Kalender verbinden</h2>
+      <p>Füge deinen Outlook-ICS-Link ein. Die Termine werden nur gelesen und in deinem Planner angezeigt.</p>
 
-    <input
-      id="icsUrlInput"
-      type="url"
-      placeholder="https://...calendar.ics"
-      class="modal-input"
-    />
+      <input
+        id="icsUrlInput"
+        type="url"
+        placeholder="https://...calendar.ics"
+        class="ics-modal-input"
+      />
 
-    <div class="modal-actions">
-      <button id="syncIcsBtn" class="primary-btn" type="button">Synchronisieren</button>
-      <button id="closeIcsModalBtn" class="secondary-btn" type="button">Abbrechen</button>
+      <div class="ics-modal-actions">
+        <button id="syncIcsBtn" class="ics-primary-btn" type="button">Synchronisieren</button>
+        <button id="closeIcsModalBtn" class="ics-secondary-btn" type="button">Abbrechen</button>
+      </div>
+
+      <p id="icsStatus" class="ics-modal-status"></p>
     </div>
-
-    <p id="icsStatus" class="modal-status"></p>
   </div>
-</div>
 </body>
 </html>
