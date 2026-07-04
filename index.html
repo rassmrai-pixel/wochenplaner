@@ -1965,17 +1965,19 @@
       <div class="subtitle">Wochenansicht · 24 Stunden · 15-Minuten-Schritte · Kalender + Habit Tracker + To-do Planner + Tages-Taskansicht</div>
     </div>
     <div class="toolbar">
-      <button id="todoDrawerToggleBtn" class="todo-drawer-trigger">To-do Planner</button>
-      <div class="profile-menu" id="profileMenu">
-        <button class="profile-button" id="profileButton" title="Profil">?</button>
-        <div class="profile-dropdown" id="profileDropdown">
-          <div class="profile-card">
-            <div class="profile-avatar-large" id="profileAvatarLarge">?</div>
-            <div>
-              <div class="profile-name" id="profileName">Profil</div>
-              <div class="profile-sub" id="profileSub">Cloud Sync</div>
-            </div>
-          </div>
+  <button id="quickIcsSyncBtn" type="button">ICS Sync</button>
+  <button id="todoDrawerToggleBtn" class="todo-drawer-trigger">To-do Planner</button>
+
+  <div class="profile-menu" id="profileMenu">
+    <button class="profile-button" id="profileButton" title="Profil">?</button>
+    <div class="profile-dropdown" id="profileDropdown">
+      <div class="profile-card">
+        <div class="profile-avatar-large" id="profileAvatarLarge">?</div>
+        <div>
+          <div class="profile-name" id="profileName">Profil</div>
+          <div class="profile-sub" id="profileSub">Cloud Sync</div>
+        </div>
+      </div>
           <div class="profile-actions">
   <button class="ghost" id="profileAccountBtn" type="button">Kontoinformationen</button>
   <button class="ghost" id="openIcsModalBtn" type="button">ICS-Kalender verbinden</button>
@@ -5113,14 +5115,37 @@ function toggleMissed(eventId) {
   state.categories.external.color = state.categories.external.color || '#2563eb';
 }
 
-  function clearImportedIcsEvents() {
-    if (!state.weekEventsByWeek) state.weekEventsByWeek = {};
-    Object.keys(state.weekEventsByWeek).forEach((weekKey) => {
-      const events = Array.isArray(state.weekEventsByWeek[weekKey]) ? state.weekEventsByWeek[weekKey] : [];
-      state.weekEventsByWeek[weekKey] = events.filter(ev => ev.importSource !== 'ics');
-    });
-    currentWeekEvents();
-  }
+  function isImportedIcsEvent(ev) {
+  if (!ev) return false;
+
+  return (
+    ev.importSource === 'ics' ||
+    ev.source === 'ics' ||
+    ev.provider === 'outlook' ||
+    ev.provider === 'google' ||
+    Boolean(ev.externalId) ||
+    Boolean(ev.externalCalendarId) ||
+    String(ev.id || '').startsWith('ics_import_') ||
+    String(ev.id || '').startsWith('ics_') ||
+    ev.categoryId === 'external'
+  );
+}
+
+function clearImportedIcsEvents() {
+  if (!state.weekEventsByWeek) state.weekEventsByWeek = {};
+
+  Object.keys(state.weekEventsByWeek).forEach((weekKey) => {
+    const events = Array.isArray(state.weekEventsByWeek[weekKey])
+      ? state.weekEventsByWeek[weekKey]
+      : [];
+
+    state.weekEventsByWeek[weekKey] = events.filter(ev => !isImportedIcsEvent(ev));
+  });
+
+  currentWeekEvents();
+  saveState();
+  renderAll();
+}
 
   function plannerEventFromIcsEvent(icsEvent, index) {
     const eventDateKey = icsEvent.date || dateKey(new Date());
@@ -5189,24 +5214,41 @@ function toggleMissed(eventId) {
 
   clearImportedIcsEvents();
 
-  (icsEvents || []).forEach((icsEvent, index) => {
-    const plannerEvent = plannerEventFromIcsEvent(icsEvent, index);
-    const previous = existingByExternalId[plannerEvent.externalId];
+  const importedExternalIds = new Set();
 
-    if (previous) {
-      plannerEvent.done = previous.done;
-      plannerEvent.missed = previous.missed;
-      plannerEvent.categoryId = previous.categoryId;
-      plannerEvent.subtasks = previous.subtasks;
-      plannerEvent.autoComplete = previous.autoComplete;
-      plannerEvent.editable = previous.editable;
-    }
+(icsEvents || []).forEach((icsEvent, index) => {
+  const plannerEvent = plannerEventFromIcsEvent(icsEvent, index);
 
-    const weekKey = weekStartKey(dateKeyToLocalDate(icsEvent.date || dateKey(new Date())));
+  if (!plannerEvent.externalId) return;
 
-    if (!state.weekEventsByWeek[weekKey]) state.weekEventsByWeek[weekKey] = [];
+  // verhindert doppelte Termine direkt aus dem ICS-Feed
+  if (importedExternalIds.has(plannerEvent.externalId)) return;
+  importedExternalIds.add(plannerEvent.externalId);
+
+  const previous = existingByExternalId[plannerEvent.externalId];
+
+  if (previous) {
+    plannerEvent.done = previous.done;
+    plannerEvent.missed = previous.missed;
+    plannerEvent.categoryId = previous.categoryId;
+    plannerEvent.subtasks = previous.subtasks;
+    plannerEvent.autoComplete = previous.autoComplete;
+    plannerEvent.editable = previous.editable;
+  }
+
+  const weekKey = weekStartKey(dateKeyToLocalDate(icsEvent.date || dateKey(new Date())));
+
+  if (!state.weekEventsByWeek[weekKey]) state.weekEventsByWeek[weekKey] = [];
+
+  // letzter Schutz: in derselben Woche nicht nochmal denselben ICS-Termin pushen
+  const alreadyExists = state.weekEventsByWeek[weekKey].some(ev =>
+    isImportedIcsEvent(ev) && ev.externalId === plannerEvent.externalId
+  );
+
+  if (!alreadyExists) {
     state.weekEventsByWeek[weekKey].push(plannerEvent);
-  });
+  }
+});
 
   currentWeekEvents();
   saveState();
@@ -5255,11 +5297,21 @@ function toggleMissed(eventId) {
       setIcsStatus(error.message || 'Fehler beim Import. Prüfe den ICS-Link.');
     }
   }
+  
+  function removeIcsCalendarEvents() {
+  const confirmed = confirm('Alle importierten ICS-Termine aus dem Planner entfernen? Deine normalen Routinen und To-dos bleiben erhalten.');
+  if (!confirmed) return;
+
+  clearImportedIcsEvents();
+  setIcsStatus('Importierte ICS-Termine wurden entfernt.');
+}
 
   function initIcsCalendarIntegration() {
     const openBtn = document.getElementById('openIcsModalBtn');
     const closeBtn = document.getElementById('closeIcsModalBtn');
     const syncBtn = document.getElementById('syncIcsBtn');
+    const quickSyncBtn = document.getElementById('quickIcsSyncBtn');
+    const removeBtn = document.getElementById('removeIcsBtn');
     const modal = document.getElementById('icsModal');
     const input = document.getElementById('icsUrlInput');
 
@@ -5291,6 +5343,14 @@ function toggleMissed(eventId) {
     }
   }
 
+  if (quickSyncBtn) {
+  quickSyncBtn.addEventListener('click', syncSavedIcsCalendar);
+}
+  
+  if (removeBtn) {
+  removeBtn.addEventListener('click', removeIcsCalendarEvents);
+}
+
 
   function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); }
   fillTaskDaySelect();
@@ -5315,7 +5375,8 @@ document.addEventListener('DOMContentLoaded', initIcsCalendarIntegration);
 
       <div class="ics-modal-actions">
         <button id="syncIcsBtn" class="ics-primary-btn" type="button">Synchronisieren</button>
-        <button id="closeIcsModalBtn" class="ics-secondary-btn" type="button">Abbrechen</button>
+<button id="removeIcsBtn" class="ics-secondary-btn" type="button">ICS-Termine entfernen</button>
+<button id="closeIcsModalBtn" class="ics-secondary-btn" type="button">Abbrechen</button>
       </div>
 
       <p id="icsStatus" class="ics-modal-status"></p>
