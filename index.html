@@ -4800,21 +4800,36 @@ function toggleMissed(eventId) {
       const ev = currentEvents().find(x => x.id === editingId);
       if (ev) { Object.assign(ev, { day, start, end, label, categoryId, autoComplete: Boolean(modalAutoComplete?.checked), subtasks: cloneEventSubtasks({ subtasks: eventDraftSubtasks }) }); syncEventAutoComplete(ev); }
     } else {
-      const newEventId = id();
-      currentEvents().push({ id: newEventId, day, start, end, label, categoryId, done: false, source: (presetSource || (isTemplateMode() ? 'routine' : 'extra')), templateEventId: null, autoComplete: Boolean(modalAutoComplete?.checked), subtasks: cloneEventSubtasks({ subtasks: eventDraftSubtasks }), createdAt: new Date().toISOString() });
-      if (pendingTodoId) {
-        const todo = state.todos.find(t => t.id === pendingTodoId);
-        if (todo) {
-          todo.status = 'planned';
-          todo.done = false;
-          missed: false,
-          todo.plannedEventId = newEventId;
-          todo.plannedWeekStart = state.currentWeekStart;
-          todo.plannedDay = day;
-        }
-        pendingTodoId = null;
-      }
+  const newEventId = id();
+
+  currentEvents().push({
+    id: newEventId,
+    day,
+    start,
+    end,
+    label,
+    categoryId,
+    done: false,
+    missed: false,
+    source: (presetSource || (isTemplateMode() ? 'routine' : 'extra')),
+    templateEventId: null,
+    autoComplete: Boolean(modalAutoComplete?.checked),
+    subtasks: cloneEventSubtasks({ subtasks: eventDraftSubtasks }),
+    createdAt: new Date().toISOString()
+  });
+
+  if (pendingTodoId) {
+    const todo = state.todos.find(t => t.id === pendingTodoId);
+    if (todo) {
+      todo.status = 'planned';
+      todo.done = false;
+      todo.plannedEventId = newEventId;
+      todo.plannedWeekStart = state.currentWeekStart;
+      todo.plannedDay = day;
     }
+    pendingTodoId = null;
+  }
+}
     saveState();
     renderAll();
     closeModal();
