@@ -1048,41 +1048,39 @@
       accent-color: #38bdf8;
       margin: 0;
     }
-    .event.missed .event-check {
-  width: 15px;
-  height: 15px;
-  flex: 0 0 auto;
-  margin: 0;
-  accent-color: #dc2626;
+    .event-title {
+  font-size: 11px;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1;
 }
 
-    .event-title {
-      font-size: 11px;
-      font-weight: 800;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      line-height: 1;
-    }
-    .event-time {
-      position: absolute;
-      top: calc(var(--cell-h) + 2px);
-      left: 5px;
-      right: 5px;
-      font-size: 10px;
-      opacity: 0.9;
-      margin-top: 0;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      line-height: 1;
-    }
-    .event.done { opacity: 0.64; }
-    .event.done .event-title { text-decoration: line-through; }
+.event-time {
+  position: absolute;
+  top: calc(var(--cell-h) + 2px);
+  left: 5px;
+  right: 5px;
+  font-size: 10px;
+  opacity: 0.9;
+  margin-top: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1;
+}
 
-    .event.done { opacity: 0.64; }
-.event.done .event-title { text-decoration: line-through; }
+/* Erledigt */
+.event.done {
+  opacity: 0.64;
+}
 
+.event.done .event-title {
+  text-decoration: line-through;
+}
+
+/* Nicht eingehalten */
 .event.missed {
   opacity: 0.82;
   border-color: rgba(239, 68, 68, 0.75);
@@ -1093,6 +1091,12 @@
   text-decoration: line-through;
 }
 
+/* Wenn "nicht eingehalten" aktiv ist, verschwindet die Checkbox */
+.event.missed .event-check {
+  display: none;
+}
+
+/* Nicht-eingehalten Button */
 .event-missed-btn {
   width: 18px;
   height: 18px;
