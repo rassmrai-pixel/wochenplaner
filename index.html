@@ -5252,8 +5252,10 @@ function toggleMissed(eventId) {
   function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); }
   fillTaskDaySelect();
   renderAll();
-  initCloudSync();
-  initIcsCalendarIntegration();
+  renderAll();
+initCloudSync();
+
+document.addEventListener('DOMContentLoaded', initIcsCalendarIntegration);
 })();
 </script>
   <div id="icsModal" class="ics-modal hidden">
