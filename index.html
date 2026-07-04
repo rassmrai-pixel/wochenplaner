@@ -413,18 +413,20 @@
     width: 30px;
     height: 150px;
   }
+
+  .tracking-bucket-column {
+    min-width: 58px;
+    height: 215px;
+  }
+
+  .tracking-bucket-bars {
+    height: 150px;
+  }
+
+  .tracking-mini-bar {
+    width: 11px;
+  }
 }
-      .tracking-bucket-column {
-        min-width: 58px;
-        height: 215px;
-      }
-      .tracking-bucket-bars {
-        height: 150px;
-      }
-      .tracking-mini-bar {
-        width: 11px;
-      }
-    }
     .tracking-legend-mini {
       display: flex;
       gap: 8px;
@@ -5348,6 +5350,7 @@ if (quickSyncBtn) {
 
 if (removeBtn) {
   removeBtn.addEventListener('click', removeIcsCalendarEvents);
+}
 }
 
 
