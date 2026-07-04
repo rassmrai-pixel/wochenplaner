@@ -3247,23 +3247,34 @@
 
     const trackable = isWeekMode() && Boolean(cat.habit);
     div.innerHTML = `
-      <div class="event-title-row">
-        ${trackable ? `<input class="event-check" type="checkbox" ${ev.done ? 'checked' : ''} ${ev.autoComplete && Array.isArray(ev.subtasks) && ev.subtasks.length ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : 'title="Abhaken"'} />` : ''}
-        <span class="event-title">${escapeHtml(ev.label)}</span>
-      </div>
-      <div class="event-time">${eventTime(ev)}</div>`;
+  <div class="event-title-row">
+    ${trackable ? `<input class="event-check" type="checkbox" ${ev.done ? 'checked' : ''} ${ev.autoComplete && Array.isArray(ev.subtasks) && ev.subtasks.length ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : 'title="Erledigt"'} />` : ''}
+    ${trackable ? `<button class="event-missed-btn ${ev.missed ? 'active' : ''}" type="button" title="Nicht eingehalten">!</button>` : ''}
+    <span class="event-title">${escapeHtml(ev.label)}</span>
+  </div>
+  <div class="event-time">${eventTime(ev)}</div>`;
 
     div.addEventListener('mousedown', e => e.stopPropagation());
     div.addEventListener('click', e => e.stopPropagation());
     div.addEventListener('dblclick', e => { e.preventDefault(); e.stopPropagation(); openEditor(ev.id); });
     const checkbox = div.querySelector('.event-check');
-    if (checkbox) {
-      checkbox.addEventListener('click', e => {
-        e.stopPropagation();
-        toggleDone(ev.id, checkbox.checked);
-      });
-    }
-    return div;
+if (checkbox) {
+  checkbox.addEventListener('click', e => {
+    e.stopPropagation();
+    toggleDone(ev.id, checkbox.checked);
+  });
+}
+
+const missedBtn = div.querySelector('.event-missed-btn');
+if (missedBtn) {
+  missedBtn.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleMissed(ev.id);
+  });
+}
+
+return div;
   }
 
   function openEditor(eventId = null, preset = null) {
