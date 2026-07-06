@@ -30,6 +30,7 @@
     uiHomeVersion: 'calendar-main-v1',
     todoDrawerOpen: false,
     drawerView: 'habit',
+    drawerControlsCollapsed: false,
     openHeaderTodoDay: null,
     currentWeekStart: null,
     trackingView: 'week',
@@ -112,6 +113,10 @@
   const drawerFilterMobileToggle = document.getElementById('drawerFilterMobileToggle');
   const drawerFilterMobileLabel = document.getElementById('drawerFilterMobileLabel');
   const drawerFilterRow = document.getElementById('drawerFilterRow');
+  const drawerControlsPanel = document.getElementById('drawerControlsPanel');
+  const drawerControlsToggleBtn = document.getElementById('drawerControlsToggleBtn');
+  const drawerControlsSummaryText = document.getElementById('drawerControlsSummaryText');
+  const drawerControlsSummaryAction = document.getElementById('drawerControlsSummaryAction');
   const drawerTaskFilter = document.getElementById('drawerTaskFilter');
   const drawerTaskFilterSelect = document.getElementById('drawerTaskFilterSelect');
   const drawerTaskAllBtn = document.getElementById('drawerTaskAllBtn');
@@ -335,6 +340,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     if (s.plannerMode !== 'week' && s.viewMode === 'tasks') s.viewMode = 'calendar';
     s.todoDrawerOpen = Boolean(s.todoDrawerOpen);
     if (!['habit', 'todo'].includes(s.drawerView)) s.drawerView = 'habit';
+    s.drawerControlsCollapsed = Boolean(s.drawerControlsCollapsed);
     const todayInfo = getTodayInfo();
     const isCurrentWeek = s.currentWeekStart === todayInfo.weekKey;
     s.activeHabitDay = isCurrentWeek ? todayInfo.dayIndex : clamp(Number(s.activeHabitDay), 0, 6);
@@ -1648,6 +1654,7 @@ return div;
         drawerHabitPanel.classList.remove('untimed-task-filter', 'timed-task-filter');
       }
       renderDrawerProgress(drawerHabitProgress, 'Tagesfortschritt', { total: 0, done: 0, percent: 0 }, 'Wechsle auf „Kalender“, um Tages-Habits zu tracken.');
+      renderDrawerControlsSummary({ total: 0, done: 0, open: 0 }, state.drawerTaskFilter || 'all');
       if (drawerDayTodos?.parentElement === habitList) drawerDayTodos.remove();
       habitList.innerHTML = '<div class="habit-empty">Der Habit Tracker ist für die echte Kalenderwoche gedacht. Wechsle auf „Kalender“, um Tages-Habits abzuhaken.</div>';
       renderDayTodos();
@@ -1690,6 +1697,7 @@ return div;
       stats,
       stats.total ? `${stats.done}/${stats.total} erledigt · ${stats.missed || 0} nicht eingehalten · ${stats.open || 0} offen` : 'Für diesen Filter gibt es an diesem Tag noch keine Aufgaben.'
     );
+    renderDrawerControlsSummary(stats, taskFilter);
 
     const routineList = dayEvents.filter(ev => ev.source !== 'extra' && state.categories[ev.categoryId]?.habit);
     const scheduledTodos = dayEvents.filter(ev => ev.source === 'extra');
@@ -1750,6 +1758,15 @@ return div;
     drawerTaskTimedBtn.classList.toggle('active', filter === 'timed');
     drawerTaskUntimedBtn.classList.toggle('active', filter === 'untimed');
     if (drawerTaskFilterSelect) drawerTaskFilterSelect.value = filter;
+  }
+
+  function renderDrawerControlsSummary(stats, taskFilter) {
+    if (!drawerControlsPanel || !drawerControlsSummaryText || !drawerControlsSummaryAction) return;
+    const filterLabels = { all: 'Alle Tasks', timed: 'Mit Uhrzeit', untimed: 'Ohne Uhrzeit' };
+    const collapsed = Boolean(state.drawerControlsCollapsed);
+    drawerControlsPanel.classList.toggle('collapsed', collapsed);
+    drawerControlsSummaryText.textContent = `${days[state.activeHabitDay]} ${formatShortDate(getDayDate(state.activeHabitDay))} · ${filterLabels[taskFilter] || 'Alle Tasks'} · ${stats.open || 0}/${stats.total || 0} offen`;
+    drawerControlsSummaryAction.textContent = collapsed ? 'Ausklappen ▾' : 'Einklappen ▴';
   }
 
   function drawerTaskStats(dayEvents, dayTodoItems, taskFilter) {
@@ -2805,6 +2822,13 @@ function toggleMissed(eventId) {
   if (drawerFilterMobileToggle && drawerHabitPanel) {
     drawerFilterMobileToggle.onclick = () => {
       drawerHabitPanel.classList.toggle('filter-open');
+    };
+  }
+  if (drawerControlsToggleBtn) {
+    drawerControlsToggleBtn.onclick = () => {
+      state.drawerControlsCollapsed = !state.drawerControlsCollapsed;
+      saveState();
+      renderHabits();
     };
   }
   drawerDaySelect.onchange = () => { state.activeHabitDay = Number(drawerDaySelect.value); updateDrawerFilterMobileLabel(); saveState(); renderAll(); };

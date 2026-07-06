@@ -718,6 +718,43 @@
       padding: 14px 16px 22px;
       gap: 12px;
     }
+    .drawer-controls-panel {
+      display: grid;
+      gap: 10px;
+      flex: 0 0 auto;
+    }
+    .drawer-controls-summary {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      min-height: 42px;
+      padding: 9px 12px;
+      border: 1px solid var(--line-soft);
+      border-radius: 14px;
+      background: rgba(2, 6, 23, 0.34);
+      color: var(--text);
+      text-align: left;
+      font-weight: 900;
+    }
+    .drawer-controls-summary span:first-child {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .drawer-controls-summary span:last-child {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .drawer-controls-content {
+      display: grid;
+      gap: 10px;
+    }
+    .drawer-controls-panel.collapsed .drawer-controls-content {
+      display: none;
+    }
     .drawer-progress-card {
       border: 1px solid var(--line-soft);
       border-radius: 14px;
@@ -1576,6 +1613,18 @@
       padding: 8px 12px;
     }
     @media (max-width: 700px) {
+      .drawer-controls-panel {
+        gap: 8px;
+      }
+      .drawer-controls-summary {
+        min-height: 40px;
+        padding: 8px 10px;
+        border-radius: 12px;
+        font-size: 13px;
+      }
+      .drawer-controls-content {
+        gap: 8px;
+      }
       .tracking-tools { grid-template-columns: 1fr; }
       .tracking-tools input,
       .tracking-tools select { width: 100%; min-width: 0; }
