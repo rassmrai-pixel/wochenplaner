@@ -1047,18 +1047,33 @@
       min-width: 0;
       height: 16px;
       line-height: 14px;
-      padding: 0 42px 0 6px;
+      padding: 0 42px 0 4px;
       border-left: 3px solid #38bdf8;
       border-radius: 5px;
       background: #1f2937;
       color: var(--text);
       font-size: 11px;
       font-weight: 800;
+      display: grid;
+      grid-template-columns: 12px minmax(0, 1fr);
+      align-items: center;
+      gap: 3px;
+      overflow: hidden;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+      cursor: pointer;
+    }
+    .all-day-check {
+      width: 11px;
+      height: 11px;
+      min-height: 0;
+      margin: 0;
+      accent-color: #38bdf8;
+    }
+    .all-day-text {
+      min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
-      cursor: pointer;
     }
     .all-day-item.done {
       opacity: 0.62;
@@ -1101,8 +1116,7 @@
       letter-spacing: 0.04em;
     }
     .header-todo-close,
-    .header-todo-delete,
-    .header-todo-add {
+    .header-todo-planner {
       min-height: 0;
       padding: 2px 5px;
       border-radius: 5px;
@@ -1118,7 +1132,7 @@
     }
     .header-todo-row {
       display: grid;
-      grid-template-columns: 14px minmax(0, 1fr) auto;
+      grid-template-columns: 14px minmax(0, 1fr);
       align-items: center;
       gap: 4px;
       min-width: 0;
@@ -1152,7 +1166,7 @@
       font-weight: 700;
       padding: 2px 0;
     }
-    .header-todo-add {
+    .header-todo-planner {
       width: 100%;
       margin-top: 4px;
       color: var(--text);

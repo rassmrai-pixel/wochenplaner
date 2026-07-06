@@ -974,8 +974,14 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
       item.className = `all-day-item ${isTodoDone(todo) ? 'done' : ''}`;
       item.style.borderLeftColor = cat.color;
       item.title = todo.text;
-      item.textContent = todo.text;
+      item.innerHTML = `
+        <input class="all-day-check" type="checkbox" ${isTodoDone(todo) ? 'checked' : ''} ${todo.autoComplete && Array.isArray(todo.subtasks) && todo.subtasks.length ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : ''} />
+        <span class="all-day-text">${escapeHtml(todo.text)}</span>`;
       item.addEventListener('click', e => openExistingDayTodo(todo, e));
+      item.addEventListener('dblclick', e => openDayTodoEditor(todo, e));
+      item.querySelector('.all-day-check').addEventListener('click', e => e.stopPropagation());
+      item.querySelector('.all-day-check').addEventListener('dblclick', e => e.stopPropagation());
+      item.querySelector('.all-day-check').addEventListener('change', e => toggleDayTodoDone(todo, e.target.checked, e));
       cell.appendChild(item);
     });
 
@@ -1009,6 +1015,19 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
       event.stopPropagation();
     }
     state.openHeaderTodoDay = null;
+    saveState();
+    renderAll();
+  }
+
+  function openTodoPlannerForDay(dayIndex, event = null) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    state.activeHabitDay = clamp(Number(dayIndex), 0, 6);
+    state.openHeaderTodoDay = null;
+    state.todoDrawerOpen = true;
+    state.drawerView = 'todo';
     saveState();
     renderAll();
   }
@@ -1073,7 +1092,6 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
             <div class="header-todo-row" data-todo-id="${todo.id}">
               <input class="header-todo-check" type="checkbox" ${doneState ? 'checked' : ''} ${todo.autoComplete && Array.isArray(todo.subtasks) && todo.subtasks.length ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : ''} />
               <button type="button" class="header-todo-open">${escapeHtml(todo.text)}</button>
-              <button type="button" class="header-todo-delete">×</button>
             </div>`;
         }).join('')
       : '<div class="header-todo-empty">Keine Tagesaufgaben.</div>';
@@ -1084,20 +1102,18 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
         <button type="button" class="header-todo-close" title="Schließen">×</button>
       </div>
       <div class="header-todo-list">${rows}</div>
-      <button type="button" class="header-todo-add">+ Aufgabe</button>`;
+      <button type="button" class="header-todo-planner">Im To-do Planner öffnen</button>`;
 
     panel.querySelector('.header-todo-close').addEventListener('click', closeHeaderTodos);
-    panel.querySelector('.header-todo-add').addEventListener('click', e => {
-      e.preventDefault();
-      e.stopPropagation();
-      openDayTodoModalForDay(dayIndex);
-    });
+    panel.querySelector('.header-todo-planner').addEventListener('click', e => openTodoPlannerForDay(dayIndex, e));
     panel.querySelectorAll('.header-todo-row').forEach(row => {
       const todo = todos.find(item => item.id === row.dataset.todoId);
       if (!todo) return;
+      row.addEventListener('dblclick', e => openDayTodoEditor(todo, e));
       row.querySelector('.header-todo-check').addEventListener('change', e => toggleDayTodoDone(todo, e.target.checked, e));
-      row.querySelector('.header-todo-open').addEventListener('click', e => openDayTodoEditor(todo, e));
-      row.querySelector('.header-todo-delete').addEventListener('click', e => deleteDayTodo(todo, e));
+      row.querySelector('.header-todo-check').addEventListener('click', e => e.stopPropagation());
+      row.querySelector('.header-todo-open').addEventListener('click', e => e.stopPropagation());
+      row.querySelector('.header-todo-open').addEventListener('dblclick', e => openDayTodoEditor(todo, e));
     });
     container.appendChild(panel);
   }
@@ -1519,7 +1535,7 @@ return div;
     dayTodoModalAuto.checked = Boolean(todo.autoComplete);
     dayTodoModalSubtaskInput.value = '';
     if (deleteDayTodoModalBtn) deleteDayTodoModalBtn.style.display = '';
-    if (saveDayTodoModalBtn) saveDayTodoModalBtn.textContent = 'Speichern';
+    if (saveDayTodoModalBtn) saveDayTodoModalBtn.textContent = 'Änderungen speichern';
     renderDayTodoDraftSubtasks();
     dayTodoModalBackdrop.style.display = 'flex';
     setTimeout(() => dayTodoModalText.focus(), 50);
