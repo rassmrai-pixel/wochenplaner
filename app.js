@@ -71,6 +71,8 @@
   let lastAutoScrollKey = null;
   let editingDayTodoId = null;
   let drawerControlsCollapsed = true;
+  let drawerTouchStartX = null;
+  let drawerTouchStartY = null;
   let dayTodoDraftSubtasks = [];
   let eventDraftSubtasks = [];
 
@@ -114,9 +116,13 @@
   const drawerFilterMobileLabel = document.getElementById('drawerFilterMobileLabel');
   const drawerFilterRow = document.getElementById('drawerFilterRow');
   const drawerControlsPanel = document.getElementById('drawerControlsPanel');
+  const drawerControlsSummary = document.getElementById('drawerControlsSummary');
   const drawerControlsToggleBtn = document.getElementById('drawerControlsToggleBtn');
   const drawerControlsSummaryText = document.getElementById('drawerControlsSummaryText');
   const drawerControlsSummaryAction = document.getElementById('drawerControlsSummaryAction');
+  const drawerPrevDayBtn = document.getElementById('drawerPrevDayBtn');
+  const drawerNextDayBtn = document.getElementById('drawerNextDayBtn');
+  const drawerQuickAddBtn = document.getElementById('drawerQuickAddBtn');
   const drawerTaskFilter = document.getElementById('drawerTaskFilter');
   const drawerTaskFilterSelect = document.getElementById('drawerTaskFilterSelect');
   const drawerTaskAllBtn = document.getElementById('drawerTaskAllBtn');
@@ -1064,6 +1070,14 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     renderAll();
   }
 
+  function changeDrawerDay(offset) {
+    const nextDay = clamp(Number(state.activeHabitDay) + offset, 0, 6);
+    if (nextDay === state.activeHabitDay) return;
+    state.activeHabitDay = nextDay;
+    saveState();
+    renderAll();
+  }
+
   function deleteDayTodo(todo, event = null) {
     if (event) {
       event.preventDefault();
@@ -1667,13 +1681,6 @@ return div;
       btn.onclick = () => { state.activeHabitDay = d; saveState(); renderAll(); };
       dayTabs.appendChild(btn);
     });
-    const addBtn = document.createElement('button');
-    addBtn.type = 'button';
-    addBtn.className = 'day-tab day-add-tab-btn primary';
-    addBtn.title = 'Tages-To-do ohne Uhrzeit erstellen';
-    addBtn.textContent = '+';
-    addBtn.onclick = addDayTodoQuick;
-    dayTabs.appendChild(addBtn);
 
     const filter = state.drawerHabitFilter || 'all';
     const dayEvents = currentWeekEvents()
@@ -1768,6 +1775,8 @@ return div;
     drawerControlsSummaryAction.innerHTML = collapsed
       ? '<span class="drawer-chevron down" aria-hidden="true"></span>'
       : '<span class="drawer-chevron up" aria-hidden="true"></span>';
+    if (drawerPrevDayBtn) drawerPrevDayBtn.disabled = state.activeHabitDay <= 0;
+    if (drawerNextDayBtn) drawerNextDayBtn.disabled = state.activeHabitDay >= 6;
   }
 
   function drawerTaskStats(dayEvents, dayTodoItems, taskFilter) {
@@ -2830,6 +2839,46 @@ function toggleMissed(eventId) {
       drawerControlsCollapsed = !drawerControlsCollapsed;
       renderHabits();
     };
+  }
+  if (drawerPrevDayBtn) drawerPrevDayBtn.onclick = e => { e.preventDefault(); e.stopPropagation(); changeDrawerDay(-1); };
+  if (drawerNextDayBtn) drawerNextDayBtn.onclick = e => { e.preventDefault(); e.stopPropagation(); changeDrawerDay(1); };
+  if (drawerQuickAddBtn) {
+    drawerQuickAddBtn.onclick = e => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (state.drawerView === 'todo') {
+        state.todoDrawerOpen = true;
+        state.drawerView = 'todo';
+        saveState();
+        renderAll();
+        setTimeout(() => todoInput?.focus(), 80);
+        return;
+      }
+      addDayTodoQuick();
+    };
+  }
+  if (drawerHabitPanel) {
+    drawerHabitPanel.addEventListener('touchstart', e => {
+      if (e.target.closest('button,input,select,textarea,label,a')) return;
+      const touch = e.touches[0];
+      drawerTouchStartX = touch.clientX;
+      drawerTouchStartY = touch.clientY;
+    }, { passive: true });
+    drawerHabitPanel.addEventListener('touchend', e => {
+      if (drawerTouchStartX === null || drawerTouchStartY === null) return;
+      if (e.target.closest('button,input,select,textarea,label,a')) {
+        drawerTouchStartX = null;
+        drawerTouchStartY = null;
+        return;
+      }
+      const touch = e.changedTouches[0];
+      const diffX = touch.clientX - drawerTouchStartX;
+      const diffY = touch.clientY - drawerTouchStartY;
+      drawerTouchStartX = null;
+      drawerTouchStartY = null;
+      if (Math.abs(diffX) <= 60 || Math.abs(diffX) <= Math.abs(diffY) * 1.5) return;
+      changeDrawerDay(diffX > 0 ? -1 : 1);
+    }, { passive: true });
   }
   drawerDaySelect.onchange = () => { state.activeHabitDay = Number(drawerDaySelect.value); updateDrawerFilterMobileLabel(); saveState(); renderAll(); };
   drawerHabitFilter.onchange = () => { state.drawerHabitFilter = drawerHabitFilter.value; updateDrawerFilterMobileLabel(); saveState(); renderHabits(); };

@@ -206,17 +206,24 @@
           <span id="drawerHabitLabel">Habit Tracker</span>
           <span id="drawerTodoLabel">To-do Planner</span>
         </div>
-        <div class="drawer-switch" id="drawerSwitch">
-          <button type="button" id="drawerHabitBtn">Habits</button>
-          <button type="button" id="drawerTodoBtn">To-dos</button>
+        <div class="drawer-switch-row">
+          <div class="drawer-switch" id="drawerSwitch">
+            <button type="button" id="drawerHabitBtn">Habits</button>
+            <button type="button" id="drawerTodoBtn">To-dos</button>
+          </div>
+          <button type="button" class="drawer-quick-add-btn primary" id="drawerQuickAddBtn" title="Schnell hinzufügen">+</button>
         </div>
       </div>
       <section class="drawer-panel drawer-habit-panel active" id="drawerHabitPanel">
         <div class="drawer-controls-panel" id="drawerControlsPanel">
-          <button type="button" class="drawer-controls-summary" id="drawerControlsToggleBtn">
+          <div class="drawer-controls-summary" id="drawerControlsSummary">
+            <button type="button" class="drawer-day-nav-btn" id="drawerPrevDayBtn" title="Vorheriger Tag">‹</button>
             <span id="drawerControlsSummaryText">Mo 06.07. • Alle Tasks • 0/0 offen</span>
-            <span id="drawerControlsSummaryAction" class="drawer-controls-action">⌄</span>
-          </button>
+            <button type="button" class="drawer-day-nav-btn" id="drawerNextDayBtn" title="Nächster Tag">›</button>
+            <button type="button" class="drawer-controls-chevron-btn" id="drawerControlsToggleBtn" title="Optionen ein-/ausklappen">
+              <span id="drawerControlsSummaryAction" class="drawer-controls-action">⌄</span>
+            </button>
+          </div>
           <div class="drawer-controls-content" id="drawerControlsContent">
             <div class="drawer-filter-mobile-toggle" id="drawerFilterMobileToggle">
   <span id="drawerFilterMobileLabel">Mi 01.07. · Alle</span>
