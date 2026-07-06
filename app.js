@@ -967,48 +967,51 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     const todos = allDayTodosForDay(dayIndex)
       .sort((a, b) => Number(isTodoDone(a)) - Number(isTodoDone(b)) || String(a.createdAt).localeCompare(String(b.createdAt)));
     const visible = todos.slice(0, 2);
+    const isExpanded = state.openHeaderTodoDay === dayIndex;
 
-    visible.forEach(todo => {
-      const cat = state.categories[todo.categoryId] || state.categories.orga;
-      const item = document.createElement('div');
-      let clickTimer = null;
-      item.className = `all-day-item ${isTodoDone(todo) ? 'done' : ''}`;
-      item.style.borderLeftColor = cat.color;
-      item.title = todo.text;
-      item.innerHTML = `
-        <input class="all-day-check" type="checkbox" ${isTodoDone(todo) ? 'checked' : ''} ${todo.autoComplete && Array.isArray(todo.subtasks) && todo.subtasks.length ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : ''} />
-        <span class="all-day-text">${escapeHtml(todo.text)}</span>`;
-      item.addEventListener('click', e => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (clickTimer) clearTimeout(clickTimer);
-        clickTimer = setTimeout(() => {
-          clickTimer = null;
-          openHeaderTodosForDay(dayIndex);
-        }, 220);
+    if (!isExpanded) {
+      visible.forEach(todo => {
+        const cat = state.categories[todo.categoryId] || state.categories.orga;
+        const item = document.createElement('div');
+        let clickTimer = null;
+        item.className = `all-day-item ${isTodoDone(todo) ? 'done' : ''}`;
+        item.style.borderLeftColor = cat.color;
+        item.title = todo.text;
+        item.innerHTML = `
+          <input class="all-day-check" type="checkbox" ${isTodoDone(todo) ? 'checked' : ''} ${todo.autoComplete && Array.isArray(todo.subtasks) && todo.subtasks.length ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : ''} />
+          <span class="all-day-text">${escapeHtml(todo.text)}</span>`;
+        item.addEventListener('click', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (clickTimer) clearTimeout(clickTimer);
+          clickTimer = setTimeout(() => {
+            clickTimer = null;
+            openHeaderTodosForDay(dayIndex);
+          }, 220);
+        });
+        item.addEventListener('dblclick', e => {
+          if (clickTimer) {
+            clearTimeout(clickTimer);
+            clickTimer = null;
+          }
+          openDayTodoEditor(todo, e);
+        });
+        item.querySelector('.all-day-check').addEventListener('click', e => e.stopPropagation());
+        item.querySelector('.all-day-check').addEventListener('dblclick', e => e.stopPropagation());
+        item.querySelector('.all-day-check').addEventListener('change', e => toggleDayTodoDone(todo, e.target.checked, e));
+        cell.appendChild(item);
       });
-      item.addEventListener('dblclick', e => {
-        if (clickTimer) {
-          clearTimeout(clickTimer);
-          clickTimer = null;
-        }
-        openDayTodoEditor(todo, e);
-      });
-      item.querySelector('.all-day-check').addEventListener('click', e => e.stopPropagation());
-      item.querySelector('.all-day-check').addEventListener('dblclick', e => e.stopPropagation());
-      item.querySelector('.all-day-check').addEventListener('change', e => toggleDayTodoDone(todo, e.target.checked, e));
-      cell.appendChild(item);
-    });
 
-    if (todos.length > visible.length) {
-      const more = document.createElement('div');
-      more.className = 'all-day-more';
-      more.textContent = `+${todos.length - visible.length} mehr`;
-      more.addEventListener('click', e => openHeaderTodosForDay(dayIndex, e));
-      cell.appendChild(more);
+      if (todos.length > visible.length) {
+        const more = document.createElement('div');
+        more.className = 'all-day-more';
+        more.textContent = `+${todos.length - visible.length} mehr`;
+        more.addEventListener('click', e => openHeaderTodosForDay(dayIndex, e));
+        cell.appendChild(more);
+      }
     }
 
-    if (state.openHeaderTodoDay === dayIndex) renderAllDayTodoPopover(cell, dayIndex, todos);
+    if (isExpanded) renderAllDayTodoPopover(cell, dayIndex, todos);
   }
 
   function openHeaderTodosForDay(dayIndex, event = null) {
@@ -1103,9 +1106,10 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
       ? todos.map(todo => {
           const doneState = isTodoDone(todo);
           const stats = subtaskStats(todo);
+          const cat = state.categories[todo.categoryId] || state.categories.orga;
           const meta = stats.total ? `<span class="all-day-popover-meta">${stats.done}/${stats.total}</span>` : '';
           return `
-            <div class="all-day-popover-row ${doneState ? 'done' : ''}" data-todo-id="${todo.id}">
+            <div class="all-day-popover-row ${doneState ? 'done' : ''}" data-todo-id="${todo.id}" style="border-left-color:${escapeHtml(cat.color)}">
               <input class="all-day-popover-check" type="checkbox" ${doneState ? 'checked' : ''} ${todo.autoComplete && Array.isArray(todo.subtasks) && todo.subtasks.length ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : ''} />
               <button type="button" class="all-day-popover-task">${escapeHtml(todo.text)}</button>
               ${meta}
@@ -1545,6 +1549,9 @@ return div;
     fillDayTodoModalCategorySelect();
     editingDayTodoId = todo.id;
     state.activeHabitDay = clamp(Number(todo.plannedDay), 0, 6);
+    state.openHeaderTodoDay = null;
+    document.querySelectorAll('.all-day-popover').forEach(popover => popover.remove());
+    document.querySelectorAll('.all-day-day.expanded').forEach(cell => cell.classList.remove('expanded'));
     dayTodoDraftSubtasks = Array.isArray(todo.subtasks) ? clone(todo.subtasks) : [];
     dayTodoModalTitle.textContent = 'Tages-To-do bearbeiten';
     dayTodoModalInfo.textContent = `${days[state.activeHabitDay]} ${formatShortDate(getDayDate(state.activeHabitDay))} · Tagesaufgabe ohne feste Uhrzeit.`;
