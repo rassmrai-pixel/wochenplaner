@@ -931,9 +931,6 @@
       min-width: calc(var(--time-w) + 7 * var(--day-min-w));
       position: relative;
     }
-    .calendar.header-todo-open {
-      grid-template-rows: 176px calc(2 * var(--cell-h)) calc(96 * var(--cell-h));
-    }
     .head-cell {
       position: sticky;
       top: 0;
@@ -949,10 +946,6 @@
       flex-direction: column;
       justify-content: center;
       gap: 5px;
-    }
-    .calendar.header-todo-open .head-cell {
-      justify-content: flex-start;
-      overflow: hidden;
     }
 
     .day-progress-wrap {
@@ -1012,9 +1005,6 @@
       z-index: 32;
       box-shadow: 0 1px 0 var(--line);
     }
-    .calendar.header-todo-open .all-day-cell {
-      top: 176px;
-    }
     .all-day-label {
       left: 0;
       z-index: 45;
@@ -1037,10 +1027,14 @@
       align-content: start;
       gap: 2px;
       cursor: pointer;
-      overflow: hidden;
+      overflow: visible;
       position: sticky;
     }
     .all-day-day:hover {
+      background: #162033;
+    }
+    .all-day-day.expanded {
+      z-index: 70;
       background: #162033;
     }
     .all-day-item {
@@ -1093,57 +1087,74 @@
       font-weight: 800;
       cursor: pointer;
     }
-    .header-todo-panel {
-      width: 100%;
-      margin-top: 4px;
-      padding: 5px;
-      border: 1px solid var(--line-soft);
-      border-radius: 7px;
+    .all-day-popover {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 50%;
+      width: min(330px, calc(100vw - 48px));
+      max-height: 280px;
+      padding: 10px;
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      border-radius: 10px;
       background: #0f172a;
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03);
+      box-shadow: 0 22px 60px rgba(0,0,0,0.42), inset 0 0 0 1px rgba(255,255,255,0.04);
+      transform: translateX(-50%);
+      z-index: 80;
+      cursor: default;
       text-align: left;
     }
-    .header-todo-head {
+    .all-day-popover-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 6px;
-      margin-bottom: 4px;
+      margin-bottom: 8px;
       color: var(--muted);
-      font-size: 10px;
+      font-size: 11px;
       font-weight: 900;
       text-transform: uppercase;
       letter-spacing: 0.04em;
     }
-    .header-todo-close,
-    .header-todo-planner {
+    .all-day-popover-close,
+    .all-day-popover-planner {
       min-height: 0;
-      padding: 2px 5px;
-      border-radius: 5px;
-      font-size: 10px;
+      padding: 4px 7px;
+      border-radius: 6px;
+      font-size: 11px;
       line-height: 1.1;
     }
-    .header-todo-list {
+    .all-day-popover-list {
       display: grid;
-      gap: 3px;
-      max-height: 70px;
+      gap: 6px;
+      max-height: 190px;
       overflow: auto;
       padding-right: 1px;
     }
-    .header-todo-row {
+    .all-day-popover-row {
       display: grid;
-      grid-template-columns: 14px minmax(0, 1fr);
+      grid-template-columns: 16px minmax(0, 1fr) auto;
       align-items: center;
-      gap: 4px;
+      gap: 8px;
       min-width: 0;
+      padding: 7px 8px;
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      border-radius: 8px;
+      background: #111827;
+      color: var(--text);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
     }
-    .header-todo-check {
+    .all-day-popover-row.done {
+      opacity: 0.62;
+      text-decoration: line-through;
+    }
+    .all-day-popover-check {
       width: 13px;
       height: 13px;
       min-height: 0;
+      margin: 0;
       accent-color: #38bdf8;
     }
-    .header-todo-open {
+    .all-day-popover-task {
       min-height: 0;
       padding: 1px 0;
       border: 0;
@@ -1157,18 +1168,24 @@
       text-align: left;
       cursor: pointer;
     }
-    .header-todo-open:hover {
+    .all-day-popover-task:hover {
       color: #bfdbfe;
     }
-    .header-todo-empty {
+    .all-day-popover-meta {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .all-day-popover-empty {
       color: var(--muted);
       font-size: 11px;
       font-weight: 700;
-      padding: 2px 0;
+      padding: 8px 0;
     }
-    .header-todo-planner {
+    .all-day-popover-planner {
       width: 100%;
-      margin-top: 4px;
+      margin-top: 8px;
       color: var(--text);
     }
     .time-cell {

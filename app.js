@@ -899,7 +899,6 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
 
   function renderCalendar() {
     calendar.innerHTML = '';
-    calendar.classList.toggle('header-todo-open', isWeekMode() && state.openHeaderTodoDay !== null && state.openHeaderTodoDay !== undefined);
     const today = getTodayInfo();
     calendar.appendChild(headerCell('', 1));
     days.forEach((day, i) => calendar.appendChild(headerCell(day, i + 2, i)));
@@ -923,6 +922,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     for (let d = 0; d < 7; d++) {
       const allDayCell = document.createElement('div');
       allDayCell.className = 'all-day-cell all-day-day';
+      allDayCell.classList.toggle('expanded', state.openHeaderTodoDay === d);
       allDayCell.style.gridColumn = String(d + 2);
       allDayCell.dataset.day = d;
       allDayCell.title = `${days[d]} ${formatShortDate(getDayDate(d))} · Tages-To-do ohne Uhrzeit erstellen`;
@@ -1007,6 +1007,8 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
       more.addEventListener('click', e => openHeaderTodosForDay(dayIndex, e));
       cell.appendChild(more);
     }
+
+    if (state.openHeaderTodoDay === dayIndex) renderAllDayTodoPopover(cell, dayIndex, todos);
   }
 
   function openHeaderTodosForDay(dayIndex, event = null) {
@@ -1088,47 +1090,48 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
           <div class="day-progress-track"><div class="day-progress-fill ${colorClass}" style="width:${stats.percent}%"></div></div>
           <div class="day-progress-meta">${progressLabel}</div>
         </div>`;
-      if (state.openHeaderTodoDay === dayIndex) renderHeaderTodoPanel(div, dayIndex);
     }
     return div;
   }
 
-  function renderHeaderTodoPanel(container, dayIndex) {
-    const todos = allDayTodosForDay(dayIndex)
-      .sort((a, b) => Number(isTodoDone(a)) - Number(isTodoDone(b)) || String(a.createdAt).localeCompare(String(b.createdAt)));
+  function renderAllDayTodoPopover(container, dayIndex, todos) {
     const panel = document.createElement('div');
-    panel.className = 'header-todo-panel';
+    panel.className = 'all-day-popover';
     panel.addEventListener('click', e => e.stopPropagation());
 
     const rows = todos.length
       ? todos.map(todo => {
           const doneState = isTodoDone(todo);
+          const stats = subtaskStats(todo);
+          const meta = stats.total ? `<span class="all-day-popover-meta">${stats.done}/${stats.total}</span>` : '';
           return `
-            <div class="header-todo-row" data-todo-id="${todo.id}">
-              <input class="header-todo-check" type="checkbox" ${doneState ? 'checked' : ''} ${todo.autoComplete && Array.isArray(todo.subtasks) && todo.subtasks.length ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : ''} />
-              <button type="button" class="header-todo-open">${escapeHtml(todo.text)}</button>
+            <div class="all-day-popover-row ${doneState ? 'done' : ''}" data-todo-id="${todo.id}">
+              <input class="all-day-popover-check" type="checkbox" ${doneState ? 'checked' : ''} ${todo.autoComplete && Array.isArray(todo.subtasks) && todo.subtasks.length ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : ''} />
+              <button type="button" class="all-day-popover-task">${escapeHtml(todo.text)}</button>
+              ${meta}
             </div>`;
         }).join('')
-      : '<div class="header-todo-empty">Keine Tagesaufgaben.</div>';
+      : '<div class="all-day-popover-empty">Keine Tagesaufgaben.</div>';
 
     panel.innerHTML = `
-      <div class="header-todo-head">
+      <div class="all-day-popover-head">
         <span>Tagesaufgaben</span>
-        <button type="button" class="header-todo-close" title="Schließen">×</button>
+        <button type="button" class="all-day-popover-close" title="Schließen">×</button>
       </div>
-      <div class="header-todo-list">${rows}</div>
-      <button type="button" class="header-todo-planner">Im To-do Planner öffnen</button>`;
+      <div class="all-day-popover-list">${rows}</div>
+      <button type="button" class="all-day-popover-planner">Im To-do Planner öffnen</button>`;
 
-    panel.querySelector('.header-todo-close').addEventListener('click', closeHeaderTodos);
-    panel.querySelector('.header-todo-planner').addEventListener('click', e => openTodoPlannerForDay(dayIndex, e));
-    panel.querySelectorAll('.header-todo-row').forEach(row => {
+    panel.querySelector('.all-day-popover-close').addEventListener('click', closeHeaderTodos);
+    panel.querySelector('.all-day-popover-planner').addEventListener('click', e => openTodoPlannerForDay(dayIndex, e));
+    panel.querySelectorAll('.all-day-popover-row').forEach(row => {
       const todo = todos.find(item => item.id === row.dataset.todoId);
       if (!todo) return;
       row.addEventListener('dblclick', e => openDayTodoEditor(todo, e));
-      row.querySelector('.header-todo-check').addEventListener('change', e => toggleDayTodoDone(todo, e.target.checked, e));
-      row.querySelector('.header-todo-check').addEventListener('click', e => e.stopPropagation());
-      row.querySelector('.header-todo-open').addEventListener('click', e => e.stopPropagation());
-      row.querySelector('.header-todo-open').addEventListener('dblclick', e => openDayTodoEditor(todo, e));
+      row.querySelector('.all-day-popover-check').addEventListener('change', e => toggleDayTodoDone(todo, e.target.checked, e));
+      row.querySelector('.all-day-popover-check').addEventListener('click', e => e.stopPropagation());
+      row.querySelector('.all-day-popover-check').addEventListener('dblclick', e => e.stopPropagation());
+      row.querySelector('.all-day-popover-task').addEventListener('click', e => e.stopPropagation());
+      row.querySelector('.all-day-popover-task').addEventListener('dblclick', e => openDayTodoEditor(todo, e));
     });
     container.appendChild(panel);
   }
