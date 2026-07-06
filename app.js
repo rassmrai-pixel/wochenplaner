@@ -1,4 +1,8 @@
 (() => {
+  // ==================================================
+  // CONFIG / CONSTANTS
+  // ==================================================
+
   const days = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
   const slotsPerDay = 96;
   const storageKeyV2 = 'perfekte-woche-planer-v2';
@@ -12,6 +16,10 @@
   let cloudSaveTimer = null;
   let cloudLoading = false;
   const cellHeight = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell-h')) || 18;
+
+  // ==================================================
+  // DEFAULTS
+  // ==================================================
 
   const defaults = {
     selectedCategory: 'gym',
@@ -45,6 +53,10 @@
     todos: []
   };
 
+  // ==================================================
+  // STATE
+  // ==================================================
+
   let state = loadState();
   let isDragging = false;
   let dragDay = null;
@@ -57,6 +69,10 @@
   let lastAutoScrollKey = null;
   let dayTodoDraftSubtasks = [];
   let eventDraftSubtasks = [];
+
+  // ==================================================
+  // DOM REFERENCES
+  // ==================================================
 
   const calendar = document.getElementById('calendar');
   const calendarWrap = document.getElementById('calendarWrap');
@@ -192,6 +208,10 @@
   const deleteCategoryBtn = document.getElementById('deleteCategoryBtn');
   const cancelCategoryModalBtn = document.getElementById('cancelCategoryModalBtn');
   const saveCategoryBtn = document.getElementById('saveCategoryBtn');
+
+  // ==================================================
+  // STORAGE / MIGRATION
+  // ==================================================
 
   function id() { return 'e-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8); }
   function clone(x) { return JSON.parse(JSON.stringify(x)); }
@@ -364,6 +384,10 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     localStorage.setItem(storageKeyV2, JSON.stringify(next));
     scheduleCloudSave(next);
   }
+
+  // ==================================================
+  // AUTH / SUPABASE
+  // ==================================================
 
   function setCloudStatus(message, mode = 'neutral') {
     if (!cloudStatus || !cloudPanel) return;
@@ -567,6 +591,11 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     localStorage.setItem(authModeKey, 'guest');
     renderAuthUi();
   }
+
+  // ==================================================
+  // DATE / TIME HELPERS
+  // ==================================================
+
   function clamp(n, min, max) { return Math.max(min, Math.min(max, Number.isFinite(n) ? n : min)); }
   function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[ch])); }
   function timeLabel(slot) {
@@ -788,6 +817,10 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
   }
 
 
+  // ==================================================
+  // CALENDAR
+  // ==================================================
+
   function fillTimeSelect(select, includeEndOfDay = false) {
     select.innerHTML = '';
     const max = includeEndOfDay ? slotsPerDay : slotsPerDay - 1;
@@ -809,6 +842,10 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
       modalDay.appendChild(option);
     });
   }
+
+  // ==================================================
+  // CATEGORIES
+  // ==================================================
 
   function renderLegend() {
     legend.innerHTML = '';
@@ -923,6 +960,10 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     saveState();
     renderAll();
   }
+
+  // ==================================================
+  // CALENDAR
+  // ==================================================
 
   function autoScrollCalendarToMorning() {
     if (!calendarWrap || state.plannerMode === 'tracking' || state.viewMode === 'tasks') return;
@@ -1128,6 +1169,10 @@ if (missedBtn) {
 return div;
   }
 
+  // ==================================================
+  // MODALS
+  // ==================================================
+
   function openEditor(eventId = null, preset = null) {
     editingId = eventId;
     presetSource = preset?.source || null;
@@ -1236,6 +1281,10 @@ return div;
     drawerFilterMobileLabel.textContent = `${dayText} · ${filterText}`;
   }
 
+  // ==================================================
+  // HABITS
+  // ==================================================
+
   function createDrawerEventItem(ev, type = 'routine') {
     syncEventAutoComplete(ev);
     const cat = state.categories[ev.categoryId] || state.categories.orga;
@@ -1312,6 +1361,10 @@ return div;
     saveState();
     renderAll();
   }
+
+  // ==================================================
+  // TODOS
+  // ==================================================
 
   function fillDayTodoModalCategorySelect() {
     if (!dayTodoModalCategory) return;
@@ -1395,6 +1448,10 @@ return div;
   function addDayTodoQuick() {
     openDayTodoModal();
   }
+
+  // ==================================================
+  // HABITS
+  // ==================================================
 
   function renderHabits() {
     dayTabs.innerHTML = '';
@@ -1704,6 +1761,10 @@ return div;
   }
 
 
+  // ==================================================
+  // CALENDAR
+  // ==================================================
+
   function renderPlannerMode() {
     const isTracking = state.plannerMode === 'tracking';
     const showCalendarArea = state.viewMode === 'calendar' && !isTracking;
@@ -1747,6 +1808,10 @@ return div;
       plannerNote.textContent = `Auswertung für KW ${weekInfo.week}/${weekInfo.year}: Routine und Extra-To-dos getrennt.`;
     }
   }
+
+  // ==================================================
+  // TRACKING
+  // ==================================================
 
   function routineTrackingStats() {
     const trackableTemplate = state.templateEvents.filter(ev => state.categories[ev.categoryId]?.habit);
@@ -2469,6 +2534,10 @@ function toggleMissed(eventId) {
   renderAll();
 }
 
+  // ==================================================
+  // EVENT LISTENERS
+  // ==================================================
+
   templateModeBtn.onclick = () => {
     state.plannerMode = 'template';
     state.viewMode = 'calendar';
@@ -2744,7 +2813,10 @@ function toggleMissed(eventId) {
   window.addEventListener('resize', renderCalendar);
 
 
-  /* ICS-Kalender-Integration */
+  // ==================================================
+  // ICS
+  // ==================================================
+
   function timeValueToSlot(value, fallbackSlot = 36) {
     if (!value) return fallbackSlot;
 
@@ -3056,6 +3128,10 @@ if (removeBtn) {
 }
 }
 
+
+  // ==================================================
+  // INIT
+  // ==================================================
 
 function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); }
   fillTaskDaySelect();
