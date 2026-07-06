@@ -36,6 +36,7 @@
     trackingDate: null,
     trackingFilter: 'all',
     drawerHabitFilter: 'all',
+    drawerTaskFilter: 'all',
     categories: {
       gym: { label: 'Gym / Sport', color: '#22c55e', habit: true },
       work: { label: 'Arbeit / Business', color: '#38bdf8', habit: true },
@@ -111,6 +112,10 @@
   const drawerFilterMobileToggle = document.getElementById('drawerFilterMobileToggle');
   const drawerFilterMobileLabel = document.getElementById('drawerFilterMobileLabel');
   const drawerFilterRow = document.getElementById('drawerFilterRow');
+  const drawerTaskFilter = document.getElementById('drawerTaskFilter');
+  const drawerTaskAllBtn = document.getElementById('drawerTaskAllBtn');
+  const drawerTaskTimedBtn = document.getElementById('drawerTaskTimedBtn');
+  const drawerTaskUntimedBtn = document.getElementById('drawerTaskUntimedBtn');
   const drawerHabitProgress = document.getElementById('drawerHabitProgress');
   const drawerTodoProgress = document.getElementById('drawerTodoProgress');
   const drawerDayTodos = document.getElementById('drawerDayTodos');
@@ -323,7 +328,8 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     if (shouldMigrateHomeView && s.plannerMode === 'template') s.plannerMode = 'week';
     if (!['today', 'week', 'month', 'year'].includes(s.trackingView)) s.trackingView = 'week';
     if (!['all', 'open', 'done'].includes(s.trackingFilter)) s.trackingFilter = 'all';
-    if (!['all', 'open', 'done'].includes(s.drawerHabitFilter)) s.drawerHabitFilter = 'all';
+    if (!['all', 'open', 'done', 'missed'].includes(s.drawerHabitFilter)) s.drawerHabitFilter = 'all';
+    if (!['all', 'timed', 'untimed'].includes(s.drawerTaskFilter)) s.drawerTaskFilter = 'all';
     if (!s.trackingDate) s.trackingDate = dateKey(new Date());
     if (s.plannerMode !== 'week' && s.viewMode === 'tasks') s.viewMode = 'calendar';
     s.todoDrawerOpen = Boolean(s.todoDrawerOpen);
@@ -1633,10 +1639,15 @@ return div;
     dayTabs.innerHTML = '';
     fillDrawerDaySelect();
     if (drawerHabitFilter) drawerHabitFilter.value = state.drawerHabitFilter || 'all';
+    renderDrawerTaskFilter();
     updateDrawerFilterMobileLabel();
 
     if (state.plannerMode !== 'week') {
+      if (drawerHabitPanel) {
+        drawerHabitPanel.classList.remove('untimed-task-filter', 'timed-task-filter');
+      }
       renderDrawerProgress(drawerHabitProgress, 'Tagesfortschritt', { total: 0, done: 0, percent: 0 }, 'Wechsle auf „Kalender“, um Tages-Habits zu tracken.');
+      if (drawerDayTodos?.parentElement === habitList) drawerDayTodos.remove();
       habitList.innerHTML = '<div class="habit-empty">Der Habit Tracker ist für die echte Kalenderwoche gedacht. Wechsle auf „Kalender“, um Tages-Habits abzuhaken.</div>';
       renderDayTodos();
       return;
@@ -1657,65 +1668,96 @@ return div;
     addBtn.onclick = addDayTodoQuick;
     dayTabs.appendChild(addBtn);
 
-    const stats = dayCompletionStats(state.activeHabitDay);
-    renderDrawerProgress(
-      drawerHabitProgress,
-      `${days[state.activeHabitDay]} ${formatShortDate(getDayDate(state.activeHabitDay))}`,
-      stats,
-      stats.total ? `${stats.done}/${stats.total} erledigt · ${stats.missed || 0} nicht eingehalten · ${stats.open || 0} offen` : 'Für diesen Tag sind noch keine trackbaren Einträge geplant.'
-    );
-
     const filter = state.drawerHabitFilter || 'all';
     const dayEvents = currentWeekEvents()
       .filter(ev => ev.day === state.activeHabitDay)
       .filter(ev => filter === 'all' || (filter === 'done' ? ev.done : (filter === 'missed' ? ev.missed : (!ev.done && !ev.missed))))
       .sort((a, b) => a.start - b.start || a.end - b.end);
 
+    const taskFilter = state.drawerTaskFilter || 'all';
+    const showTimed = taskFilter !== 'untimed';
+    const showUntimed = taskFilter !== 'timed';
+    if (drawerHabitPanel) {
+      drawerHabitPanel.classList.toggle('untimed-task-filter', taskFilter === 'untimed');
+      drawerHabitPanel.classList.toggle('timed-task-filter', taskFilter === 'timed');
+    }
+    const dayTodoItems = dayTodosForActiveDay();
+    const stats = drawerTaskStats(dayEvents, dayTodoItems, taskFilter);
+    renderDrawerProgress(
+      drawerHabitProgress,
+      `${days[state.activeHabitDay]} ${formatShortDate(getDayDate(state.activeHabitDay))}`,
+      stats,
+      stats.total ? `${stats.done}/${stats.total} erledigt · ${stats.missed || 0} nicht eingehalten · ${stats.open || 0} offen` : 'Für diesen Filter gibt es an diesem Tag noch keine Aufgaben.'
+    );
+
     const routineList = dayEvents.filter(ev => ev.source !== 'extra' && state.categories[ev.categoryId]?.habit);
     const scheduledTodos = dayEvents.filter(ev => ev.source === 'extra');
 
+    if (drawerDayTodos?.parentElement === habitList) drawerDayTodos.remove();
     habitList.innerHTML = '';
-    const wrap = document.createElement('div');
-    wrap.className = 'drawer-day-sections';
+    if (showTimed) {
+      const wrap = document.createElement('div');
+      wrap.className = `drawer-day-sections ${taskFilter === 'timed' ? 'timed-only' : ''}`;
 
-    const routineSection = document.createElement('section');
-    routineSection.className = 'drawer-task-section';
-    routineSection.innerHTML = `
-      <div class="drawer-task-section-head">
-        <span>Habits / Routine</span>
-        <span class="drawer-section-badge">${routineList.filter(ev => ev.done).length}/${routineList.length} · ${routineList.filter(ev => ev.missed).length}!</span>
-      </div>
-      <div class="drawer-task-section-sub">Feste Bestandteile deiner Routine-Vorlage. Orange markiert.</div>`;
-    if (!routineList.length) {
-      const empty = document.createElement('div');
-      empty.className = 'habit-empty';
-      empty.textContent = 'Für diesen Filter gibt es keine Routine-Habits an diesem Tag.';
-      routineSection.appendChild(empty);
-    } else {
-      routineList.forEach(ev => routineSection.appendChild(createDrawerEventItem(ev, 'routine')));
+      const routineSection = document.createElement('section');
+      routineSection.className = 'drawer-task-section';
+      routineSection.innerHTML = `
+        <div class="drawer-task-section-head">
+          <span>Habits / Routine</span>
+          <span class="drawer-section-badge">${routineList.filter(ev => ev.done).length}/${routineList.length} · ${routineList.filter(ev => ev.missed).length}!</span>
+        </div>
+        <div class="drawer-task-section-sub">Feste Bestandteile deiner Routine-Vorlage. Orange markiert.</div>`;
+      if (!routineList.length) {
+        const empty = document.createElement('div');
+        empty.className = 'habit-empty';
+        empty.textContent = 'Für diesen Filter gibt es keine Routine-Habits an diesem Tag.';
+        routineSection.appendChild(empty);
+      } else {
+        routineList.forEach(ev => routineSection.appendChild(createDrawerEventItem(ev, 'routine')));
+      }
+      wrap.appendChild(routineSection);
+
+      const scheduledSection = document.createElement('section');
+      scheduledSection.className = 'drawer-task-section';
+      scheduledSection.innerHTML = `
+        <div class="drawer-task-section-head">
+          <span>To-dos mit Uhrzeit</span>
+          <span class="drawer-section-badge">${scheduledTodos.filter(ev => ev.done).length}/${scheduledTodos.length} · ${scheduledTodos.filter(ev => ev.missed).length}!</span>
+        </div>
+        <div class="drawer-task-section-sub">Spontane oder geplante Aufgaben, die schon als Kalenderblock eingeplant sind.</div>`;
+      if (!scheduledTodos.length) {
+        const empty = document.createElement('div');
+        empty.className = 'habit-empty';
+        empty.textContent = 'Keine zeitlich eingeplanten To-dos für diesen Filter.';
+        scheduledSection.appendChild(empty);
+      } else {
+        scheduledTodos.forEach(ev => scheduledSection.appendChild(createDrawerEventItem(ev, 'scheduled')));
+      }
+      wrap.appendChild(scheduledSection);
+
+      habitList.appendChild(wrap);
     }
-    wrap.appendChild(routineSection);
+    renderDayTodos({ show: showUntimed, full: taskFilter === 'untimed' });
+  }
 
-    const scheduledSection = document.createElement('section');
-    scheduledSection.className = 'drawer-task-section';
-    scheduledSection.innerHTML = `
-      <div class="drawer-task-section-head">
-        <span>To-dos mit Uhrzeit</span>
-        <span class="drawer-section-badge">${scheduledTodos.filter(ev => ev.done).length}/${scheduledTodos.length} · ${scheduledTodos.filter(ev => ev.missed).length}!</span>
-      </div>
-      <div class="drawer-task-section-sub">Spontane oder geplante Aufgaben, die schon als Kalenderblock eingeplant sind.</div>`;
-    if (!scheduledTodos.length) {
-      const empty = document.createElement('div');
-      empty.className = 'habit-empty';
-      empty.textContent = 'Keine zeitlich eingeplanten To-dos für diesen Filter.';
-      scheduledSection.appendChild(empty);
-    } else {
-      scheduledTodos.forEach(ev => scheduledSection.appendChild(createDrawerEventItem(ev, 'scheduled')));
-    }
-    wrap.appendChild(scheduledSection);
+  function renderDrawerTaskFilter() {
+    const filter = state.drawerTaskFilter || 'all';
+    if (!drawerTaskFilter) return;
+    drawerTaskFilter.classList.toggle('timed-active', filter === 'timed');
+    drawerTaskFilter.classList.toggle('untimed-active', filter === 'untimed');
+    drawerTaskAllBtn.classList.toggle('active', filter === 'all');
+    drawerTaskTimedBtn.classList.toggle('active', filter === 'timed');
+    drawerTaskUntimedBtn.classList.toggle('active', filter === 'untimed');
+  }
 
-    habitList.appendChild(wrap);
-    renderDayTodos();
+  function drawerTaskStats(dayEvents, dayTodoItems, taskFilter) {
+    const timedItems = taskFilter === 'untimed' ? [] : dayEvents;
+    const untimedItems = taskFilter === 'timed' ? [] : dayTodoItems;
+    const total = timedItems.length + untimedItems.length;
+    const done = timedItems.filter(ev => ev.done).length + untimedItems.filter(todo => isTodoDone(todo)).length;
+    const missed = timedItems.filter(ev => ev.missed).length;
+    const open = Math.max(total - done, 0);
+    return { total, done, missed, open, percent: makePercent(done, total) };
   }
 
 
@@ -1784,14 +1826,24 @@ return div;
     });
   }
 
-  function renderDayTodos() {
+  function renderDayTodos(options = {}) {
     if (!dayTodoList || !dayTodoCount) return;
+    const { show = true, full = false } = options;
     fillDayTodoCategorySelect();
-    if (!isWeekMode()) {
-      if (drawerDayTodos) drawerDayTodos.style.display = 'none';
+    if (!isWeekMode() || !show) {
+      if (drawerDayTodos) {
+        drawerDayTodos.style.display = 'none';
+        drawerDayTodos.remove();
+      }
       return;
     }
-    if (drawerDayTodos) drawerDayTodos.style.display = '';
+    if (drawerDayTodos) {
+      drawerDayTodos.style.display = '';
+      drawerDayTodos.classList.toggle('full-list', Boolean(full));
+      if (habitList && drawerDayTodos.parentElement !== habitList) {
+        habitList.appendChild(drawerDayTodos);
+      }
+    }
     const filter = state.drawerHabitFilter || 'all';
     const all = dayTodosForActiveDay();
     const visible = all
@@ -2755,6 +2807,9 @@ function toggleMissed(eventId) {
   }
   drawerDaySelect.onchange = () => { state.activeHabitDay = Number(drawerDaySelect.value); updateDrawerFilterMobileLabel(); saveState(); renderAll(); };
   drawerHabitFilter.onchange = () => { state.drawerHabitFilter = drawerHabitFilter.value; updateDrawerFilterMobileLabel(); saveState(); renderHabits(); };
+  if (drawerTaskAllBtn) drawerTaskAllBtn.onclick = () => { state.drawerTaskFilter = 'all'; saveState(); renderAll(); };
+  if (drawerTaskTimedBtn) drawerTaskTimedBtn.onclick = () => { state.drawerTaskFilter = 'timed'; saveState(); renderAll(); };
+  if (drawerTaskUntimedBtn) drawerTaskUntimedBtn.onclick = () => { state.drawerTaskFilter = 'untimed'; saveState(); renderAll(); };
   trackingTodayBtn.onclick = () => { state.trackingView = 'today'; saveState(); renderAll(); };
   trackingWeekBtn.onclick = () => { state.trackingView = 'week'; saveState(); renderAll(); };
   trackingMonthBtn.onclick = () => { state.trackingView = 'month'; saveState(); renderAll(); };
