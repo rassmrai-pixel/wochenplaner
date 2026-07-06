@@ -920,6 +920,8 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
       allDayCell.className = 'all-day-cell all-day-day';
       allDayCell.style.gridColumn = String(d + 2);
       allDayCell.dataset.day = d;
+      allDayCell.title = `${days[d]} ${formatShortDate(getDayDate(d))} · Tages-To-do ohne Uhrzeit erstellen`;
+      allDayCell.addEventListener('click', () => openDayTodoModalForDay(d));
       calendar.appendChild(allDayCell);
 
       const col = document.createElement('div');
@@ -1348,6 +1350,11 @@ return div;
     renderDayTodoDraftSubtasks();
     dayTodoModalBackdrop.style.display = 'flex';
     setTimeout(() => dayTodoModalText.focus(), 50);
+  }
+
+  function openDayTodoModalForDay(dayIndex) {
+    state.activeHabitDay = clamp(Number(dayIndex), 0, 6);
+    openDayTodoModal();
   }
 
   function closeDayTodoModal() {
