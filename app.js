@@ -113,6 +113,7 @@
   const drawerFilterMobileLabel = document.getElementById('drawerFilterMobileLabel');
   const drawerFilterRow = document.getElementById('drawerFilterRow');
   const drawerTaskFilter = document.getElementById('drawerTaskFilter');
+  const drawerTaskFilterSelect = document.getElementById('drawerTaskFilterSelect');
   const drawerTaskAllBtn = document.getElementById('drawerTaskAllBtn');
   const drawerTaskTimedBtn = document.getElementById('drawerTaskTimedBtn');
   const drawerTaskUntimedBtn = document.getElementById('drawerTaskUntimedBtn');
@@ -1748,6 +1749,7 @@ return div;
     drawerTaskAllBtn.classList.toggle('active', filter === 'all');
     drawerTaskTimedBtn.classList.toggle('active', filter === 'timed');
     drawerTaskUntimedBtn.classList.toggle('active', filter === 'untimed');
+    if (drawerTaskFilterSelect) drawerTaskFilterSelect.value = filter;
   }
 
   function drawerTaskStats(dayEvents, dayTodoItems, taskFilter) {
@@ -2810,6 +2812,7 @@ function toggleMissed(eventId) {
   if (drawerTaskAllBtn) drawerTaskAllBtn.onclick = () => { state.drawerTaskFilter = 'all'; saveState(); renderAll(); };
   if (drawerTaskTimedBtn) drawerTaskTimedBtn.onclick = () => { state.drawerTaskFilter = 'timed'; saveState(); renderAll(); };
   if (drawerTaskUntimedBtn) drawerTaskUntimedBtn.onclick = () => { state.drawerTaskFilter = 'untimed'; saveState(); renderAll(); };
+  if (drawerTaskFilterSelect) drawerTaskFilterSelect.onchange = () => { state.drawerTaskFilter = drawerTaskFilterSelect.value; saveState(); renderAll(); };
   trackingTodayBtn.onclick = () => { state.trackingView = 'today'; saveState(); renderAll(); };
   trackingWeekBtn.onclick = () => { state.trackingView = 'week'; saveState(); renderAll(); };
   trackingMonthBtn.onclick = () => { state.trackingView = 'month'; saveState(); renderAll(); };
