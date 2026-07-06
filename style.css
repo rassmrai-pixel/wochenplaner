@@ -1365,7 +1365,7 @@
       position: fixed;
       inset: 0;
       background: rgba(0,0,0,0.62);
-      z-index: 60;
+      z-index: 120;
       align-items: center;
       justify-content: center;
       padding: 20px;
