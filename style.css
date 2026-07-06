@@ -671,6 +671,12 @@
       user-select: none;
     }
     .drawer-switch-labels span.active { color: var(--text); }
+    .drawer-switch-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 42px;
+      gap: 8px;
+      align-items: center;
+    }
     .drawer-switch {
       position: relative;
       display: grid;
@@ -707,6 +713,20 @@
       font-weight: 900;
       color: var(--text);
     }
+    .drawer-quick-add-btn {
+      width: 42px;
+      height: 42px;
+      min-height: 42px;
+      padding: 0;
+      border-radius: 999px;
+      font-size: 24px;
+      font-weight: 950;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.18), 0 10px 24px rgba(2, 132, 199, 0.24);
+    }
     .drawer-panel {
       display: none;
       min-height: 0;
@@ -724,8 +744,8 @@
       flex: 0 0 auto;
     }
     .drawer-controls-summary {
-      display: flex;
-      justify-content: space-between;
+      display: grid;
+      grid-template-columns: 38px minmax(0, 1fr) 38px 34px;
       align-items: center;
       gap: 10px;
       width: 100%;
@@ -738,15 +758,32 @@
       text-align: left;
       font-weight: 900;
     }
-    .drawer-controls-summary span:first-child {
+    .drawer-controls-summary #drawerControlsSummaryText {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      text-align: center;
     }
-    .drawer-controls-summary span:last-child {
-      color: var(--muted);
-      font-size: 12px;
-      white-space: nowrap;
+    .drawer-day-nav-btn,
+    .drawer-controls-chevron-btn {
+      width: 34px;
+      height: 34px;
+      min-height: 34px;
+      padding: 0;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text);
+      background: rgba(15, 23, 42, 0.62);
+      border-color: var(--line-soft);
+      font-size: 20px;
+      font-weight: 950;
+      line-height: 1;
+    }
+    .drawer-day-nav-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
     }
     .drawer-controls-content {
       display: grid;
@@ -756,7 +793,7 @@
       display: none;
     }
     .drawer-controls-panel.collapsed .drawer-controls-summary {
-      min-height: 34px;
+      min-height: 40px;
       padding: 6px 10px;
     }
     .drawer-chevron {
@@ -1628,18 +1665,35 @@
       padding: 8px 12px;
     }
     @media (max-width: 700px) {
+      .drawer-switch-row {
+        grid-template-columns: minmax(0, 1fr) 40px;
+      }
+      .drawer-quick-add-btn {
+        width: 40px;
+        height: 40px;
+        min-height: 40px;
+      }
       .drawer-controls-panel {
         gap: 8px;
       }
       .drawer-controls-summary {
+        grid-template-columns: 34px minmax(0, 1fr) 34px 30px;
+        gap: 6px;
         min-height: 40px;
         padding: 8px 10px;
         border-radius: 12px;
         font-size: 13px;
       }
       .drawer-controls-panel.collapsed .drawer-controls-summary {
-        min-height: 32px;
+        min-height: 40px;
         padding: 5px 9px;
+      }
+      .drawer-day-nav-btn,
+      .drawer-controls-chevron-btn {
+        width: 30px;
+        height: 30px;
+        min-height: 30px;
+        font-size: 18px;
       }
       .drawer-controls-content {
         gap: 8px;
