@@ -30,6 +30,7 @@
     uiHomeVersion: 'calendar-main-v1',
     todoDrawerOpen: false,
     drawerView: 'habit',
+    openHeaderTodoDay: null,
     currentWeekStart: null,
     trackingView: 'week',
     trackingDate: null,
@@ -328,6 +329,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     const todayInfo = getTodayInfo();
     const isCurrentWeek = s.currentWeekStart === todayInfo.weekKey;
     s.activeHabitDay = isCurrentWeek ? todayInfo.dayIndex : clamp(Number(s.activeHabitDay), 0, 6);
+    s.openHeaderTodoDay = s.openHeaderTodoDay === null || s.openHeaderTodoDay === undefined ? null : clamp(Number(s.openHeaderTodoDay), 0, 6);
     return s;
   }
 
@@ -895,6 +897,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
 
   function renderCalendar() {
     calendar.innerHTML = '';
+    calendar.classList.toggle('header-todo-open', isWeekMode() && state.openHeaderTodoDay !== null && state.openHeaderTodoDay !== undefined);
     const today = getTodayInfo();
     calendar.appendChild(headerCell('', 1));
     days.forEach((day, i) => calendar.appendChild(headerCell(day, i + 2, i)));
@@ -978,25 +981,54 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
       const more = document.createElement('div');
       more.className = 'all-day-more';
       more.textContent = `+${todos.length - visible.length} mehr`;
-      more.addEventListener('click', e => openDayTodosDrawerForDay(dayIndex, e));
+      more.addEventListener('click', e => openHeaderTodosForDay(dayIndex, e));
       cell.appendChild(more);
     }
   }
 
-  function openDayTodosDrawerForDay(dayIndex, event = null) {
+  function openHeaderTodosForDay(dayIndex, event = null) {
     if (event) {
       event.preventDefault();
       event.stopPropagation();
     }
     state.activeHabitDay = clamp(Number(dayIndex), 0, 6);
-    state.todoDrawerOpen = true;
-    state.drawerView = 'habit';
+    state.openHeaderTodoDay = state.activeHabitDay;
     saveState();
     renderAll();
   }
 
   function openExistingDayTodo(todo, event) {
-    openDayTodosDrawerForDay(todo.plannedDay, event);
+    openHeaderTodosForDay(todo.plannedDay, event);
+  }
+
+  function closeHeaderTodos(event = null) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    state.openHeaderTodoDay = null;
+    saveState();
+    renderAll();
+  }
+
+  function deleteDayTodo(todo, event = null) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    if (!confirm('Dieses Tages-To-do löschen?')) return;
+    state.todos = state.todos.filter(t => t.id !== todo.id);
+    saveState();
+    renderAll();
+  }
+
+  function toggleDayTodoDone(todo, done, event = null) {
+    if (event) event.stopPropagation();
+    if (todo.autoComplete && Array.isArray(todo.subtasks) && todo.subtasks.length) return;
+    todo.done = Boolean(done);
+    todo.status = todo.done ? 'done' : 'planned';
+    saveState();
+    renderAll();
   }
 
   function headerCell(text, col, dayIndex = null) {
@@ -1020,8 +1052,57 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
           <div class="day-progress-track"><div class="day-progress-fill ${colorClass}" style="width:${stats.percent}%"></div></div>
           <div class="day-progress-meta">${progressLabel}</div>
         </div>`;
+      if (state.openHeaderTodoDay === dayIndex) renderHeaderTodoPanel(div, dayIndex);
     }
     return div;
+  }
+
+  function renderHeaderTodoPanel(container, dayIndex) {
+    const todos = allDayTodosForDay(dayIndex)
+      .sort((a, b) => Number(isTodoDone(a)) - Number(isTodoDone(b)) || String(a.createdAt).localeCompare(String(b.createdAt)));
+    const panel = document.createElement('div');
+    panel.className = 'header-todo-panel';
+    panel.addEventListener('click', e => e.stopPropagation());
+
+    const rows = todos.length
+      ? todos.map(todo => {
+          const doneState = isTodoDone(todo);
+          return `
+            <div class="header-todo-row" data-todo-id="${todo.id}">
+              <input class="header-todo-check" type="checkbox" ${doneState ? 'checked' : ''} ${todo.autoComplete && Array.isArray(todo.subtasks) && todo.subtasks.length ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : ''} />
+              <span class="header-todo-text">${escapeHtml(todo.text)}</span>
+              <button type="button" class="header-todo-edit">Edit</button>
+              <button type="button" class="header-todo-delete">×</button>
+            </div>`;
+        }).join('')
+      : '<div class="header-todo-empty">Keine Tagesaufgaben.</div>';
+
+    panel.innerHTML = `
+      <div class="header-todo-head">
+        <span>Tagesaufgaben</span>
+        <button type="button" class="header-todo-close" title="Schließen">×</button>
+      </div>
+      <div class="header-todo-list">${rows}</div>
+      <button type="button" class="header-todo-add">+ Aufgabe</button>`;
+
+    panel.querySelector('.header-todo-close').addEventListener('click', closeHeaderTodos);
+    panel.querySelector('.header-todo-add').addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      openDayTodoModalForDay(dayIndex);
+    });
+    panel.querySelectorAll('.header-todo-row').forEach(row => {
+      const todo = todos.find(item => item.id === row.dataset.todoId);
+      if (!todo) return;
+      row.querySelector('.header-todo-check').addEventListener('change', e => toggleDayTodoDone(todo, e.target.checked, e));
+      row.querySelector('.header-todo-edit').addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        renameTodoGlobal(todo);
+      });
+      row.querySelector('.header-todo-delete').addEventListener('click', e => deleteDayTodo(todo, e));
+    });
+    container.appendChild(panel);
   }
 
   function startDrag(e, d, s) {
@@ -1659,12 +1740,7 @@ return div;
       card.querySelector('.day-auto-btn').onclick = e => { e.preventDefault(); e.stopPropagation(); todo.autoComplete = !todo.autoComplete; syncTodoAutoComplete(todo); saveState(); renderAll(); };
       card.querySelector('.day-plan-btn').onclick = e => { e.preventDefault(); e.stopPropagation(); planTodoAsCalendarBlock(todo); };
       card.querySelector('.day-edit-btn').onclick = e => { e.preventDefault(); e.stopPropagation(); renameTodoGlobal(todo); };
-      card.querySelector('.day-delete-btn').onclick = e => {
-        e.preventDefault(); e.stopPropagation();
-        if (!confirm('Dieses Tages-To-do löschen?')) return;
-        state.todos = state.todos.filter(t => t.id !== todo.id);
-        saveState(); renderAll();
-      };
+      card.querySelector('.day-delete-btn').onclick = e => deleteDayTodo(todo, e);
       card.querySelectorAll('.day-todo-subtask').forEach(row => {
         const subId = row.dataset.subtaskId;
         const sub = todo.subtasks.find(x => x.id === subId);
