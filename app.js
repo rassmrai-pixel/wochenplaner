@@ -970,7 +970,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
       item.style.borderLeftColor = cat.color;
       item.title = todo.text;
       item.textContent = todo.text;
-      item.addEventListener('click', e => e.stopPropagation());
+      item.addEventListener('click', e => openExistingDayTodo(todo, e));
       cell.appendChild(item);
     });
 
@@ -978,9 +978,25 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
       const more = document.createElement('div');
       more.className = 'all-day-more';
       more.textContent = `+${todos.length - visible.length} mehr`;
-      more.addEventListener('click', e => e.stopPropagation());
+      more.addEventListener('click', e => openDayTodosDrawerForDay(dayIndex, e));
       cell.appendChild(more);
     }
+  }
+
+  function openDayTodosDrawerForDay(dayIndex, event = null) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    state.activeHabitDay = clamp(Number(dayIndex), 0, 6);
+    state.todoDrawerOpen = true;
+    state.drawerView = 'habit';
+    saveState();
+    renderAll();
+  }
+
+  function openExistingDayTodo(todo, event) {
+    openDayTodosDrawerForDay(todo.plannedDay, event);
   }
 
   function headerCell(text, col, dayIndex = null) {
