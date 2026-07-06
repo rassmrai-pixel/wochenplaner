@@ -91,6 +91,8 @@
   const modalDay = document.getElementById('modalDay');
   const modalStart = document.getElementById('modalStart');
   const modalEnd = document.getElementById('modalEnd');
+  const modalStackedInto = document.getElementById('modalStackedInto');
+  const modalIntegratedEvents = document.getElementById('modalIntegratedEvents');
   const modalInfo = document.getElementById('modalInfo');
   const modalAutoComplete = document.getElementById('modalAutoComplete');
   const modalSubtaskInput = document.getElementById('modalSubtaskInput');
@@ -270,6 +272,7 @@
 missed: Boolean(ev.missed),
 source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
         templateEventId: ev.templateEventId || null,
+        stackedIntoId: ev.stackedIntoId || null,
         autoComplete: Boolean(ev.autoComplete),
         subtasks: Array.isArray(ev.subtasks) ? ev.subtasks.map(sub => ({
           id: sub.id || id(),
@@ -789,6 +792,85 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     });
   }
 
+  function integratedEventsForEvent(eventId) {
+    if (!eventId) return [];
+    return currentEvents()
+      .filter(ev => ev.stackedIntoId === eventId)
+      .sort((a, b) => a.start - b.start || a.end - b.end || String(a.createdAt).localeCompare(String(b.createdAt)));
+  }
+
+  function parentBlockCandidates(day, start, end, ownId = null) {
+    return currentEvents()
+      .filter(ev =>
+        ev.id !== ownId &&
+        !ev.stackedIntoId &&
+        ev.day === day &&
+        ev.start <= start &&
+        ev.end >= end
+      )
+      .sort((a, b) => a.start - b.start || b.end - a.end);
+  }
+
+  function fillModalStackedIntoSelect(ev = null) {
+    if (!modalStackedInto) return;
+    const day = Number(modalDay.value);
+    const start = Number(modalStart.value);
+    const end = Number(modalEnd.value);
+    const selectedParentId = modalStackedInto.value || ev?.stackedIntoId || '';
+    const candidates = parentBlockCandidates(day, start, end, ev?.id || editingId || null);
+
+    modalStackedInto.innerHTML = '';
+    const ownOption = document.createElement('option');
+    ownOption.value = '';
+    ownOption.textContent = 'Als eigener Block anzeigen';
+    modalStackedInto.appendChild(ownOption);
+
+    candidates.forEach(parent => {
+      const option = document.createElement('option');
+      option.value = parent.id;
+      option.textContent = `${eventTime(parent)} · ${parent.label}`;
+      modalStackedInto.appendChild(option);
+    });
+
+    if (selectedParentId && !candidates.some(parent => parent.id === selectedParentId)) {
+      const currentParent = currentEvents().find(parent => parent.id === selectedParentId);
+      if (currentParent) {
+        const option = document.createElement('option');
+        option.value = currentParent.id;
+        option.textContent = `${eventTime(currentParent)} · ${currentParent.label} · außerhalb aktueller Zeit`;
+        modalStackedInto.appendChild(option);
+      }
+    }
+
+    modalStackedInto.value = selectedParentId && Array.from(modalStackedInto.options).some(option => option.value === selectedParentId)
+      ? selectedParentId
+      : '';
+  }
+
+  function renderModalIntegratedEvents(eventId) {
+    if (!modalIntegratedEvents) return;
+    const children = integratedEventsForEvent(eventId);
+    if (!eventId || !children.length) {
+      modalIntegratedEvents.innerHTML = '';
+      modalIntegratedEvents.style.display = 'none';
+      return;
+    }
+    modalIntegratedEvents.style.display = '';
+    modalIntegratedEvents.innerHTML = `
+      <div class="event-integrated-list-title">${children.length} integrierte ${children.length === 1 ? 'Aufgabe' : 'Aufgaben'}</div>
+      ${children.map(child => `
+        <button type="button" class="event-integrated-row" data-event-id="${child.id}">
+          <span>${escapeHtml(eventTime(child))}</span>
+          <strong>${escapeHtml(child.label)}</strong>
+        </button>`).join('')}`;
+    modalIntegratedEvents.querySelectorAll('.event-integrated-row').forEach(row => {
+      row.addEventListener('click', e => {
+        e.preventDefault();
+        openEditor(row.dataset.eventId);
+      });
+    });
+  }
+
   // ==================================================
   // CATEGORIES
   // ==================================================
@@ -967,7 +1049,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
         col.appendChild(slot);
       }
 
-      const events = currentEvents().filter(ev => ev.day === d);
+      const events = currentEvents().filter(ev => ev.day === d && !ev.stackedIntoId);
       layoutDayEvents(events).forEach(ev => col.appendChild(eventEl(ev)));
       calendar.appendChild(col);
     }
@@ -1259,6 +1341,8 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     div.style.width = `calc(${widthPercent}% - ${widthPxAdjustment}px)`;
     div.style.background = cat.color;
     div.title = `${days[ev.day]} ${isTemplateMode() ? '' : formatShortDate(getDayDate(ev.day)) + ' '}${eventTime(ev)} · ${ev.label}`;
+    const integratedCount = integratedEventsForEvent(ev.id).length;
+    const integratedBadge = integratedCount ? `<div class="event-integrated-badge">+${integratedCount} im Block</div>` : '';
 
     const trackable = isWeekMode() && Boolean(cat.habit);
     div.innerHTML = `
@@ -1267,7 +1351,8 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     ${trackable ? `<button class="event-missed-btn ${ev.missed ? 'active' : ''}" type="button" title="Nicht eingehalten">!</button>` : ''}
     <span class="event-title">${escapeHtml(ev.label)}</span>
   </div>
-  <div class="event-time">${eventTime(ev)}</div>`;
+  <div class="event-time">${eventTime(ev)}</div>
+  ${integratedBadge}`;
 
     div.addEventListener('mousedown', e => e.stopPropagation());
     div.addEventListener('click', e => e.stopPropagation());
@@ -1310,6 +1395,7 @@ return div;
       missed: false,
       source: preset?.source || (isTemplateMode() ? 'routine' : 'extra'),
       templateEventId: null,
+      stackedIntoId: null,
       autoComplete: false,
       subtasks: []
     };
@@ -1335,6 +1421,8 @@ return div;
     modalDay.value = String(ev.day);
     modalStart.value = String(ev.start);
     modalEnd.value = String(ev.end);
+    fillModalStackedIntoSelect(ev);
+    renderModalIntegratedEvents(ev.id);
     deleteBlockBtn.style.display = eventId ? '' : 'none';
     updateModalInfo();
     modalBackdrop.style.display = 'flex';
@@ -1425,15 +1513,26 @@ return div;
             <button type="button" class="ghost habit-subtask-edit">Edit</button>
           </div>`).join('')}
       </div>` : '';
+    const integratedChildren = integratedEventsForEvent(ev.id);
+    const integratedHtml = integratedChildren.length ? `
+      <div class="habit-integrated-list">
+        <div class="habit-integrated-title">Im Block · ${integratedChildren.length}</div>
+        ${integratedChildren.map(child => `
+          <button type="button" class="habit-integrated-row" data-event-id="${child.id}">
+            <span>${escapeHtml(eventTime(child))}</span>
+            <strong>${escapeHtml(child.label)}</strong>
+          </button>`).join('')}
+      </div>` : '';
     item.innerHTML = `
       <input class="habit-main-check" type="checkbox" ${ev.done ? 'checked' : ''} ${autoDisabled ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : ''} />
       <div>
         <div class="habit-name">${escapeHtml(ev.label)}</div>
-        <div class="habit-meta">${eventTime(ev)} · ${escapeHtml(cat.label)}${type === 'scheduled' ? ' · eingeplant' : ' · Routine'}${stats.total ? ` · Untertasks ${stats.done}/${stats.total}` : ''}${ev.autoComplete ? ' · Auto' : ''}${statusText}</div>
+        <div class="habit-meta">${eventTime(ev)} · ${escapeHtml(cat.label)}${type === 'scheduled' ? ' · eingeplant' : ' · Routine'}${stats.total ? ` · Untertasks ${stats.done}/${stats.total}` : ''}${integratedChildren.length ? ` · ${integratedChildren.length} im Block` : ''}${ev.autoComplete ? ' · Auto' : ''}${statusText}</div>
         ${stats.total ? `<div class="habit-subtask-summary">${stats.done}/${stats.total} erledigt · ${stats.percent}%</div>` : ''}
       </div>
       <button type="button" class="small ghost habit-edit-btn">Bearbeiten</button>
       ${subtasksHtml}
+      ${integratedHtml}
       <div class="habit-actions">
         <button type="button" class="small ghost habit-add-subtask-btn">+ Untertask</button>
         <button type="button" class="small ghost habit-auto-btn">${ev.autoComplete ? 'Auto aus' : 'Auto an'}</button>
@@ -1468,6 +1567,13 @@ return div;
         const clean = next.trim();
         if (!clean) return alert('Der Untertask braucht einen Namen.');
         sub.text = clean; saveState(); renderAll();
+      });
+    });
+    item.querySelectorAll('.habit-integrated-row').forEach(row => {
+      row.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        openEditor(row.dataset.eventId);
       });
     });
     return item;
@@ -1685,6 +1791,7 @@ return div;
     const filter = state.drawerHabitFilter || 'all';
     const dayEvents = currentWeekEvents()
       .filter(ev => ev.day === state.activeHabitDay)
+      .filter(ev => !ev.stackedIntoId)
       .filter(ev => filter === 'all' || (filter === 'done' ? ev.done : (filter === 'missed' ? ev.missed : (!ev.done && !ev.missed))))
       .sort((a, b) => a.start - b.start || a.end - b.end);
 
@@ -3004,13 +3111,14 @@ function toggleMissed(eventId) {
     const day = Number(modalDay.value);
     const start = Number(modalStart.value);
     const end = Number(modalEnd.value);
+    const stackedIntoId = modalStackedInto?.value || null;
     if (Number.isNaN(day) || Number.isNaN(start) || Number.isNaN(end) || end <= start) {
       alert('Die Endzeit muss nach der Startzeit liegen.');
       return;
     }
     if (editingId) {
       const ev = currentEvents().find(x => x.id === editingId);
-      if (ev) { Object.assign(ev, { day, start, end, label, categoryId, autoComplete: Boolean(modalAutoComplete?.checked), subtasks: cloneEventSubtasks({ subtasks: eventDraftSubtasks }) }); syncEventAutoComplete(ev); }
+      if (ev) { Object.assign(ev, { day, start, end, label, categoryId, stackedIntoId, autoComplete: Boolean(modalAutoComplete?.checked), subtasks: cloneEventSubtasks({ subtasks: eventDraftSubtasks }) }); syncEventAutoComplete(ev); }
     } else {
   const newEventId = id();
 
@@ -3025,6 +3133,7 @@ function toggleMissed(eventId) {
     missed: false,
     source: (presetSource || (isTemplateMode() ? 'routine' : 'extra')),
     templateEventId: null,
+    stackedIntoId,
     autoComplete: Boolean(modalAutoComplete?.checked),
     subtasks: cloneEventSubtasks({ subtasks: eventDraftSubtasks }),
     createdAt: new Date().toISOString()
@@ -3048,6 +3157,9 @@ function toggleMissed(eventId) {
   };
   document.getElementById('deleteBlockBtn').onclick = () => {
     if (!editingId) return;
+    currentEvents().forEach(ev => {
+      if (ev.stackedIntoId === editingId) ev.stackedIntoId = null;
+    });
     setCurrentEvents(currentEvents().filter(ev => ev.id !== editingId));
     saveState();
     renderAll();
@@ -3061,7 +3173,11 @@ function toggleMissed(eventId) {
     });
   }
 
-  [modalDay, modalStart, modalEnd, modalCategory].forEach(el => el.addEventListener('change', updateModalInfo));
+  [modalDay, modalStart, modalEnd].forEach(el => el.addEventListener('change', () => {
+    fillModalStackedIntoSelect(currentEvents().find(ev => ev.id === editingId) || null);
+    updateModalInfo();
+  }));
+  modalCategory.addEventListener('change', updateModalInfo);
   modalBackdrop.addEventListener('click', (e) => { if (e.target === modalBackdrop) closeModal(); });
   document.addEventListener('click', () => {
     if (weekSettings) weekSettings.classList.remove('open');
