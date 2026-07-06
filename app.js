@@ -922,6 +922,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
       allDayCell.dataset.day = d;
       allDayCell.title = `${days[d]} ${formatShortDate(getDayDate(d))} · Tages-To-do ohne Uhrzeit erstellen`;
       allDayCell.addEventListener('click', () => openDayTodoModalForDay(d));
+      renderAllDayTodosForDay(allDayCell, d);
       calendar.appendChild(allDayCell);
 
       const col = document.createElement('div');
@@ -948,6 +949,38 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
       calendar.appendChild(col);
     }
     autoScrollCalendarToMorning();
+  }
+
+  function allDayTodosForDay(dayIndex) {
+    if (!isWeekMode()) return [];
+    return state.todos
+      .map(syncTodoAutoComplete)
+      .filter(todo => todo.plannedWeekStart === state.currentWeekStart && Number(todo.plannedDay) === Number(dayIndex) && !todo.plannedEventId);
+  }
+
+  function renderAllDayTodosForDay(cell, dayIndex) {
+    const todos = allDayTodosForDay(dayIndex)
+      .sort((a, b) => Number(isTodoDone(a)) - Number(isTodoDone(b)) || String(a.createdAt).localeCompare(String(b.createdAt)));
+    const visible = todos.slice(0, 2);
+
+    visible.forEach(todo => {
+      const cat = state.categories[todo.categoryId] || state.categories.orga;
+      const item = document.createElement('div');
+      item.className = `all-day-item ${isTodoDone(todo) ? 'done' : ''}`;
+      item.style.borderLeftColor = cat.color;
+      item.title = todo.text;
+      item.textContent = todo.text;
+      item.addEventListener('click', e => e.stopPropagation());
+      cell.appendChild(item);
+    });
+
+    if (todos.length > visible.length) {
+      const more = document.createElement('div');
+      more.className = 'all-day-more';
+      more.textContent = `+${todos.length - visible.length} mehr`;
+      more.addEventListener('click', e => e.stopPropagation());
+      cell.appendChild(more);
+    }
   }
 
   function headerCell(text, col, dayIndex = null) {

@@ -927,7 +927,7 @@
     .calendar {
       display: grid;
       grid-template-columns: var(--time-w) repeat(7, minmax(var(--day-min-w), 1fr));
-      grid-template-rows: 62px 34px calc(96 * var(--cell-h));
+      grid-template-rows: 62px 56px calc(96 * var(--cell-h));
       min-width: calc(var(--time-w) + 7 * var(--day-min-w));
       position: relative;
     }
@@ -996,7 +996,7 @@
     }
     .all-day-cell {
       grid-row: 2;
-      min-height: 34px;
+      min-height: 56px;
       border-right: 1px solid var(--line-soft);
       border-bottom: 1px solid var(--line);
       background: #0f172a;
@@ -1021,8 +1021,44 @@
       box-shadow: 2px 0 0 var(--line);
     }
     .all-day-day {
-      padding: 4px 6px;
+      padding: 3px 6px;
       background: #111827;
+      display: grid;
+      align-content: start;
+      gap: 2px;
+      cursor: pointer;
+    }
+    .all-day-day:hover {
+      background: #162033;
+    }
+    .all-day-item {
+      min-width: 0;
+      height: 16px;
+      line-height: 14px;
+      padding: 0 6px;
+      border-left: 3px solid #38bdf8;
+      border-radius: 5px;
+      background: #1f2937;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 800;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+      cursor: default;
+    }
+    .all-day-item.done {
+      opacity: 0.62;
+      text-decoration: line-through;
+    }
+    .all-day-more {
+      height: 14px;
+      line-height: 14px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      cursor: default;
     }
     .time-cell {
       height: var(--cell-h);
