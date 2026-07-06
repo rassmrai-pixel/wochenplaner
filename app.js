@@ -899,6 +899,12 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     calendar.appendChild(headerCell('', 1));
     days.forEach((day, i) => calendar.appendChild(headerCell(day, i + 2, i)));
 
+    const allDayLabel = document.createElement('div');
+    allDayLabel.className = 'all-day-cell all-day-label';
+    allDayLabel.textContent = 'Ganztag';
+    allDayLabel.style.gridColumn = '1';
+    calendar.appendChild(allDayLabel);
+
     const timeGrid = document.createElement('div');
     timeGrid.className = 'time-grid';
     for (let s = 0; s < slotsPerDay; s++) {
@@ -910,6 +916,12 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     calendar.appendChild(timeGrid);
 
     for (let d = 0; d < 7; d++) {
+      const allDayCell = document.createElement('div');
+      allDayCell.className = 'all-day-cell all-day-day';
+      allDayCell.style.gridColumn = String(d + 2);
+      allDayCell.dataset.day = d;
+      calendar.appendChild(allDayCell);
+
       const col = document.createElement('div');
       const dayDateKey = dateKey(getDayDate(d));
       col.className = `day-column ${isWeekMode() && dayDateKey === today.dateKey ? 'today' : ''}`;

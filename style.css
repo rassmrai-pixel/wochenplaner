@@ -927,7 +927,7 @@
     .calendar {
       display: grid;
       grid-template-columns: var(--time-w) repeat(7, minmax(var(--day-min-w), 1fr));
-      grid-template-rows: 62px calc(96 * var(--cell-h));
+      grid-template-rows: 62px 38px calc(96 * var(--cell-h));
       min-width: calc(var(--time-w) + 7 * var(--day-min-w));
       position: relative;
     }
@@ -982,7 +982,7 @@
     .head-cell.today .day-progress-meta { color: rgba(255,255,255,0.86); }
     .time-grid {
       grid-column: 1;
-      grid-row: 2;
+      grid-row: 3;
       position: sticky;
       left: 0;
       z-index: 18;
@@ -993,6 +993,34 @@
       left: 0;
       z-index: 28;
       box-shadow: 2px 0 0 var(--line), 0 1px 0 var(--line);
+    }
+    .all-day-cell {
+      grid-row: 2;
+      min-height: 38px;
+      border-right: 1px solid var(--line-soft);
+      border-bottom: 1px solid var(--line);
+      background: rgba(15, 23, 42, 0.88);
+      position: sticky;
+      top: 62px;
+      z-index: 19;
+    }
+    .all-day-label {
+      left: 0;
+      z-index: 24;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 0 8px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      box-shadow: 2px 0 0 var(--line);
+    }
+    .all-day-day {
+      padding: 5px 6px;
+      background: rgba(2, 6, 23, 0.18);
     }
     .time-cell {
       height: var(--cell-h);
@@ -1007,7 +1035,7 @@
     }
     .time-cell.hour { color: var(--text); border-top: 1px solid var(--line); font-weight: 600; }
     .day-column {
-      grid-row: 2;
+      grid-row: 3;
       position: relative;
       height: calc(96 * var(--cell-h));
       border-right: 1px solid var(--line-soft);
