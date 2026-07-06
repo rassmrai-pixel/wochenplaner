@@ -971,14 +971,29 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     visible.forEach(todo => {
       const cat = state.categories[todo.categoryId] || state.categories.orga;
       const item = document.createElement('div');
+      let clickTimer = null;
       item.className = `all-day-item ${isTodoDone(todo) ? 'done' : ''}`;
       item.style.borderLeftColor = cat.color;
       item.title = todo.text;
       item.innerHTML = `
         <input class="all-day-check" type="checkbox" ${isTodoDone(todo) ? 'checked' : ''} ${todo.autoComplete && Array.isArray(todo.subtasks) && todo.subtasks.length ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : ''} />
         <span class="all-day-text">${escapeHtml(todo.text)}</span>`;
-      item.addEventListener('click', e => openExistingDayTodo(todo, e));
-      item.addEventListener('dblclick', e => openDayTodoEditor(todo, e));
+      item.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (clickTimer) clearTimeout(clickTimer);
+        clickTimer = setTimeout(() => {
+          clickTimer = null;
+          openHeaderTodosForDay(dayIndex);
+        }, 220);
+      });
+      item.addEventListener('dblclick', e => {
+        if (clickTimer) {
+          clearTimeout(clickTimer);
+          clickTimer = null;
+        }
+        openDayTodoEditor(todo, e);
+      });
       item.querySelector('.all-day-check').addEventListener('click', e => e.stopPropagation());
       item.querySelector('.all-day-check').addEventListener('dblclick', e => e.stopPropagation());
       item.querySelector('.all-day-check').addEventListener('change', e => toggleDayTodoDone(todo, e.target.checked, e));
