@@ -1101,7 +1101,6 @@
       letter-spacing: 0.04em;
     }
     .header-todo-close,
-    .header-todo-edit,
     .header-todo-delete,
     .header-todo-add {
       min-height: 0;
@@ -1119,7 +1118,7 @@
     }
     .header-todo-row {
       display: grid;
-      grid-template-columns: 14px minmax(0, 1fr) auto auto;
+      grid-template-columns: 14px minmax(0, 1fr) auto;
       align-items: center;
       gap: 4px;
       min-width: 0;
@@ -1130,13 +1129,22 @@
       min-height: 0;
       accent-color: #38bdf8;
     }
-    .header-todo-text {
+    .header-todo-open {
+      min-height: 0;
+      padding: 1px 0;
+      border: 0;
+      background: transparent;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: 11px;
       font-weight: 800;
       color: var(--text);
+      text-align: left;
+      cursor: pointer;
+    }
+    .header-todo-open:hover {
+      color: #bfdbfe;
     }
     .header-todo-empty {
       color: var(--muted);

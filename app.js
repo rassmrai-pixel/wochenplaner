@@ -68,6 +68,7 @@
   let pendingTodoId = null;
   let presetSource = null;
   let lastAutoScrollKey = null;
+  let editingDayTodoId = null;
   let dayTodoDraftSubtasks = [];
   let eventDraftSubtasks = [];
 
@@ -127,6 +128,7 @@
   const dayTodoModalSubtaskList = document.getElementById('dayTodoModalSubtaskList');
   const cancelDayTodoModalBtn = document.getElementById('cancelDayTodoModalBtn');
   const saveDayTodoModalBtn = document.getElementById('saveDayTodoModalBtn');
+  const deleteDayTodoModalBtn = document.getElementById('deleteDayTodoModalBtn');
   const dayTodoList = document.getElementById('dayTodoList');
   const dayTodoCount = document.getElementById('dayTodoCount');
   const taskView = document.getElementById('taskView');
@@ -1070,8 +1072,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
           return `
             <div class="header-todo-row" data-todo-id="${todo.id}">
               <input class="header-todo-check" type="checkbox" ${doneState ? 'checked' : ''} ${todo.autoComplete && Array.isArray(todo.subtasks) && todo.subtasks.length ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : ''} />
-              <span class="header-todo-text">${escapeHtml(todo.text)}</span>
-              <button type="button" class="header-todo-edit">Edit</button>
+              <button type="button" class="header-todo-open">${escapeHtml(todo.text)}</button>
               <button type="button" class="header-todo-delete">×</button>
             </div>`;
         }).join('')
@@ -1095,11 +1096,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
       const todo = todos.find(item => item.id === row.dataset.todoId);
       if (!todo) return;
       row.querySelector('.header-todo-check').addEventListener('change', e => toggleDayTodoDone(todo, e.target.checked, e));
-      row.querySelector('.header-todo-edit').addEventListener('click', e => {
-        e.preventDefault();
-        e.stopPropagation();
-        renameTodoGlobal(todo);
-      });
+      row.querySelector('.header-todo-open').addEventListener('click', e => openDayTodoEditor(todo, e));
       row.querySelector('.header-todo-delete').addEventListener('click', e => deleteDayTodo(todo, e));
     });
     container.appendChild(panel);
@@ -1446,7 +1443,8 @@ return div;
       dayTodoModalSubtaskList.innerHTML = '<div class="category-modal-note">Noch keine Untertasks. Du kannst sie jetzt hinzufügen oder später am To-do ergänzen.</div>';
       return;
     }
-    dayTodoDraftSubtasks.forEach((text, index) => {
+    dayTodoDraftSubtasks.forEach((subtask, index) => {
+      const text = typeof subtask === 'string' ? subtask : subtask.text;
       const row = document.createElement('div');
       row.className = 'day-todo-modal-subtask-item';
       row.innerHTML = `<span>${escapeHtml(text)}</span><button class="small ghost" type="button">Entfernen</button>`;
@@ -1461,15 +1459,30 @@ return div;
   function addDayTodoDraftSubtask() {
     const text = dayTodoModalSubtaskInput.value.trim();
     if (!text) return;
-    dayTodoDraftSubtasks.push(text);
+    dayTodoDraftSubtasks.push({ id: id(), text, done: false, createdAt: new Date().toISOString() });
     dayTodoModalSubtaskInput.value = '';
     renderDayTodoDraftSubtasks();
     dayTodoModalSubtaskInput.focus();
   }
 
+  function normalizeDayTodoDraftSubtasks() {
+    return dayTodoDraftSubtasks.map(subtask => {
+      if (typeof subtask === 'string') {
+        return { id: id(), text: subtask, done: false, createdAt: new Date().toISOString() };
+      }
+      return {
+        id: subtask.id || id(),
+        text: subtask.text || 'Untertask',
+        done: Boolean(subtask.done),
+        createdAt: subtask.createdAt || new Date().toISOString()
+      };
+    });
+  }
+
   function openDayTodoModal() {
     if (!isWeekMode()) return alert('Tages-To-dos kannst du in der Kalenderwoche hinzufügen.');
     fillDayTodoModalCategorySelect();
+    editingDayTodoId = null;
     dayTodoDraftSubtasks = [];
     dayTodoModalTitle.textContent = 'Tages-To-do erstellen';
     dayTodoModalInfo.textContent = `${days[state.activeHabitDay]} ${formatShortDate(getDayDate(state.activeHabitDay))} · ohne feste Uhrzeit. Du kannst es später zeitlich einplanen.`;
@@ -1477,6 +1490,8 @@ return div;
     dayTodoModalCategory.value = state.selectedCategory || 'orga';
     dayTodoModalAuto.checked = false;
     dayTodoModalSubtaskInput.value = '';
+    if (deleteDayTodoModalBtn) deleteDayTodoModalBtn.style.display = 'none';
+    if (saveDayTodoModalBtn) saveDayTodoModalBtn.textContent = 'Tages-To-do erstellen';
     renderDayTodoDraftSubtasks();
     dayTodoModalBackdrop.style.display = 'flex';
     setTimeout(() => dayTodoModalText.focus(), 50);
@@ -1487,13 +1502,55 @@ return div;
     openDayTodoModal();
   }
 
+  function openDayTodoEditor(todo, event = null) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    if (!todo || !isWeekMode()) return;
+    fillDayTodoModalCategorySelect();
+    editingDayTodoId = todo.id;
+    state.activeHabitDay = clamp(Number(todo.plannedDay), 0, 6);
+    dayTodoDraftSubtasks = Array.isArray(todo.subtasks) ? clone(todo.subtasks) : [];
+    dayTodoModalTitle.textContent = 'Tages-To-do bearbeiten';
+    dayTodoModalInfo.textContent = `${days[state.activeHabitDay]} ${formatShortDate(getDayDate(state.activeHabitDay))} · Tagesaufgabe ohne feste Uhrzeit.`;
+    dayTodoModalText.value = todo.text || '';
+    dayTodoModalCategory.value = todo.categoryId || state.selectedCategory || 'orga';
+    dayTodoModalAuto.checked = Boolean(todo.autoComplete);
+    dayTodoModalSubtaskInput.value = '';
+    if (deleteDayTodoModalBtn) deleteDayTodoModalBtn.style.display = '';
+    if (saveDayTodoModalBtn) saveDayTodoModalBtn.textContent = 'Speichern';
+    renderDayTodoDraftSubtasks();
+    dayTodoModalBackdrop.style.display = 'flex';
+    setTimeout(() => dayTodoModalText.focus(), 50);
+  }
+
   function closeDayTodoModal() {
+    editingDayTodoId = null;
     dayTodoModalBackdrop.style.display = 'none';
   }
 
   function saveDayTodoFromModal() {
     const text = dayTodoModalText.value.trim();
     if (!text) { alert('Bitte gib ein Tages-To-do ein.'); return; }
+    const subtasks = normalizeDayTodoDraftSubtasks();
+    if (editingDayTodoId) {
+      const todo = state.todos.find(item => item.id === editingDayTodoId);
+      if (todo) {
+        todo.text = text;
+        todo.categoryId = dayTodoModalCategory.value || 'orga';
+        todo.autoComplete = Boolean(dayTodoModalAuto.checked);
+        todo.subtasks = subtasks;
+        todo.plannedWeekStart = todo.plannedWeekStart || state.currentWeekStart;
+        if (todo.plannedDay === undefined || todo.plannedDay === null) todo.plannedDay = state.activeHabitDay;
+        todo.plannedEventId = null;
+        syncTodoAutoComplete(todo);
+      }
+      closeDayTodoModal();
+      saveState();
+      renderAll();
+      return;
+    }
     state.todos.push({
       id: id(),
       text,
@@ -1504,7 +1561,7 @@ return div;
       plannedWeekStart: state.currentWeekStart,
       plannedDay: state.activeHabitDay,
       autoComplete: Boolean(dayTodoModalAuto.checked),
-      subtasks: dayTodoDraftSubtasks.map(text => ({ id: id(), text, done: false })),
+      subtasks,
       createdAt: new Date().toISOString()
     });
     closeDayTodoModal();
@@ -1514,6 +1571,20 @@ return div;
 
   function addDayTodoQuick() {
     openDayTodoModal();
+  }
+
+  function deleteDayTodoFromModal() {
+    if (!editingDayTodoId) return;
+    const todo = state.todos.find(item => item.id === editingDayTodoId);
+    if (!todo) {
+      closeDayTodoModal();
+      return;
+    }
+    if (!confirm('Dieses Tages-To-do löschen?')) return;
+    state.todos = state.todos.filter(item => item.id !== todo.id);
+    closeDayTodoModal();
+    saveState();
+    renderAll();
   }
 
   // ==================================================
@@ -2693,6 +2764,7 @@ function toggleMissed(eventId) {
   });
   if (cancelDayTodoModalBtn) cancelDayTodoModalBtn.onclick = closeDayTodoModal;
   if (saveDayTodoModalBtn) saveDayTodoModalBtn.onclick = saveDayTodoFromModal;
+  if (deleteDayTodoModalBtn) deleteDayTodoModalBtn.onclick = deleteDayTodoFromModal;
   if (dayTodoModalAddSubtaskBtn) dayTodoModalAddSubtaskBtn.onclick = addDayTodoDraftSubtask;
   if (dayTodoModalSubtaskInput) dayTodoModalSubtaskInput.addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); addDayTodoDraftSubtask(); }
