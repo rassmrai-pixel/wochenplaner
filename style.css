@@ -927,14 +927,14 @@
     .calendar {
       display: grid;
       grid-template-columns: var(--time-w) repeat(7, minmax(var(--day-min-w), 1fr));
-      grid-template-rows: 62px 38px calc(96 * var(--cell-h));
+      grid-template-rows: 62px 34px calc(96 * var(--cell-h));
       min-width: calc(var(--time-w) + 7 * var(--day-min-w));
       position: relative;
     }
     .head-cell {
       position: sticky;
       top: 0;
-      z-index: 20;
+      z-index: 40;
       background: #111827;
       border-bottom: 1px solid var(--line);
       border-right: 1px solid var(--line);
@@ -986,27 +986,28 @@
       position: sticky;
       left: 0;
       z-index: 18;
-      background: rgba(15, 23, 42, 0.96);
+      background: #0f172a;
       box-shadow: 2px 0 0 var(--line);
     }
     .calendar > .head-cell:first-child {
       left: 0;
-      z-index: 28;
+      z-index: 50;
       box-shadow: 2px 0 0 var(--line), 0 1px 0 var(--line);
     }
     .all-day-cell {
       grid-row: 2;
-      min-height: 38px;
+      min-height: 34px;
       border-right: 1px solid var(--line-soft);
       border-bottom: 1px solid var(--line);
-      background: rgba(15, 23, 42, 0.88);
+      background: #0f172a;
       position: sticky;
       top: 62px;
-      z-index: 19;
+      z-index: 32;
+      box-shadow: 0 1px 0 var(--line);
     }
     .all-day-label {
       left: 0;
-      z-index: 24;
+      z-index: 45;
       display: flex;
       align-items: center;
       justify-content: flex-end;
@@ -1016,11 +1017,12 @@
       font-weight: 800;
       text-transform: uppercase;
       letter-spacing: 0.04em;
+      background: #0f172a;
       box-shadow: 2px 0 0 var(--line);
     }
     .all-day-day {
-      padding: 5px 6px;
-      background: rgba(2, 6, 23, 0.18);
+      padding: 4px 6px;
+      background: #111827;
     }
     .time-cell {
       height: var(--cell-h);
