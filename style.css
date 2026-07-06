@@ -755,6 +755,21 @@
     .drawer-controls-panel.collapsed .drawer-controls-content {
       display: none;
     }
+    .drawer-controls-panel.collapsed .drawer-controls-summary {
+      min-height: 34px;
+      padding: 6px 10px;
+    }
+    .drawer-chevron {
+      width: 9px;
+      height: 9px;
+      display: inline-block;
+      border-right: 2px solid #94a3b8;
+      border-bottom: 2px solid #94a3b8;
+      transform: rotate(45deg);
+    }
+    .drawer-chevron.up {
+      transform: rotate(225deg);
+    }
     .drawer-progress-card {
       border: 1px solid var(--line-soft);
       border-radius: 14px;
@@ -1621,6 +1636,10 @@
         padding: 8px 10px;
         border-radius: 12px;
         font-size: 13px;
+      }
+      .drawer-controls-panel.collapsed .drawer-controls-summary {
+        min-height: 32px;
+        padding: 5px 9px;
       }
       .drawer-controls-content {
         gap: 8px;

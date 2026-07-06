@@ -30,7 +30,6 @@
     uiHomeVersion: 'calendar-main-v1',
     todoDrawerOpen: false,
     drawerView: 'habit',
-    drawerControlsCollapsed: false,
     openHeaderTodoDay: null,
     currentWeekStart: null,
     trackingView: 'week',
@@ -71,6 +70,7 @@
   let presetSource = null;
   let lastAutoScrollKey = null;
   let editingDayTodoId = null;
+  let drawerControlsCollapsed = true;
   let dayTodoDraftSubtasks = [];
   let eventDraftSubtasks = [];
 
@@ -340,7 +340,6 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     if (s.plannerMode !== 'week' && s.viewMode === 'tasks') s.viewMode = 'calendar';
     s.todoDrawerOpen = Boolean(s.todoDrawerOpen);
     if (!['habit', 'todo'].includes(s.drawerView)) s.drawerView = 'habit';
-    s.drawerControlsCollapsed = Boolean(s.drawerControlsCollapsed);
     const todayInfo = getTodayInfo();
     const isCurrentWeek = s.currentWeekStart === todayInfo.weekKey;
     s.activeHabitDay = isCurrentWeek ? todayInfo.dayIndex : clamp(Number(s.activeHabitDay), 0, 6);
@@ -1763,10 +1762,12 @@ return div;
   function renderDrawerControlsSummary(stats, taskFilter) {
     if (!drawerControlsPanel || !drawerControlsSummaryText || !drawerControlsSummaryAction) return;
     const filterLabels = { all: 'Alle Tasks', timed: 'Mit Uhrzeit', untimed: 'Ohne Uhrzeit' };
-    const collapsed = Boolean(state.drawerControlsCollapsed);
+    const collapsed = Boolean(drawerControlsCollapsed);
     drawerControlsPanel.classList.toggle('collapsed', collapsed);
-    drawerControlsSummaryText.textContent = `${days[state.activeHabitDay]} ${formatShortDate(getDayDate(state.activeHabitDay))} · ${filterLabels[taskFilter] || 'Alle Tasks'} · ${stats.open || 0}/${stats.total || 0} offen`;
-    drawerControlsSummaryAction.textContent = collapsed ? 'Ausklappen ▾' : 'Einklappen ▴';
+    drawerControlsSummaryText.textContent = `${days[state.activeHabitDay]} ${formatShortDate(getDayDate(state.activeHabitDay))} • ${filterLabels[taskFilter] || 'Alle Tasks'} • ${stats.open || 0}/${stats.total || 0} offen`;
+    drawerControlsSummaryAction.innerHTML = collapsed
+      ? '<span class="drawer-chevron down" aria-hidden="true"></span>'
+      : '<span class="drawer-chevron up" aria-hidden="true"></span>';
   }
 
   function drawerTaskStats(dayEvents, dayTodoItems, taskFilter) {
@@ -2826,8 +2827,7 @@ function toggleMissed(eventId) {
   }
   if (drawerControlsToggleBtn) {
     drawerControlsToggleBtn.onclick = () => {
-      state.drawerControlsCollapsed = !state.drawerControlsCollapsed;
-      saveState();
+      drawerControlsCollapsed = !drawerControlsCollapsed;
       renderHabits();
     };
   }
