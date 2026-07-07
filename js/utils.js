@@ -58,7 +58,10 @@ function normalizeHexColor(value, fallback = '#22c55e') {
 
 function statsForItems(items, type) {
   const filtered = type ? items.filter(item => item.type === type) : items;
-  const done = filtered.filter(item => item.done).length;
+  const done = filtered.reduce((sum, item) => {
+    if (Number.isFinite(item.score)) return sum + Math.max(0, Math.min(1, item.score));
+    return sum + (item.done ? 1 : 0);
+  }, 0);
   return { total: filtered.length, done, percent: makePercent(done, filtered.length) };
 }
 

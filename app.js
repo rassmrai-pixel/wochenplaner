@@ -695,7 +695,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     );
 
   const total = habitItems.length + dayTodos.length;
-  const done = habitItems.filter(ev => ev.done).length + dayTodos.filter(todo => isTodoDone(todo)).length;
+  const done = habitItems.reduce((sum, ev) => sum + eventTrackingScore(ev), 0) + dayTodos.filter(todo => isTodoDone(todo)).length;
   const missed = habitItems.filter(ev => ev.missed).length;
   const open = Math.max(0, total - done - missed);
 
@@ -840,6 +840,31 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
         Number(child.start) >= Number(parent.start) &&
         Number(child.end) <= Number(parent.end)
       );
+  }
+
+  function blockFulfillmentStats(ev) {
+    const subItems = Array.isArray(ev?.subtasks)
+      ? ev.subtasks.map(sub => ({ done: Boolean(sub.done), missed: Boolean(sub.missed) }))
+      : [];
+    const childItems = integratedEventsForEvent(ev?.id)
+      .map(child => ({ done: Boolean(child.done), missed: Boolean(child.missed) }));
+    const items = [...subItems, ...childItems];
+    const total = items.length;
+    const done = items.filter(item => item.done && !item.missed).length;
+    return {
+      total,
+      done,
+      score: total ? done / total : (ev?.done && !ev?.missed ? 1 : 0),
+      percent: total ? makePercent(done, total) : (ev?.done && !ev?.missed ? 100 : 0)
+    };
+  }
+
+  function eventTrackingScore(ev) {
+    return blockFulfillmentStats(ev).score;
+  }
+
+  function formatScore(value) {
+    return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, '');
   }
 
   function parentBlockCandidates(day, start, end, ownId = null) {
@@ -1463,6 +1488,8 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     div.style.background = cat.color;
     div.title = `${days[ev.day]} ${isTemplateMode() ? '' : formatShortDate(getDayDate(ev.day)) + ' '}${eventTime(ev)} · ${ev.label}`;
     const integratedCount = integratedEventsForEvent(ev.id).length;
+    const fulfillment = blockFulfillmentStats(ev);
+    const fulfillmentBadge = fulfillment.total ? `<div class="event-fulfillment-badge">${fulfillment.done}/${fulfillment.total}</div>` : '';
     const integratedBadge = integratedCount ? `<div class="event-integrated-badge">+${integratedCount} im Block</div>` : '';
     const scheduledChildren = scheduledIntegratedEventsForEvent(ev);
     const embeddedChildren = scheduledChildren.length ? `
@@ -1473,16 +1500,17 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
           const height = Math.max(10, ((Number(child.end) - Number(child.start)) / parentDuration) * 100);
           const childCat = state.categories[child.categoryId] || cat;
           return `
-            <button
-              type="button"
+            <div
               class="event-embedded-child ${child.done ? 'done' : ''}"
               data-event-id="${child.id}"
               style="top:${top}%;height:calc(${height}% - 2px);border-left-color:${escapeHtml(childCat.color)}"
               title="${escapeHtml(eventTime(child))} · ${escapeHtml(child.label)}"
             >
+              <input class="event-embedded-check" type="checkbox" ${child.done ? 'checked' : ''} title="Erledigt" />
               <span>${escapeHtml(timeLabel(child.start))}</span>
               <strong>${escapeHtml(child.label)}</strong>
-            </button>`;
+              <button class="event-embedded-missed ${child.missed ? 'active' : ''}" type="button" title="Nicht eingehalten">!</button>
+            </div>`;
         }).join('')}
       </div>` : '';
 
@@ -1495,6 +1523,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
   </div>
   <div class="event-time">${eventTime(ev)}</div>
   ${embeddedChildren}
+  ${fulfillmentBadge}
   ${integratedBadge}`;
 
     div.addEventListener('mousedown', e => e.stopPropagation());
@@ -1528,6 +1557,22 @@ div.querySelectorAll('.event-embedded-child').forEach(childBtn => {
     e.stopPropagation();
     openEditor(childBtn.dataset.eventId);
   });
+  const childCheck = childBtn.querySelector('.event-embedded-check');
+  if (childCheck) {
+    childCheck.addEventListener('click', e => e.stopPropagation());
+    childCheck.addEventListener('change', e => {
+      e.stopPropagation();
+      toggleDone(childBtn.dataset.eventId, e.target.checked);
+    });
+  }
+  const childMissed = childBtn.querySelector('.event-embedded-missed');
+  if (childMissed) {
+    childMissed.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleMissed(childBtn.dataset.eventId);
+    });
+  }
 });
 
 return div;
@@ -2330,16 +2375,16 @@ return div;
 
   function routineTrackingStats() {
     const trackableTemplate = state.templateEvents.filter(ev => state.categories[ev.categoryId]?.habit);
-    const done = trackableTemplate.filter(templateEv => {
+    const done = trackableTemplate.reduce((sum, templateEv) => {
       const weekEv = currentWeekEvents().find(ev => ev.source === 'routine' && ev.templateEventId === templateEv.id);
-      return Boolean(weekEv?.done);
-    }).length;
+      return sum + (weekEv ? eventTrackingScore(weekEv) : 0);
+    }, 0);
     return { total: trackableTemplate.length, done, percent: makePercent(done, trackableTemplate.length) };
   }
 
   function extraTrackingStats() {
-    const extras = currentWeekEvents().filter(ev => ev.source === 'extra' && state.categories[ev.categoryId]?.habit);
-    const done = extras.filter(ev => ev.done).length;
+    const extras = currentWeekEvents().filter(ev => ev.source === 'extra' && !ev.stackedIntoId && state.categories[ev.categoryId]?.habit);
+    const done = extras.reduce((sum, ev) => sum + eventTrackingScore(ev), 0);
     return { total: extras.length, done, percent: makePercent(done, extras.length) };
   }
 
@@ -2391,9 +2436,11 @@ return div;
         .filter(ev => ev.day === dayIndex && state.categories[ev.categoryId]?.habit)
         .forEach(templateEv => {
           const weekEv = weekEvents.find(ev => ev.source === 'routine' && ev.templateEventId === templateEv.id);
+          const scoreSource = weekEv || templateEv;
           items.push({
             type: 'routine',
             done: Boolean(weekEv?.done),
+            score: weekEv ? eventTrackingScore(scoreSource) : 0,
             label: templateEv.label,
             categoryId: templateEv.categoryId,
             day: dayIndex,
@@ -2404,11 +2451,12 @@ return div;
         });
 
       weekEvents
-        .filter(ev => ev.day === dayIndex && ev.source === 'extra' && state.categories[ev.categoryId]?.habit)
+        .filter(ev => ev.day === dayIndex && ev.source === 'extra' && !ev.stackedIntoId && state.categories[ev.categoryId]?.habit)
         .forEach(ev => {
           items.push({
             type: 'extra',
             done: Boolean(ev.done),
+            score: eventTrackingScore(ev),
             label: ev.label,
             categoryId: ev.categoryId,
             day: ev.day,
@@ -2549,7 +2597,7 @@ return div;
       if (!groups.has(key)) groups.set(key, { categoryId: key, total: 0, done: 0 });
       const group = groups.get(key);
       group.total += 1;
-      if (item.done) group.done += 1;
+      group.done += Number.isFinite(item.score) ? item.score : (item.done ? 1 : 0);
     });
 
     const rows = Array.from(groups.values())
@@ -2569,7 +2617,7 @@ return div;
       row.innerHTML = `
         <div class="tracking-category-top">
           <span class="tracking-category-name">${escapeHtml(cat.label)}</span>
-          <strong>${group.percent}% · ${group.done}/${group.total}</strong>
+          <strong>${group.percent}% · ${formatScore(group.done)}/${group.total}</strong>
         </div>
         <div class="tracking-mini-bar"><div class="tracking-mini-fill total" style="width:${group.percent}%"></div></div>`;
       trackingCategoryChart.appendChild(row);
@@ -2608,7 +2656,7 @@ return div;
       if (!categoryGroups.has(key)) categoryGroups.set(key, { categoryId: key, total: 0, done: 0 });
       const group = categoryGroups.get(key);
       group.total += 1;
-      if (item.done) group.done += 1;
+      group.done += Number.isFinite(item.score) ? item.score : (item.done ? 1 : 0);
     });
     const catRows = Array.from(categoryGroups.values())
       .map(group => ({ ...group, percent: makePercent(group.done, group.total) }))
@@ -2651,15 +2699,15 @@ return div;
     totalTrackingLabel.textContent = 'Gesamt';
 
     routinePercent.textContent = `${routine.percent}%`;
-    routineSub.textContent = `${routine.done}/${routine.total} Routine-Blöcke erledigt`;
+    routineSub.textContent = `${formatScore(routine.done)}/${routine.total} Routine-Blöcke erfüllt`;
     routineFill.style.width = `${routine.percent}%`;
 
     extraPercent.textContent = `${extra.percent}%`;
-    extraSub.textContent = `${extra.done}/${extra.total} Extra-To-dos erledigt`;
+    extraSub.textContent = `${formatScore(extra.done)}/${extra.total} Extra-To-dos erfüllt`;
     extraFill.style.width = `${extra.percent}%`;
 
     totalPercent.textContent = `${total.percent}%`;
-    totalSub.textContent = `${total.done}/${total.total} insgesamt erledigt`;
+    totalSub.textContent = `${formatScore(total.done)}/${total.total} insgesamt erfüllt`;
     totalFill.style.width = `${total.percent}%`;
 
     const buckets = buildTrackingBuckets(range, items);
@@ -2670,7 +2718,7 @@ return div;
 
     const filter = state.trackingFilter || 'all';
     const visible = items
-      .filter(item => filter === 'all' || (filter === 'done' ? item.done : !item.done))
+      .filter(item => filter === 'all' || (filter === 'done' ? item.score >= 1 : item.score < 1))
       .sort((a, b) => a.date - b.date || a.start - b.start)
       .slice(0, 80);
 
@@ -2687,7 +2735,7 @@ return div;
       row.innerHTML = `
         <span>${days[item.day]} · ${formatShortDate(item.date)} · ${eventTime(item)} · ${item.type === 'extra' ? 'Extra' : 'Routine'}</span>
         <strong>${escapeHtml(item.label)} · ${escapeHtml(cat.label)}</strong>
-        <span class="tracking-status ${item.done ? 'done' : 'open'}">${item.done ? 'Erledigt' : 'Offen'}</span>`;
+        <span class="tracking-status ${item.score >= 1 ? 'done' : 'open'}">${item.score >= 1 ? 'Erledigt' : `${makePercent(item.score, 1)}% erfüllt`}</span>`;
       trackingList.appendChild(row);
     });
   }
