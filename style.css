@@ -1529,19 +1529,25 @@
       display: none;
       position: fixed;
       inset: 0;
-      background: rgba(0,0,0,0.62);
-      z-index: 120;
-      align-items: center;
+      background: rgba(2, 6, 23, 0.78);
+      backdrop-filter: blur(3px);
+      z-index: 2000;
+      align-items: flex-start;
       justify-content: center;
-      padding: 20px;
+      padding: 8vh 24px 24px;
+      overflow-y: auto;
     }
     .modal {
-      width: min(560px, 100%);
+      position: relative;
+      z-index: 2001;
+      width: min(640px, 100%);
+      max-height: calc(100vh - 48px);
+      overflow-y: auto;
       background: #111827;
-      border: 1px solid var(--line);
-      border-radius: 18px;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 20px;
       padding: 18px;
-      box-shadow: 0 30px 100px rgba(0,0,0,0.45);
+      box-shadow: 0 30px 100px rgba(0,0,0,0.72);
     }
     .modal h2 { margin: 0 0 12px; }
     .modal label { display: block; color: var(--muted); font-size: 13px; margin: 12px 0 6px; }
@@ -1591,6 +1597,14 @@
       header { padding: 16px; }
       .app { padding: 14px; }
       input[type="text"] { width: 150px; }
+      .modal-backdrop {
+        padding: 18px 12px;
+      }
+      .modal {
+        width: 100%;
+        max-height: calc(100vh - 36px);
+        border-radius: 16px;
+      }
   
 
     .view-switch {
