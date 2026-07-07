@@ -67,6 +67,7 @@ function formatTime(date) {
 }
 
 function parseIcsEvents(icsText) {
+  console.log("[ICS] Parsing started");
   const unfolded = unfoldIcsLines(icsText);
   const eventBlocks = unfolded.match(/BEGIN:VEVENT[\s\S]*?END:VEVENT/g) || [];
 
@@ -118,11 +119,31 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Nur HTTPS-Links sind erlaubt." });
     }
 
-    const icsResponse = await fetch(icsUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0"
+    console.log("[ICS] Sync started");
+    console.log("[ICS] Fetching URL", icsUrl);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    let icsResponse;
+
+    try {
+      icsResponse = await fetch(icsUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0"
+        },
+        signal: controller.signal
+      });
+    } catch (error) {
+      if (error.name === "AbortError") {
+        console.error("[ICS] Sync failed", error);
+        return res.status(408).json({ error: "ICS Sync Timeout: Die Kalender-URL antwortet nicht." });
       }
-    });
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    console.log("[ICS] Fetch response", icsResponse.status, icsResponse.ok);
 
     if (!icsResponse.ok) {
       return res.status(400).json({
@@ -132,19 +153,22 @@ export default async function handler(req, res) {
     }
 
     const icsText = await icsResponse.text();
+    console.log("[ICS] Text length", icsText.length);
 
     if (!icsText.includes("BEGIN:VCALENDAR")) {
       return res.status(400).json({ error: "Der Link liefert keine gültige ICS-Datei." });
     }
 
     const events = parseIcsEvents(icsText);
+    console.log("[ICS] Parsed events", events.length);
+    console.log("[ICS] Sync finished");
 
     return res.status(200).json({
       events,
       count: events.length
     });
   } catch (error) {
-    console.error(error);
+    console.error("[ICS] Sync failed", error);
     return res.status(500).json({ error: "Serverfehler beim ICS-Import." });
   }
 }

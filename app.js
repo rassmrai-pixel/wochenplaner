@@ -15,6 +15,7 @@
   let guestMode = localStorage.getItem(authModeKey) === 'guest';
   let cloudSaveTimer = null;
   let cloudLoading = false;
+  let icsSyncing = false;
   const cellHeight = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell-h')) || 18;
 
   // ==================================================
@@ -493,18 +494,26 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
   async function saveCloudState(snapshot = state) {
     if (!supabaseClient || !cloudUser || cloudLoading) return;
     try {
+      console.log('[ICS] saveCloudState started');
       setCloudStatus(`Eingeloggt als ${cloudUser.email || 'Nutzer'} · Speichere in Supabase...`, 'signed-in');
-      const { error } = await supabaseClient
+      const savePromise = supabaseClient
         .from('planner_state')
         .upsert({
           user_id: cloudUser.id,
           data: snapshot,
           updated_at: new Date().toISOString()
         }, { onConflict: 'user_id' });
+      let cloudTimeoutId = null;
+      const timeoutPromise = new Promise((_, reject) => {
+        cloudTimeoutId = window.setTimeout(() => reject(new Error('ICS Sync fehlgeschlagen: Speichern in der Cloud nicht möglich.')), 20000);
+      });
+      const { error } = await Promise.race([savePromise, timeoutPromise]);
+      if (cloudTimeoutId) window.clearTimeout(cloudTimeoutId);
       if (error) throw error;
+      console.log('[ICS] saveCloudState finished');
       setCloudStatus(`Eingeloggt als ${cloudUser.email || 'Nutzer'} · Cloud Sync aktiv.`, 'signed-in');
     } catch (err) {
-      console.error(err);
+      console.error('[ICS] saveCloudState failed', err);
       setCloudStatus(`Cloud-Fehler: ${err.message || err}`, 'error');
     }
   }
@@ -3309,6 +3318,7 @@ function toggleMissed(eventId) {
 }
 
 function clearImportedIcsEvents() {
+  console.log('[ICS] Removing old ICS events');
   if (!state.weekEventsByWeek) state.weekEventsByWeek = {};
 
   Object.keys(state.weekEventsByWeek).forEach((weekKey) => {
@@ -3390,6 +3400,7 @@ function clearImportedIcsEvents() {
   });
 
   clearImportedIcsEvents();
+  console.log('[ICS] Adding new ICS events');
 
   const importedExternalIds = new Set();
 
@@ -3428,7 +3439,9 @@ function clearImportedIcsEvents() {
 });
 
   currentWeekEvents();
+  console.log('[ICS] Saving state');
   saveState();
+  console.log('[ICS] State saved locally; cloud save queued if enabled');
   renderAll();
 }
 
@@ -3437,7 +3450,19 @@ function clearImportedIcsEvents() {
     if (status) status.textContent = message || '';
   }
 
+  function setIcsSyncing(syncing) {
+    icsSyncing = Boolean(syncing);
+    const syncBtn = document.getElementById('syncIcsBtn');
+    const quickSyncBtn = document.getElementById('quickIcsSyncBtn');
+    if (syncBtn) {
+      syncBtn.disabled = icsSyncing;
+      syncBtn.textContent = icsSyncing ? 'Synchronisiere...' : 'Synchronisieren';
+    }
+    if (quickSyncBtn) quickSyncBtn.disabled = icsSyncing;
+  }
+
   async function syncIcsCalendarFromModal() {
+    if (icsSyncing) return;
     const input = document.getElementById('icsUrlInput');
     const icsUrl = input ? input.value.trim() : '';
 
@@ -3451,14 +3476,22 @@ function clearImportedIcsEvents() {
       return;
     }
 
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 20000);
+
     try {
+      console.log('[ICS] Sync started');
+      console.log('[ICS] Fetching URL', icsUrl);
+      setIcsSyncing(true);
       setIcsStatus('Kalender wird synchronisiert...');
 
       const response = await fetch('/api/ics-sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ icsUrl })
+        body: JSON.stringify({ icsUrl }),
+        signal: controller.signal
       });
+      console.log('[ICS] Fetch response', response.status, response.ok);
 
       const data = await response.json().catch(() => ({}));
 
@@ -3466,12 +3499,20 @@ function clearImportedIcsEvents() {
         throw new Error(data.error || 'ICS-Synchronisation fehlgeschlagen.');
       }
 
+      console.log('[ICS] Parsed events', (data.events || []).length);
       importIcsEventsIntoPlanner(data.events || []);
       localStorage.setItem('perfekte-woche-ics-url', icsUrl);
       setIcsStatus(`${(data.events || []).length} Termine importiert.`);
+      console.log('[ICS] Sync finished');
     } catch (error) {
-      console.error(error);
-      setIcsStatus(error.message || 'Fehler beim Import. Prüfe den ICS-Link.');
+      console.error('[ICS] Sync failed', error);
+      const message = error.name === 'AbortError'
+        ? 'ICS Sync Timeout: Die Kalender-URL antwortet nicht.'
+        : (error.message || 'ICS Sync fehlgeschlagen: Kalender konnte nicht geladen werden.');
+      setIcsStatus(message);
+    } finally {
+      window.clearTimeout(timeout);
+      setIcsSyncing(false);
     }
   }
   
