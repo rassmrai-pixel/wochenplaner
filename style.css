@@ -1219,6 +1219,11 @@
       opacity: 0.62;
       text-decoration: line-through;
     }
+    .all-day-event {
+      grid-template-columns: minmax(0, 1fr);
+      padding-right: 4px;
+      background: #172554;
+    }
     .all-day-more {
       height: 14px;
       line-height: 14px;

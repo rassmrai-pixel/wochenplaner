@@ -267,11 +267,14 @@
     }
 
     function normalizeEvent(ev, fallbackSource = 'routine') {
+      const allDay = Boolean(ev.allDay);
       return {
         id: ev.id || id(),
         day: clamp(Number(ev.day), 0, 6),
-        start: clamp(Number(ev.start), 0, slotsPerDay - 1),
-        end: clamp(Number(ev.end), 1, slotsPerDay),
+        start: allDay ? null : clamp(Number(ev.start), 0, slotsPerDay - 1),
+        end: allDay ? null : clamp(Number(ev.end), 1, slotsPerDay),
+        allDay,
+        date: ev.date || null,
         label: ev.label || 'Block',
         categoryId: s.categories[ev.categoryId] ? ev.categoryId : 'orga',
         done: Boolean(ev.done),
@@ -309,7 +312,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     s.templateEvents = rawTemplateEvents
       .map(ev => normalizeEvent(ev, 'routine'))
       .map(ev => ({ ...ev, source: 'routine', done: false, templateEventId: null }))
-      .filter(ev => ev.end > ev.start);
+      .filter(ev => ev.allDay || ev.end > ev.start);
 
     s.weekEventsByWeek = {};
     if (input.weekEventsByWeek && typeof input.weekEventsByWeek === 'object') {
@@ -318,14 +321,14 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
         if (!Array.isArray(events)) return;
         s.weekEventsByWeek[safeWeek] = events
           .map(ev => normalizeEvent(ev, ev.source || 'extra'))
-          .filter(ev => ev.end > ev.start);
+          .filter(ev => ev.allDay || ev.end > ev.start);
       });
     }
 
     if (rawWeekEvents.length && !s.weekEventsByWeek[initialWeek]) {
       s.weekEventsByWeek[initialWeek] = rawWeekEvents
         .map(ev => normalizeEvent(ev, ev.source || 'extra'))
-        .filter(ev => ev.end > ev.start);
+        .filter(ev => ev.allDay || ev.end > ev.start);
     }
 
     if (!s.weekEventsByWeek[s.currentWeekStart]) s.weekEventsByWeek[s.currentWeekStart] = [];
@@ -1108,7 +1111,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
         col.appendChild(slot);
       }
 
-      const events = currentEvents().filter(ev => ev.day === d && !ev.stackedIntoId);
+      const events = currentEvents().filter(ev => ev.day === d && !ev.stackedIntoId && !ev.allDay);
       layoutDayEvents(events).forEach(ev => col.appendChild(eventEl(ev)));
       renderCurrentTimeLine(col, d, today);
       calendar.appendChild(col);
@@ -1123,14 +1126,44 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
       .filter(todo => todo.plannedWeekStart === state.currentWeekStart && Number(todo.plannedDay) === Number(dayIndex) && !todo.plannedEventId);
   }
 
+  function allDayEventsForDay(dayIndex) {
+    if (!isWeekMode()) return [];
+    return currentEvents()
+      .filter(ev => ev.allDay && Number(ev.day) === Number(dayIndex) && !ev.stackedIntoId);
+  }
+
   function renderAllDayTodosForDay(cell, dayIndex) {
     const todos = allDayTodosForDay(dayIndex)
       .sort((a, b) => Number(isTodoDone(a)) - Number(isTodoDone(b)) || String(a.createdAt).localeCompare(String(b.createdAt)));
-    const visible = todos.slice(0, 2);
+    const allDayEvents = allDayEventsForDay(dayIndex)
+      .sort((a, b) => String(a.label).localeCompare(String(b.label)));
+    const headerItems = [
+      ...allDayEvents.map(event => ({ type: 'event', event })),
+      ...todos.map(todo => ({ type: 'todo', todo }))
+    ];
+    const visible = headerItems.slice(0, 2);
     const isExpanded = state.openHeaderTodoDay === dayIndex;
 
     if (!isExpanded) {
-      visible.forEach(todo => {
+      visible.forEach(headerItem => {
+        if (headerItem.type === 'event') {
+          const ev = headerItem.event;
+          const cat = state.categories[ev.categoryId] || state.categories.external || state.categories.orga;
+          const item = document.createElement('div');
+          item.className = 'all-day-item all-day-event';
+          item.style.borderLeftColor = cat.color;
+          item.title = `${ev.label} · Ganztag`;
+          item.innerHTML = `<span class="all-day-text">Ganztag · ${escapeHtml(ev.label)}</span>`;
+          item.addEventListener('click', e => {
+            e.preventDefault();
+            e.stopPropagation();
+            openHeaderTodosForDay(dayIndex);
+          });
+          cell.appendChild(item);
+          return;
+        }
+
+        const todo = headerItem.todo;
         const cat = state.categories[todo.categoryId] || state.categories.orga;
         const item = document.createElement('div');
         let clickTimer = null;
@@ -1162,16 +1195,16 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
         cell.appendChild(item);
       });
 
-      if (todos.length > visible.length) {
+      if (headerItems.length > visible.length) {
         const more = document.createElement('div');
         more.className = 'all-day-more';
-        more.textContent = `+${todos.length - visible.length} mehr`;
+        more.textContent = `+${headerItems.length - visible.length} mehr`;
         more.addEventListener('click', e => openHeaderTodosForDay(dayIndex, e));
         cell.appendChild(more);
       }
     }
 
-    if (isExpanded) renderAllDayTodoPopover(cell, dayIndex, todos);
+    if (isExpanded) renderAllDayTodoPopover(cell, dayIndex, todos, allDayEvents);
   }
 
   function openHeaderTodosForDay(dayIndex, event = null) {
@@ -1265,13 +1298,21 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     return div;
   }
 
-  function renderAllDayTodoPopover(container, dayIndex, todos) {
+  function renderAllDayTodoPopover(container, dayIndex, todos, allDayEvents = []) {
     const panel = document.createElement('div');
     panel.className = 'all-day-popover';
     panel.addEventListener('click', e => e.stopPropagation());
 
-    const rows = todos.length
-      ? todos.map(todo => {
+    const eventRows = allDayEvents.map(ev => {
+      const cat = state.categories[ev.categoryId] || state.categories.external || state.categories.orga;
+      return `
+        <div class="all-day-popover-row all-day-popover-event" data-event-id="${ev.id}" style="border-left-color:${escapeHtml(cat.color)}">
+          <span class="all-day-popover-task">Ganztag · ${escapeHtml(ev.label)}</span>
+          <span class="all-day-popover-meta">Extern</span>
+        </div>`;
+    }).join('');
+
+    const todoRows = todos.map(todo => {
           const doneState = isTodoDone(todo);
           const stats = subtaskStats(todo);
           const cat = state.categories[todo.categoryId] || state.categories.orga;
@@ -1282,12 +1323,14 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
               <button type="button" class="all-day-popover-task">${escapeHtml(todo.text)}</button>
               ${meta}
             </div>`;
-        }).join('')
-      : '<div class="all-day-popover-empty">Keine Tagesaufgaben.</div>';
+        }).join('');
+    const rows = eventRows || todoRows
+      ? `${eventRows}${todoRows}`
+      : '<div class="all-day-popover-empty">Keine Tagesaufgaben oder Ganztagstermine.</div>';
 
     panel.innerHTML = `
       <div class="all-day-popover-head">
-        <span>Tagesaufgaben</span>
+        <span>Ganztag</span>
         <button type="button" class="all-day-popover-close" title="Schließen">×</button>
       </div>
       <div class="all-day-popover-list">${rows}</div>
@@ -3337,22 +3380,33 @@ function clearImportedIcsEvents() {
   renderAll();
 }
 
+function summarizeIcsSkipReasons(skippedEvents) {
+  return (skippedEvents || []).reduce((summary, item) => {
+    const reason = item.reason || 'unknown parser error';
+    summary[reason] = (summary[reason] || 0) + 1;
+    return summary;
+  }, {});
+}
+
   function plannerEventFromIcsEvent(icsEvent, index) {
     const eventDateKey = icsEvent.date || dateKey(new Date());
     const weekKey = weekStartKey(dateKeyToLocalDate(eventDateKey));
     const day = clamp(dayIndexInWeek(eventDateKey, weekKey), 0, 6);
+    const isAllDay = Boolean(icsEvent.allDay);
 
-    const start = timeValueToSlot(icsEvent.startTime, 36);
-    let end = timeValueToSlot(icsEvent.endTime, start + 4);
-    if (end <= start) end = Math.min(start + 4, slotsPerDay);
+    const start = isAllDay ? null : timeValueToSlot(icsEvent.startTime, 36);
+    let end = isAllDay ? null : timeValueToSlot(icsEvent.endTime, start + 4);
+    if (!isAllDay && end <= start) end = Math.min(start + 4, slotsPerDay);
 
-    const externalId = icsEvent.id || icsEvent.uid || `ics_${index}_${eventDateKey}_${start}`;
+    const externalId = icsEvent.id || icsEvent.uid || `ics_${index}_${eventDateKey}_${isAllDay ? 'all-day' : start}`;
 
     return {
   id: `ics_import_${externalId}`.replace(/[^a-zA-Z0-9_-]/g, '_'),
   day,
   start,
   end,
+  date: eventDateKey,
+  allDay: isAllDay,
   label: icsEvent.title || 'Kalendertermin',
   categoryId: 'external',
 
@@ -3364,11 +3418,14 @@ function clearImportedIcsEvents() {
 
   // Herkunft bleibt markiert
   importSource: 'ics',
-  provider: icsEvent.provider || 'outlook',
+  provider: icsEvent.provider || 'ics',
   externalId,
+  sourceId: icsEvent.sourceId || externalId,
+  isExternal: true,
+  readOnly: isAllDay,
 
   // true = Doppelklick öffnet Editor, falls du später Kategorie/Subtasks ändern willst
-  editable: true,
+  editable: !isAllDay,
 
   // gleiche Logik wie deine normalen Events
   autoComplete: false,
@@ -3406,15 +3463,30 @@ function clearImportedIcsEvents() {
   console.log('[ICS] Adding new ICS events');
 
   const importedExternalIds = new Set();
+  const skippedEvents = [];
   let importedCount = 0;
 
 (icsEvents || []).forEach((icsEvent, index) => {
   const plannerEvent = plannerEventFromIcsEvent(icsEvent, index);
 
-  if (!plannerEvent.externalId) return;
+  if (!plannerEvent.externalId) {
+    skippedEvents.push({
+      reason: 'duplicate externalId/sourceId',
+      title: icsEvent.title || icsEvent.summary || 'Kalendertermin',
+      externalId: plannerEvent.externalId || null
+    });
+    return;
+  }
 
   // verhindert doppelte Termine direkt aus dem ICS-Feed
-  if (importedExternalIds.has(plannerEvent.externalId)) return;
+  if (importedExternalIds.has(plannerEvent.externalId)) {
+    skippedEvents.push({
+      reason: 'duplicate externalId/sourceId',
+      title: icsEvent.title || icsEvent.summary || 'Kalendertermin',
+      externalId: plannerEvent.externalId
+    });
+    return;
+  }
   importedExternalIds.add(plannerEvent.externalId);
 
   const previous = existingByExternalId[plannerEvent.externalId];
@@ -3440,6 +3512,13 @@ function clearImportedIcsEvents() {
   if (!alreadyExists) {
     state.weekEventsByWeek[weekKey].push(plannerEvent);
     importedCount++;
+  } else {
+    skippedEvents.push({
+      reason: 'duplicate externalId/sourceId',
+      title: plannerEvent.label,
+      externalId: plannerEvent.externalId,
+      weekKey
+    });
   }
 });
 
@@ -3448,7 +3527,43 @@ function clearImportedIcsEvents() {
   saveState();
   console.log('[ICS] State saved locally; cloud save queued if enabled');
   renderAll();
-  return importedCount;
+  const allImportedStateEvents = Object.entries(state.weekEventsByWeek || {})
+    .flatMap(([weekKey, events]) => (events || []).filter(isImportedIcsEvent).map(ev => ({ weekKey, ev })));
+  const visibleImportedStateEvents = currentEvents().filter(isImportedIcsEvent);
+  const allDayImportedCount = allImportedStateEvents.filter(({ ev }) => ev.allDay).length;
+  const skipReasonsSummary = summarizeIcsSkipReasons(skippedEvents);
+
+  console.log('[ICS] Client imported events:', importedCount);
+  console.log('[ICS] Client skipped events:', skippedEvents.length);
+  console.table(skipReasonsSummary);
+  console.log('[ICS] Imported ICS state events:', allImportedStateEvents.length);
+  console.log('[ICS] Visible ICS events in current week:', visibleImportedStateEvents.length);
+  console.log('[ICS] Current visible week:', state.currentWeekStart);
+  console.log('[ICS] Imported ICS state sample:', allImportedStateEvents.slice(0, 10).map(({ weekKey, ev }) => ({
+    weekKey,
+    id: ev.id,
+    title: ev.label,
+    day: ev.day,
+    start: ev.start,
+    end: ev.end,
+    categoryId: ev.categoryId,
+    importSource: ev.importSource,
+    provider: ev.provider,
+    externalId: ev.externalId,
+    sourceId: ev.sourceId || null,
+    visibleInCurrentWeek: weekKey === state.currentWeekStart
+  })));
+
+  return {
+    importedCount,
+    skippedEvents,
+    skippedCount: skippedEvents.length,
+    skipReasonsSummary,
+    allDayImportedCount,
+    stateImportedCount: allImportedStateEvents.length,
+    visibleImportedCount: visibleImportedStateEvents.length,
+    currentWeekStart: state.currentWeekStart
+  };
 }
 
   function setIcsStatus(message) {
@@ -3525,17 +3640,45 @@ function clearImportedIcsEvents() {
       }
 
       const events = data.events || [];
+      const totalVevents = Number(data.totalVevents) || events.length;
+      const serverSkippedEvents = Array.isArray(data.skippedEvents) ? data.skippedEvents : [];
+      const serverSkipReasonsSummary = data.skipReasonsSummary || {};
       const recurringSkipped = Number(data.recurringSkipped) || 0;
+      const allDaySkipped = Number(data.allDaySkipped) || 0;
+      const allDayImported = Number(data.allDayImported) || events.filter(event => event.allDay).length;
       console.log('[ICS] Parsed events', events.length);
+      console.log('[ICS] Total VEVENT blocks:', totalVevents);
+      console.log('[ICS] Imported events:', events.length);
+      console.log('[ICS] Skipped events:', serverSkippedEvents.length);
+      console.log('[ICS] Import range:', data.rangeStart ?? null, data.rangeEnd ?? null);
+      console.table(serverSkipReasonsSummary);
       if (recurringSkipped) console.warn('[ICS] Recurring events skipped', recurringSkipped);
 
       setIcsSyncProgress(65, 'Termine werden verarbeitet...');
       setIcsSyncProgress(80, 'Bestehende ICS-Termine werden aktualisiert...');
-      const importedCount = importIcsEventsIntoPlanner(events);
+      const importDiagnostics = importIcsEventsIntoPlanner(events);
       setIcsSyncProgress(90, 'Daten werden gespeichert...');
       localStorage.setItem('perfekte-woche-ics-url', icsUrl);
-      const recurringText = recurringSkipped ? ` · ${recurringSkipped} wiederkehrende Termine übersprungen` : '';
-      setIcsSyncProgress(100, `Sync abgeschlossen · ${importedCount} Termine importiert${recurringText}`);
+      const clientSkippedEvents = importDiagnostics.skippedEvents || [];
+      const totalSkipped = serverSkippedEvents.length + clientSkippedEvents.length;
+      const detailParts = [];
+      if (recurringSkipped) detailParts.push(`${recurringSkipped} wiederkehrend`);
+      if (allDaySkipped) detailParts.push(`${allDaySkipped} ganztägig`);
+      if (clientSkippedEvents.length) detailParts.push(`${clientSkippedEvents.length} Duplikate`);
+      const detailText = detailParts.length ? ` · Übersprungen: ${detailParts.join(', ')}` : '';
+      const allDayText = allDayImported ? ` · davon ${allDayImported} ganztägig` : '';
+      setIcsSyncProgress(100, `Sync abgeschlossen · ${importDiagnostics.importedCount} Termine importiert${allDayText} · ${totalSkipped} übersprungen${detailText}`);
+      console.log('[ICS] Sync diagnostics', {
+        totalVevents,
+        serverImported: events.length,
+        clientImported: importDiagnostics.importedCount,
+        allDayImported,
+        serverSkipped: serverSkippedEvents.length,
+        clientSkipped: clientSkippedEvents.length,
+        stateImportedCount: importDiagnostics.stateImportedCount,
+        visibleImportedCount: importDiagnostics.visibleImportedCount,
+        currentWeekStart: importDiagnostics.currentWeekStart
+      });
       console.log('[ICS] Sync finished');
     } catch (error) {
       console.error('[ICS] Sync failed', error);
