@@ -82,6 +82,7 @@
   let drawerTouchStartY = null;
   let dayTodoDraftSubtasks = [];
   let eventDraftSubtasks = [];
+  let modalBlockTasksExpanded = false;
 
   // ==================================================
   // DOM REFERENCES
@@ -683,7 +684,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
   if (!isWeekMode()) return { total: 0, done: 0, missed: 0, open: 0, percent: 0 };
 
   const habitItems = currentWeekEvents()
-    .filter(ev => ev.day === dayIndex && state.categories[ev.categoryId]?.habit)
+    .filter(ev => ev.day === dayIndex && !isIntegratedChild(ev) && state.categories[ev.categoryId]?.habit)
     .map(syncEventAutoComplete);
 
   const dayTodos = state.todos
@@ -694,9 +695,17 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
       !todo.plannedEventId
     );
 
-  const total = habitItems.length + dayTodos.length;
-  const done = habitItems.reduce((sum, ev) => sum + eventTrackingScore(ev), 0) + dayTodos.filter(todo => isTodoDone(todo)).length;
-  const missed = habitItems.filter(ev => ev.missed).length;
+  const eventStats = habitItems.reduce((acc, ev) => {
+    const progress = eventProgressStats(ev);
+    acc.total += progress.total;
+    acc.done += progress.done;
+    acc.missed += progress.missed;
+    return acc;
+  }, { total: 0, done: 0, missed: 0 });
+
+  const total = eventStats.total + dayTodos.length;
+  const done = eventStats.done + dayTodos.filter(todo => isTodoDone(todo)).length;
+  const missed = eventStats.missed;
   const open = Math.max(0, total - done - missed);
 
   return { total, done, missed, open, percent: makePercent(done, total) };
@@ -746,6 +755,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
       id: sub.id || id(),
       text: sub.text || 'Untertask',
       done: Boolean(sub.done),
+      missed: Boolean(sub.missed),
       createdAt: sub.createdAt || new Date().toISOString()
     })) : [];
   }
@@ -821,8 +831,12 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
   function integratedEventsForEvent(eventId) {
     if (!eventId) return [];
     return currentEvents()
-      .filter(ev => ev.stackedIntoId === eventId)
+      .filter(ev => ev.stackedIntoId === eventId || ev.parentId === eventId)
       .sort((a, b) => a.start - b.start || a.end - b.end || String(a.createdAt).localeCompare(String(b.createdAt)));
+  }
+
+  function isIntegratedChild(ev) {
+    return Boolean(ev?.stackedIntoId || ev?.parentId);
   }
 
   function hasScheduledTime(ev) {
@@ -842,25 +856,54 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
       );
   }
 
-  function blockFulfillmentStats(ev) {
-    const subItems = Array.isArray(ev?.subtasks)
-      ? ev.subtasks.map(sub => ({ done: Boolean(sub.done), missed: Boolean(sub.missed) }))
+  function blockFulfillmentStats(ev, subtasksOverride = null) {
+    const sourceSubtasks = Array.isArray(subtasksOverride) ? subtasksOverride : ev?.subtasks;
+    const subItems = Array.isArray(sourceSubtasks)
+      ? sourceSubtasks.map(sub => ({ done: Boolean(sub.done), missed: Boolean(sub.missed) }))
       : [];
     const childItems = integratedEventsForEvent(ev?.id)
       .map(child => ({ done: Boolean(child.done), missed: Boolean(child.missed) }));
     const items = [...subItems, ...childItems];
     const total = items.length;
     const done = items.filter(item => item.done && !item.missed).length;
+    const missed = items.filter(item => item.missed && !item.done).length;
     return {
       total,
       done,
+      missed,
+      open: Math.max(0, total - done - missed),
       score: total ? done / total : (ev?.done && !ev?.missed ? 1 : 0),
       percent: total ? makePercent(done, total) : (ev?.done && !ev?.missed ? 100 : 0)
     };
   }
 
+  function eventProgressStats(ev) {
+    const blockStats = blockFulfillmentStats(ev);
+    if (blockStats.total) return blockStats;
+    const done = ev?.done && !ev?.missed ? 1 : 0;
+    const missed = ev?.missed && !ev?.done ? 1 : 0;
+    return {
+      total: 1,
+      done,
+      missed,
+      open: Math.max(0, 1 - done - missed),
+      score: done,
+      percent: done ? 100 : 0
+    };
+  }
+
   function eventTrackingScore(ev) {
-    return blockFulfillmentStats(ev).score;
+    return eventProgressStats(ev).score;
+  }
+
+  function eventTrackingWeight(ev) {
+    const progress = eventProgressStats(ev);
+    return {
+      totalWeight: progress.total,
+      doneWeight: progress.done,
+      missedWeight: progress.missed,
+      score: progress.score
+    };
   }
 
   function formatScore(value) {
@@ -871,7 +914,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     return currentEvents()
       .filter(ev =>
         ev.id !== ownId &&
-        !ev.stackedIntoId &&
+        !isIntegratedChild(ev) &&
         ev.day === day &&
         ev.start <= start &&
         ev.end >= end
@@ -884,7 +927,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     const day = Number(modalDay.value);
     const start = Number(modalStart.value);
     const end = Number(modalEnd.value);
-    const selectedParentId = modalStackedInto.value || ev?.stackedIntoId || '';
+    const selectedParentId = modalStackedInto.value || ev?.stackedIntoId || ev?.parentId || '';
     const candidates = parentBlockCandidates(day, start, end, ev?.id || editingId || null);
 
     modalStackedInto.innerHTML = '';
@@ -917,25 +960,87 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
 
   function renderModalIntegratedEvents(eventId) {
     if (!modalIntegratedEvents) return;
+    const ev = eventId ? currentEvents().find(item => item.id === eventId) : null;
     const children = integratedEventsForEvent(eventId);
-    if (!eventId || !children.length) {
+    const subtasks = eventId === editingId ? eventDraftSubtasks : cloneEventSubtasks(ev);
+    const progress = blockFulfillmentStats(ev, subtasks);
+    if (!eventId || !ev || !progress.total) {
       modalIntegratedEvents.innerHTML = '';
       modalIntegratedEvents.style.display = 'none';
       return;
     }
     modalIntegratedEvents.style.display = '';
     modalIntegratedEvents.innerHTML = `
-      <div class="event-integrated-list-title">${children.length} integrierte ${children.length === 1 ? 'Aufgabe' : 'Aufgaben'}</div>
-      ${children.map(child => `
-        <button type="button" class="event-integrated-row" data-event-id="${child.id}">
-          <span>${hasScheduledTime(child) ? escapeHtml(eventTime(child)) : 'Ohne Zeit'}</span>
-          <strong>${escapeHtml(child.label)}</strong>
-        </button>`).join('')}`;
+      <button type="button" class="event-integrated-list-title" aria-expanded="${modalBlockTasksExpanded ? 'true' : 'false'}">
+        <span>Aufgaben im Block</span>
+        <strong>${progress.done}/${progress.total} · ${progress.percent}%</strong>
+        <span class="event-integrated-chevron">${modalBlockTasksExpanded ? '⌃' : '⌄'}</span>
+      </button>
+      <div class="event-integrated-rows" ${modalBlockTasksExpanded ? '' : 'hidden'}>
+        ${subtasks.map(sub => `
+          <div class="event-integrated-row ${sub.done ? 'done' : ''}" data-subtask-id="${sub.id}">
+            <input class="event-integrated-check" type="checkbox" ${sub.done ? 'checked' : ''} title="Erledigt" />
+            <span>Ohne Zeit</span>
+            <strong>${escapeHtml(sub.text)}</strong>
+          </div>`).join('')}
+        ${children.map(child => `
+          <div class="event-integrated-row ${child.done ? 'done' : ''} ${child.missed ? 'missed' : ''}" data-event-id="${child.id}">
+            <input class="event-integrated-check" type="checkbox" ${child.done ? 'checked' : ''} title="Erledigt" />
+            <span>${hasScheduledTime(child) ? escapeHtml(eventTime(child)) : 'Ohne Zeit'}</span>
+            <strong>${escapeHtml(child.label)}</strong>
+            <button type="button" class="event-integrated-missed ${child.missed ? 'active' : ''}" title="Nicht eingehalten">!</button>
+          </div>`).join('')}
+      </div>`;
+    modalIntegratedEvents.querySelector('.event-integrated-list-title')?.addEventListener('click', e => {
+      e.preventDefault();
+      modalBlockTasksExpanded = !modalBlockTasksExpanded;
+      renderModalIntegratedEvents(eventId);
+    });
+    modalIntegratedEvents.querySelectorAll('[data-subtask-id]').forEach(row => {
+      const sub = eventDraftSubtasks.find(item => item.id === row.dataset.subtaskId);
+      const check = row.querySelector('.event-integrated-check');
+      if (!sub || !check) return;
+      check.addEventListener('click', e => e.stopPropagation());
+      check.addEventListener('change', e => {
+        e.stopPropagation();
+        sub.done = Boolean(e.target.checked);
+        const sourceEvent = currentEvents().find(item => item.id === eventId);
+        const sourceSub = sourceEvent?.subtasks?.find(item => item.id === sub.id);
+        if (sourceSub) {
+          sourceSub.done = sub.done;
+          if (sourceSub.done) sourceSub.missed = false;
+          syncEventAutoComplete(sourceEvent);
+          saveState();
+          renderAll();
+        }
+        renderEventDraftSubtasks();
+        renderModalIntegratedEvents(eventId);
+      });
+    });
     modalIntegratedEvents.querySelectorAll('.event-integrated-row').forEach(row => {
+      if (!row.dataset.eventId) return;
       row.addEventListener('click', e => {
         e.preventDefault();
         openEditor(row.dataset.eventId);
       });
+      const check = row.querySelector('.event-integrated-check');
+      if (check) {
+        check.addEventListener('click', e => e.stopPropagation());
+        check.addEventListener('change', e => {
+          e.stopPropagation();
+          toggleDone(row.dataset.eventId, e.target.checked);
+          renderModalIntegratedEvents(eventId);
+        });
+      }
+      const missed = row.querySelector('.event-integrated-missed');
+      if (missed) {
+        missed.addEventListener('click', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          toggleMissed(row.dataset.eventId);
+          renderModalIntegratedEvents(eventId);
+        });
+      }
     });
   }
 
@@ -1154,7 +1259,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
         col.appendChild(slot);
       }
 
-      const events = currentEvents().filter(ev => ev.day === d && !ev.stackedIntoId && !ev.allDay);
+      const events = currentEvents().filter(ev => ev.day === d && !isIntegratedChild(ev) && !ev.allDay);
       layoutDayEvents(events).forEach(ev => col.appendChild(eventEl(ev)));
       renderCurrentTimeLine(col, d, today);
       calendar.appendChild(col);
@@ -1172,7 +1277,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
   function allDayEventsForDay(dayIndex) {
     if (!isWeekMode()) return [];
     return currentEvents()
-      .filter(ev => ev.allDay && Number(ev.day) === Number(dayIndex) && !ev.stackedIntoId);
+      .filter(ev => ev.allDay && Number(ev.day) === Number(dayIndex) && !isIntegratedChild(ev));
   }
 
   function renderAllDayTodosForDay(cell, dayIndex) {
@@ -1501,7 +1606,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
           const childCat = state.categories[child.categoryId] || cat;
           return `
             <div
-              class="event-embedded-child ${child.done ? 'done' : ''}"
+              class="event-embedded-child ${child.done ? 'done' : ''} ${child.missed ? 'missed' : ''}"
               data-event-id="${child.id}"
               style="top:${top}%;height:calc(${height}% - 2px);border-left-color:${escapeHtml(childCat.color)}"
               title="${escapeHtml(eventTime(child))} · ${escapeHtml(child.label)}"
@@ -1584,6 +1689,7 @@ return div;
 
   function openEditor(eventId = null, preset = null) {
     editingId = eventId;
+    modalBlockTasksExpanded = false;
     presetSource = preset?.source || null;
     const ev = eventId ? currentEvents().find(x => x.id === eventId) : {
       id: null,
@@ -1646,6 +1752,7 @@ return div;
       row.querySelector('button').onclick = () => {
         eventDraftSubtasks.splice(index, 1);
         renderEventDraftSubtasks();
+        if (editingId) renderModalIntegratedEvents(editingId);
       };
       modalSubtaskList.appendChild(row);
     });
@@ -1658,6 +1765,7 @@ return div;
     eventDraftSubtasks.push({ id: id(), text, done: false, createdAt: new Date().toISOString() });
     modalSubtaskInput.value = '';
     renderEventDraftSubtasks();
+    if (editingId) renderModalIntegratedEvents(editingId);
     modalSubtaskInput.focus();
   }
 
@@ -1992,7 +2100,7 @@ return div;
     const filter = state.drawerHabitFilter || 'all';
     const dayEvents = currentWeekEvents()
       .filter(ev => ev.day === state.activeHabitDay)
-      .filter(ev => !ev.stackedIntoId)
+      .filter(ev => !isIntegratedChild(ev))
       .filter(ev => filter === 'all' || (filter === 'done' ? ev.done : (filter === 'missed' ? ev.missed : (!ev.done && !ev.missed))))
       .sort((a, b) => a.start - b.start || a.end - b.end);
 
@@ -2090,10 +2198,17 @@ return div;
   function drawerTaskStats(dayEvents, dayTodoItems, taskFilter) {
     const timedItems = taskFilter === 'untimed' ? [] : dayEvents;
     const untimedItems = taskFilter === 'timed' ? [] : dayTodoItems;
-    const total = timedItems.length + untimedItems.length;
-    const done = timedItems.filter(ev => ev.done).length + untimedItems.filter(todo => isTodoDone(todo)).length;
-    const missed = timedItems.filter(ev => ev.missed).length;
-    const open = Math.max(total - done, 0);
+    const eventStats = timedItems.reduce((acc, ev) => {
+      const progress = eventProgressStats(ev);
+      acc.total += progress.total;
+      acc.done += progress.done;
+      acc.missed += progress.missed;
+      return acc;
+    }, { total: 0, done: 0, missed: 0 });
+    const total = eventStats.total + untimedItems.length;
+    const done = eventStats.done + untimedItems.filter(todo => isTodoDone(todo)).length;
+    const missed = eventStats.missed;
+    const open = Math.max(total - done - missed, 0);
     return { total, done, missed, open, percent: makePercent(done, total) };
   }
 
@@ -2383,7 +2498,7 @@ return div;
   }
 
   function extraTrackingStats() {
-    const extras = currentWeekEvents().filter(ev => ev.source === 'extra' && !ev.stackedIntoId && state.categories[ev.categoryId]?.habit);
+    const extras = currentWeekEvents().filter(ev => ev.source === 'extra' && !isIntegratedChild(ev) && state.categories[ev.categoryId]?.habit);
     const done = extras.reduce((sum, ev) => sum + eventTrackingScore(ev), 0);
     return { total: extras.length, done, percent: makePercent(done, extras.length) };
   }
@@ -2437,10 +2552,14 @@ return div;
         .forEach(templateEv => {
           const weekEv = weekEvents.find(ev => ev.source === 'routine' && ev.templateEventId === templateEv.id);
           const scoreSource = weekEv || templateEv;
+          const weights = weekEv ? eventTrackingWeight(scoreSource) : { totalWeight: 1, doneWeight: 0, missedWeight: 0, score: 0 };
           items.push({
             type: 'routine',
             done: Boolean(weekEv?.done),
-            score: weekEv ? eventTrackingScore(scoreSource) : 0,
+            score: weights.score,
+            totalWeight: weights.totalWeight,
+            doneWeight: weights.doneWeight,
+            missedWeight: weights.missedWeight,
             label: templateEv.label,
             categoryId: templateEv.categoryId,
             day: dayIndex,
@@ -2451,12 +2570,16 @@ return div;
         });
 
       weekEvents
-        .filter(ev => ev.day === dayIndex && ev.source === 'extra' && !ev.stackedIntoId && state.categories[ev.categoryId]?.habit)
+        .filter(ev => ev.day === dayIndex && ev.source === 'extra' && !isIntegratedChild(ev) && state.categories[ev.categoryId]?.habit)
         .forEach(ev => {
+          const weights = eventTrackingWeight(ev);
           items.push({
             type: 'extra',
             done: Boolean(ev.done),
-            score: eventTrackingScore(ev),
+            score: weights.score,
+            totalWeight: weights.totalWeight,
+            doneWeight: weights.doneWeight,
+            missedWeight: weights.missedWeight,
             label: ev.label,
             categoryId: ev.categoryId,
             day: ev.day,
@@ -2596,8 +2719,11 @@ return div;
       const key = item.categoryId || 'orga';
       if (!groups.has(key)) groups.set(key, { categoryId: key, total: 0, done: 0 });
       const group = groups.get(key);
-      group.total += 1;
-      group.done += Number.isFinite(item.score) ? item.score : (item.done ? 1 : 0);
+      const weight = Number.isFinite(item.totalWeight) ? item.totalWeight : 1;
+      group.total += weight;
+      group.done += Number.isFinite(item.doneWeight)
+        ? item.doneWeight
+        : (Number.isFinite(item.score) ? Math.max(0, Math.min(1, item.score)) * weight : (item.done ? 1 : 0));
     });
 
     const rows = Array.from(groups.values())
@@ -2655,8 +2781,11 @@ return div;
       const key = item.categoryId || 'orga';
       if (!categoryGroups.has(key)) categoryGroups.set(key, { categoryId: key, total: 0, done: 0 });
       const group = categoryGroups.get(key);
-      group.total += 1;
-      group.done += Number.isFinite(item.score) ? item.score : (item.done ? 1 : 0);
+      const weight = Number.isFinite(item.totalWeight) ? item.totalWeight : 1;
+      group.total += weight;
+      group.done += Number.isFinite(item.doneWeight)
+        ? item.doneWeight
+        : (Number.isFinite(item.score) ? Math.max(0, Math.min(1, item.score)) * weight : (item.done ? 1 : 0));
     });
     const catRows = Array.from(categoryGroups.values())
       .map(group => ({ ...group, percent: makePercent(group.done, group.total) }))
@@ -3322,7 +3451,7 @@ function toggleMissed(eventId) {
     }
     if (editingId) {
       const ev = currentEvents().find(x => x.id === editingId);
-      if (ev) { Object.assign(ev, { day, start, end, label, categoryId, stackedIntoId, autoComplete: Boolean(modalAutoComplete?.checked), subtasks: cloneEventSubtasks({ subtasks: eventDraftSubtasks }) }); syncEventAutoComplete(ev); }
+      if (ev) { Object.assign(ev, { day, start, end, label, categoryId, stackedIntoId, parentId: null, autoComplete: Boolean(modalAutoComplete?.checked), subtasks: cloneEventSubtasks({ subtasks: eventDraftSubtasks }) }); syncEventAutoComplete(ev); }
     } else {
   const newEventId = id();
 
@@ -3363,6 +3492,7 @@ function toggleMissed(eventId) {
     if (!editingId) return;
     currentEvents().forEach(ev => {
       if (ev.stackedIntoId === editingId) ev.stackedIntoId = null;
+      if (ev.parentId === editingId) ev.parentId = null;
     });
     setCurrentEvents(currentEvents().filter(ev => ev.id !== editingId));
     saveState();

@@ -1565,7 +1565,7 @@
 }
 
 .event-embedded-missed.active,
-.event-embedded-child:has(.event-embedded-missed.active) {
+.event-embedded-child.missed {
   border-color: rgba(248, 113, 113, 0.78);
   background: rgba(127, 29, 29, 0.82);
 }
@@ -1690,13 +1690,37 @@
       background: rgba(15, 23, 42, 0.42);
     }
     .event-integrated-list-title {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 4px 2px;
+      border: 0;
+      background: transparent;
       color: var(--muted);
       font-size: 12px;
       font-weight: 800;
+      text-align: left;
+      cursor: pointer;
+    }
+    .event-integrated-list-title strong {
+      color: var(--text);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .event-integrated-chevron {
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1;
+    }
+    .event-integrated-rows {
+      display: grid;
+      gap: 6px;
     }
     .event-integrated-row {
       display: grid;
-      grid-template-columns: auto 1fr;
+      grid-template-columns: auto auto minmax(0, 1fr) auto;
       gap: 8px;
       align-items: center;
       min-height: 30px;
@@ -1706,10 +1730,18 @@
       color: var(--text);
       text-align: left;
     }
+    .event-integrated-check {
+      width: 15px;
+      height: 15px;
+      min-height: 0;
+      margin: 0;
+      accent-color: #38bdf8;
+    }
     .event-integrated-row span {
       color: var(--muted);
       font-size: 11px;
       font-weight: 800;
+      white-space: nowrap;
     }
     .event-integrated-row strong {
       min-width: 0;
@@ -1717,6 +1749,32 @@
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: 12px;
+    }
+    .event-integrated-row.done strong {
+      text-decoration: line-through;
+      opacity: 0.72;
+    }
+    .event-integrated-row.missed {
+      border-color: rgba(248, 113, 113, 0.65);
+      background: rgba(127, 29, 29, 0.34);
+    }
+    .event-integrated-missed {
+      width: 24px;
+      min-width: 24px;
+      height: 22px;
+      min-height: 0;
+      padding: 0;
+      border-radius: 999px;
+      border: 1px solid var(--line-soft);
+      background: rgba(255,255,255,0.05);
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 900;
+    }
+    .event-integrated-missed.active {
+      border-color: rgba(248, 113, 113, 0.85);
+      background: rgba(127, 29, 29, 0.86);
+      color: white;
     }
     .footer-note { margin-top: 12px; color: var(--muted); font-size: 12px; }
     @media (max-width: 700px) {

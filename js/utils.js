@@ -58,11 +58,14 @@ function normalizeHexColor(value, fallback = '#22c55e') {
 
 function statsForItems(items, type) {
   const filtered = type ? items.filter(item => item.type === type) : items;
+  const total = filtered.reduce((sum, item) => sum + (Number.isFinite(item.totalWeight) ? item.totalWeight : 1), 0);
   const done = filtered.reduce((sum, item) => {
-    if (Number.isFinite(item.score)) return sum + Math.max(0, Math.min(1, item.score));
+    const weight = Number.isFinite(item.totalWeight) ? item.totalWeight : 1;
+    if (Number.isFinite(item.doneWeight)) return sum + item.doneWeight;
+    if (Number.isFinite(item.score)) return sum + Math.max(0, Math.min(1, item.score)) * weight;
     return sum + (item.done ? 1 : 0);
   }, 0);
-  return { total: filtered.length, done, percent: makePercent(done, filtered.length) };
+  return { total, done, percent: makePercent(done, total) };
 }
 
 function heatLevel(percent, total) {
