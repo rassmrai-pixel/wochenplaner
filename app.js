@@ -825,6 +825,23 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
       .sort((a, b) => a.start - b.start || a.end - b.end || String(a.createdAt).localeCompare(String(b.createdAt)));
   }
 
+  function hasScheduledTime(ev) {
+    const start = Number(ev?.start);
+    const end = Number(ev?.end);
+    return !ev?.allDay && Number.isFinite(start) && Number.isFinite(end) && end > start;
+  }
+
+  function scheduledIntegratedEventsForEvent(parent) {
+    if (!parent || !hasScheduledTime(parent)) return [];
+    return integratedEventsForEvent(parent.id)
+      .filter(child =>
+        hasScheduledTime(child) &&
+        Number(child.day) === Number(parent.day) &&
+        Number(child.start) >= Number(parent.start) &&
+        Number(child.end) <= Number(parent.end)
+      );
+  }
+
   function parentBlockCandidates(day, start, end, ownId = null) {
     return currentEvents()
       .filter(ev =>
@@ -886,7 +903,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
       <div class="event-integrated-list-title">${children.length} integrierte ${children.length === 1 ? 'Aufgabe' : 'Aufgaben'}</div>
       ${children.map(child => `
         <button type="button" class="event-integrated-row" data-event-id="${child.id}">
-          <span>${escapeHtml(eventTime(child))}</span>
+          <span>${hasScheduledTime(child) ? escapeHtml(eventTime(child)) : 'Ohne Zeit'}</span>
           <strong>${escapeHtml(child.label)}</strong>
         </button>`).join('')}`;
     modalIntegratedEvents.querySelectorAll('.event-integrated-row').forEach(row => {
@@ -1447,6 +1464,27 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     div.title = `${days[ev.day]} ${isTemplateMode() ? '' : formatShortDate(getDayDate(ev.day)) + ' '}${eventTime(ev)} · ${ev.label}`;
     const integratedCount = integratedEventsForEvent(ev.id).length;
     const integratedBadge = integratedCount ? `<div class="event-integrated-badge">+${integratedCount} im Block</div>` : '';
+    const scheduledChildren = scheduledIntegratedEventsForEvent(ev);
+    const embeddedChildren = scheduledChildren.length ? `
+      <div class="event-embedded-children">
+        ${scheduledChildren.map(child => {
+          const parentDuration = Math.max(1, Number(ev.end) - Number(ev.start));
+          const top = ((Number(child.start) - Number(ev.start)) / parentDuration) * 100;
+          const height = Math.max(10, ((Number(child.end) - Number(child.start)) / parentDuration) * 100);
+          const childCat = state.categories[child.categoryId] || cat;
+          return `
+            <button
+              type="button"
+              class="event-embedded-child ${child.done ? 'done' : ''}"
+              data-event-id="${child.id}"
+              style="top:${top}%;height:calc(${height}% - 2px);border-left-color:${escapeHtml(childCat.color)}"
+              title="${escapeHtml(eventTime(child))} · ${escapeHtml(child.label)}"
+            >
+              <span>${escapeHtml(timeLabel(child.start))}</span>
+              <strong>${escapeHtml(child.label)}</strong>
+            </button>`;
+        }).join('')}
+      </div>` : '';
 
     const trackable = isWeekMode() && Boolean(cat.habit);
     div.innerHTML = `
@@ -1456,6 +1494,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     <span class="event-title">${escapeHtml(ev.label)}</span>
   </div>
   <div class="event-time">${eventTime(ev)}</div>
+  ${embeddedChildren}
   ${integratedBadge}`;
 
     div.addEventListener('mousedown', e => e.stopPropagation());
@@ -1477,6 +1516,19 @@ if (missedBtn) {
     toggleMissed(ev.id);
   });
 }
+
+div.querySelectorAll('.event-embedded-child').forEach(childBtn => {
+  childBtn.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    openEditor(childBtn.dataset.eventId);
+  });
+  childBtn.addEventListener('dblclick', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    openEditor(childBtn.dataset.eventId);
+  });
+});
 
 return div;
   }

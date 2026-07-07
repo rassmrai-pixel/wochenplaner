@@ -1472,6 +1472,56 @@
   text-overflow: ellipsis;
 }
 
+.event-embedded-children {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.event-embedded-child {
+  position: absolute;
+  left: 0;
+  right: 0;
+  min-height: 10px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+  padding: 0 5px;
+  border: 1px solid rgba(255,255,255,0.28);
+  border-left: 3px solid rgba(255,255,255,0.85);
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.72);
+  color: white;
+  font: inherit;
+  font-size: 9px;
+  font-weight: 850;
+  line-height: 1;
+  overflow: hidden;
+  pointer-events: auto;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.28);
+}
+
+.event-embedded-child span {
+  opacity: 0.78;
+  white-space: nowrap;
+}
+
+.event-embedded-child strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.event-embedded-child.done {
+  opacity: 0.62;
+}
+
 /* Erledigt */
 .event.done {
   opacity: 0.64;
