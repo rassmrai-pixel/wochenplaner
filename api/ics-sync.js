@@ -70,13 +70,22 @@ function parseIcsEvents(icsText) {
   console.log("[ICS] Parsing started");
   const unfolded = unfoldIcsLines(icsText);
   const eventBlocks = unfolded.match(/BEGIN:VEVENT[\s\S]*?END:VEVENT/g) || [];
+  let recurringSkipped = 0;
 
-  return eventBlocks
+  const events = eventBlocks
     .map((block, index) => {
       const uid = getIcsField(block, "UID") || `event_${index}`;
       const summary = cleanIcsText(getIcsField(block, "SUMMARY") || "Ohne Titel");
       const location = cleanIcsText(getIcsField(block, "LOCATION") || "");
       const description = cleanIcsText(getIcsField(block, "DESCRIPTION") || "");
+      const rrule = getIcsField(block, "RRULE");
+      const rdate = getIcsField(block, "RDATE");
+
+      if (rrule || rdate) {
+        recurringSkipped++;
+        console.warn("[ICS] Recurring event skipped", summary || uid);
+        return null;
+      }
 
       const dtStartRaw = getIcsField(block, "DTSTART");
       const dtEndRaw = getIcsField(block, "DTEND");
@@ -101,6 +110,8 @@ function parseIcsEvents(icsText) {
       };
     })
     .filter(Boolean);
+
+  return { events, recurringSkipped };
 }
 
 export default async function handler(req, res) {
@@ -159,13 +170,15 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Der Link liefert keine gültige ICS-Datei." });
     }
 
-    const events = parseIcsEvents(icsText);
+    const { events, recurringSkipped } = parseIcsEvents(icsText);
     console.log("[ICS] Parsed events", events.length);
+    if (recurringSkipped) console.warn("[ICS] Recurring events skipped", recurringSkipped);
     console.log("[ICS] Sync finished");
 
     return res.status(200).json({
       events,
-      count: events.length
+      count: events.length,
+      recurringSkipped
     });
   } catch (error) {
     console.error("[ICS] Sync failed", error);

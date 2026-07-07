@@ -16,6 +16,8 @@
   let cloudSaveTimer = null;
   let cloudLoading = false;
   let icsSyncing = false;
+  let icsSyncProgress = 0;
+  let icsSyncStatus = '';
   let icsCalendarIntegrationInitialized = false;
   const cellHeight = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell-h')) || 18;
 
@@ -3404,6 +3406,7 @@ function clearImportedIcsEvents() {
   console.log('[ICS] Adding new ICS events');
 
   const importedExternalIds = new Set();
+  let importedCount = 0;
 
 (icsEvents || []).forEach((icsEvent, index) => {
   const plannerEvent = plannerEventFromIcsEvent(icsEvent, index);
@@ -3436,6 +3439,7 @@ function clearImportedIcsEvents() {
 
   if (!alreadyExists) {
     state.weekEventsByWeek[weekKey].push(plannerEvent);
+    importedCount++;
   }
 });
 
@@ -3444,11 +3448,29 @@ function clearImportedIcsEvents() {
   saveState();
   console.log('[ICS] State saved locally; cloud save queued if enabled');
   renderAll();
+  return importedCount;
 }
 
   function setIcsStatus(message) {
+    icsSyncStatus = message || '';
     const status = document.getElementById('icsStatus');
-    if (status) status.textContent = message || '';
+    const progressText = document.getElementById('icsProgressText');
+    if (status) status.textContent = icsSyncStatus;
+    if (progressText) progressText.textContent = icsSyncStatus || 'Bereit';
+  }
+
+  function setIcsSyncProgress(progress, message = '') {
+    icsSyncProgress = clamp(Number(progress), 0, 100);
+    if (message) icsSyncStatus = message;
+
+    const progressFill = document.getElementById('icsProgressFill');
+    const progressPercent = document.getElementById('icsProgressPercent');
+    const progressText = document.getElementById('icsProgressText');
+
+    if (progressFill) progressFill.style.width = `${icsSyncProgress}%`;
+    if (progressPercent) progressPercent.textContent = `${icsSyncProgress}%`;
+    if (progressText) progressText.textContent = icsSyncStatus || 'Bereit';
+    setIcsStatus(icsSyncStatus);
   }
 
   function setIcsSyncing(syncing) {
@@ -3468,12 +3490,12 @@ function clearImportedIcsEvents() {
     const icsUrl = input ? input.value.trim() : '';
 
     if (!icsUrl) {
-      setIcsStatus('Bitte füge zuerst einen ICS-Link ein.');
+      setIcsSyncProgress(0, 'Bitte füge zuerst einen ICS-Link ein.');
       return;
     }
 
     if (!icsUrl.startsWith('https://')) {
-      setIcsStatus('Bitte nutze den HTTPS-ICS-Link aus Outlook.');
+      setIcsSyncProgress(0, 'Bitte nutze den HTTPS-ICS-Link aus Outlook.');
       return;
     }
 
@@ -3484,8 +3506,9 @@ function clearImportedIcsEvents() {
       console.log('[ICS] Sync started');
       console.log('[ICS] Fetching URL', icsUrl);
       setIcsSyncing(true);
-      setIcsStatus('Kalender wird synchronisiert...');
+      setIcsSyncProgress(10, 'Verbindung wird aufgebaut...');
 
+      setIcsSyncProgress(25, 'Kalenderdatei wird geladen...');
       const response = await fetch('/api/ics-sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3494,23 +3517,32 @@ function clearImportedIcsEvents() {
       });
       console.log('[ICS] Fetch response', response.status, response.ok);
 
+      setIcsSyncProgress(45, 'Kalenderdaten werden gelesen...');
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
         throw new Error(data.error || 'ICS-Synchronisation fehlgeschlagen.');
       }
 
-      console.log('[ICS] Parsed events', (data.events || []).length);
-      importIcsEventsIntoPlanner(data.events || []);
+      const events = data.events || [];
+      const recurringSkipped = Number(data.recurringSkipped) || 0;
+      console.log('[ICS] Parsed events', events.length);
+      if (recurringSkipped) console.warn('[ICS] Recurring events skipped', recurringSkipped);
+
+      setIcsSyncProgress(65, 'Termine werden verarbeitet...');
+      setIcsSyncProgress(80, 'Bestehende ICS-Termine werden aktualisiert...');
+      const importedCount = importIcsEventsIntoPlanner(events);
+      setIcsSyncProgress(90, 'Daten werden gespeichert...');
       localStorage.setItem('perfekte-woche-ics-url', icsUrl);
-      setIcsStatus(`${(data.events || []).length} Termine importiert.`);
+      const recurringText = recurringSkipped ? ` · ${recurringSkipped} wiederkehrende Termine übersprungen` : '';
+      setIcsSyncProgress(100, `Sync abgeschlossen · ${importedCount} Termine importiert${recurringText}`);
       console.log('[ICS] Sync finished');
     } catch (error) {
       console.error('[ICS] Sync failed', error);
       const message = error.name === 'AbortError'
         ? 'ICS Sync Timeout: Die Kalender-URL antwortet nicht.'
         : (error.message || 'ICS Sync fehlgeschlagen: Kalender konnte nicht geladen werden.');
-      setIcsStatus(message);
+      setIcsSyncProgress(icsSyncProgress || 0, message);
     } finally {
       window.clearTimeout(timeout);
       setIcsSyncing(false);
@@ -3536,7 +3568,7 @@ async function syncSavedIcsCalendar() {
   if (!savedUrl) {
     if (modal) {
       modal.classList.remove('hidden');
-      setIcsStatus('Bitte füge zuerst deinen ICS-Link ein.');
+      setIcsSyncProgress(0, 'Bitte füge zuerst deinen ICS-Link ein.');
       setTimeout(() => input?.focus(), 50);
     }
     return;
@@ -3567,7 +3599,7 @@ async function syncSavedIcsCalendar() {
       profileMenu?.classList.remove('open');
       modal.classList.remove('hidden');
       console.log('[ICS UI] Modal open state:', !modal.classList.contains('hidden'));
-      setIcsStatus('');
+      if (!icsSyncing) setIcsSyncProgress(0, 'Bereit');
       setTimeout(() => input?.focus(), 50);
     };
 

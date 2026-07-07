@@ -2468,16 +2468,40 @@
       font-size: 13px !important;
     }
 
+    .ics-progress {
+      margin-top: 14px;
+    }
+
+    .ics-progress-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      color: #475569;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .ics-progress-track {
+      height: 8px;
+      margin-top: 8px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e2e8f0;
+    }
+
+    .ics-progress-fill {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: #2563eb;
+      transition: width 0.25s ease;
+    }
+
     .event.external-calendar-event {
   border-left-color: rgba(191, 219, 254, 0.95);
   box-shadow: 0 8px 18px rgba(0,0,0,0.26), inset 0 0 0 2px rgba(191,219,254,0.22);
   cursor: pointer;
 }
-
-    .event.external-calendar-event .event-title::before {
-      content: "ICS · ";
-      opacity: 0.8;
-      font-weight: 900;
-    }
 
  
