@@ -8,6 +8,7 @@
   const storageKeyV2 = 'perfekte-woche-planer-v2';
   const storageKeyV1 = 'perfekte-woche-planer-v1';
   const authModeKey = 'perfekte-woche-auth-mode';
+  const ICS_SYNC_TIMEOUT_MS = 60000;
   const SUPABASE_URL = 'https://uwynzmdsveplxfqgwzqp.supabase.co';
   const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_zIKjzTf24k4BDsVrQAyeZQ_WALpNEkH';
   const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY) : null;
@@ -3592,11 +3593,13 @@ function summarizeIcsSkipReasons(skippedEvents) {
     icsSyncing = Boolean(syncing);
     const syncBtn = document.getElementById('syncIcsBtn');
     const quickSyncBtn = document.getElementById('quickIcsSyncBtn');
+    const modal = document.getElementById('icsModal');
     if (syncBtn) {
       syncBtn.disabled = icsSyncing;
       syncBtn.textContent = icsSyncing ? 'Synchronisiere...' : 'Synchronisieren';
     }
     if (quickSyncBtn) quickSyncBtn.disabled = icsSyncing;
+    if (modal) modal.classList.toggle('syncing', icsSyncing);
   }
 
   async function syncIcsCalendarFromModal() {
@@ -3615,7 +3618,7 @@ function summarizeIcsSkipReasons(skippedEvents) {
     }
 
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 20000);
+    const timeout = window.setTimeout(() => controller.abort(), ICS_SYNC_TIMEOUT_MS);
 
     try {
       console.log('[ICS] Sync started');
@@ -3683,7 +3686,7 @@ function summarizeIcsSkipReasons(skippedEvents) {
     } catch (error) {
       console.error('[ICS] Sync failed', error);
       const message = error.name === 'AbortError'
-        ? 'ICS Sync Timeout: Die Kalender-URL antwortet nicht.'
+        ? 'ICS Sync Timeout: Kalender antwortet nicht rechtzeitig. Bitte später erneut versuchen.'
         : (error.message || 'ICS Sync fehlgeschlagen: Kalender konnte nicht geladen werden.');
       setIcsSyncProgress(icsSyncProgress || 0, message);
     } finally {

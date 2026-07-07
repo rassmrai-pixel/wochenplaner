@@ -1,4 +1,6 @@
 
+const ICS_SYNC_TIMEOUT_MS = 60000;
+
 function unfoldIcsLines(text) {
   return text.replace(/\r?\n[ \t]/g, "");
 }
@@ -264,7 +266,7 @@ export default async function handler(req, res) {
     console.log("[ICS] Fetching URL", icsUrl);
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
+    const timeout = setTimeout(() => controller.abort(), ICS_SYNC_TIMEOUT_MS);
     let icsResponse;
 
     try {
@@ -277,7 +279,7 @@ export default async function handler(req, res) {
     } catch (error) {
       if (error.name === "AbortError") {
         console.error("[ICS] Sync failed", error);
-        return res.status(408).json({ error: "ICS Sync Timeout: Die Kalender-URL antwortet nicht." });
+        return res.status(408).json({ error: "ICS Sync Timeout: Kalender antwortet nicht rechtzeitig. Bitte später erneut versuchen." });
       }
       throw error;
     } finally {

@@ -1868,19 +1868,19 @@
       content: "";
       position: fixed;
       inset: 0;
-      z-index: 89;
-      background: rgba(2, 6, 23, 0.78);
-      backdrop-filter: blur(10px);
+      z-index: 3000;
+      background: rgba(2, 6, 23, 0.88);
+      backdrop-filter: blur(4px);
     }
     body.cloud-signed-out header,
     body.cloud-signed-out main > *:not(.cloud-panel) {
-      filter: blur(3px);
+      filter: blur(1.5px);
       pointer-events: none;
       user-select: none;
     }
     body.cloud-signed-out .cloud-panel {
       position: fixed;
-      z-index: 90;
+      z-index: 3001;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
@@ -1889,10 +1889,12 @@
       gap: 16px;
       border: 1px solid rgba(56, 189, 248, 0.35);
       border-radius: 22px;
-      background: rgba(15, 23, 42, 0.96);
-      box-shadow: 0 35px 120px rgba(0,0,0,0.55);
+      background: #0f172a;
+      box-shadow: 0 35px 120px rgba(0,0,0,0.78);
       padding: 22px;
       margin: 0;
+      max-height: calc(100vh - 32px);
+      overflow: auto;
     }
     body.cloud-signed-out .cloud-left {
       min-width: 0;
@@ -2468,9 +2470,40 @@
     }
 
     .ics-modal-status {
-      margin-top: 12px !important;
-      margin-bottom: 0 !important;
+      margin: 0 !important;
+      min-width: 0;
+      flex: 1;
+      color: #64748b;
+      line-height: 1.35;
       font-size: 13px !important;
+    }
+
+    .ics-sync-footer {
+      min-height: 26px;
+      margin-top: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .ics-sync-spinner {
+      display: none;
+      width: 22px;
+      height: 22px;
+      flex: 0 0 auto;
+      border: 3px solid rgba(148, 163, 184, 0.35);
+      border-top-color: #38bdf8;
+      border-radius: 999px;
+      animation: icsSpin 0.8s linear infinite;
+    }
+
+    .ics-modal.syncing .ics-sync-spinner {
+      display: block;
+    }
+
+    @keyframes icsSpin {
+      to { transform: rotate(360deg); }
     }
 
     .ics-progress {
