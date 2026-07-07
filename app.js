@@ -69,6 +69,8 @@
   let pendingTodoId = null;
   let presetSource = null;
   let lastAutoScrollKey = null;
+  let currentTimeTimer = null;
+  let currentTimeRenderDateKey = null;
   let editingDayTodoId = null;
   let drawerControlsCollapsed = true;
   let drawerTouchStartX = null;
@@ -997,6 +999,43 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     });
   }
 
+  function currentTimeTop() {
+    const now = new Date();
+    const minutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+    return (minutes / 15) * cellHeight();
+  }
+
+  function updateCurrentTimeLine() {
+    const today = getTodayInfo();
+    if (currentTimeRenderDateKey && currentTimeRenderDateKey !== today.dateKey) {
+      currentTimeRenderDateKey = today.dateKey;
+      renderAll();
+      return;
+    }
+    const line = calendar?.querySelector('.current-time-line');
+    if (!line) return;
+    line.style.top = `${currentTimeTop()}px`;
+    line.title = `Jetzt · ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
+  }
+
+  function renderCurrentTimeLine(dayColumn, dayIndex, today) {
+    if (!isWeekMode() || state.currentWeekStart !== today.weekKey || dayIndex !== today.dayIndex) return;
+    const line = document.createElement('div');
+    line.className = 'current-time-line';
+    line.setAttribute('aria-hidden', 'true');
+    line.style.top = `${currentTimeTop()}px`;
+    line.title = `Jetzt · ${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
+    dayColumn.appendChild(line);
+    currentTimeRenderDateKey = today.dateKey;
+    updateCurrentTimeLine();
+  }
+
+  function startCurrentTimeTimer() {
+    if (currentTimeTimer) return;
+    currentTimeRenderDateKey = getTodayInfo().dateKey;
+    currentTimeTimer = window.setInterval(updateCurrentTimeLine, 60000);
+  }
+
   function renderCalendar() {
     calendar.innerHTML = '';
     const today = getTodayInfo();
@@ -1051,6 +1090,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
 
       const events = currentEvents().filter(ev => ev.day === d && !ev.stackedIntoId);
       layoutDayEvents(events).forEach(ev => col.appendChild(eventEl(ev)));
+      renderCurrentTimeLine(col, d, today);
       calendar.appendChild(col);
     }
     autoScrollCalendarToMorning();
@@ -3510,6 +3550,10 @@ function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySele
   fillTaskDaySelect();
   renderAll();
   renderAll();
+startCurrentTimeTimer();
+window.addEventListener('beforeunload', () => {
+  if (currentTimeTimer) window.clearInterval(currentTimeTimer);
+});
 initCloudSync();
 
 document.addEventListener('DOMContentLoaded', initIcsCalendarIntegration);

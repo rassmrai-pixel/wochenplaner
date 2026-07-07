@@ -1367,6 +1367,30 @@
     .slot.hour { border-top: 1px solid var(--line); }
     .slot:hover { outline: 1px solid var(--accent); z-index: 2; }
     .slot.selected { outline: 2px solid rgba(255,255,255,0.75); z-index: 3; }
+    .current-time-line {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 2px;
+      border-radius: 999px;
+      background: #38bdf8;
+      box-shadow: 0 0 0 1px rgba(2, 132, 199, 0.18), 0 0 14px rgba(56, 189, 248, 0.38);
+      pointer-events: none;
+      z-index: 12;
+    }
+    .current-time-line::before {
+      content: "";
+      position: absolute;
+      left: -5px;
+      top: 50%;
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: #38bdf8;
+      border: 2px solid #0f172a;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+      transform: translateY(-50%);
+    }
     .event {
       position: absolute;
       border: 1px solid rgba(255,255,255,0.35);
