@@ -16,6 +16,7 @@
   let cloudSaveTimer = null;
   let cloudLoading = false;
   let icsSyncing = false;
+  let icsCalendarIntegrationInitialized = false;
   const cellHeight = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell-h')) || 18;
 
   // ==================================================
@@ -3554,16 +3555,28 @@ async function syncSavedIcsCalendar() {
     const modal = document.getElementById('icsModal');
     const input = document.getElementById('icsUrlInput');
 
+    if (icsCalendarIntegrationInitialized) return;
+    if (!modal || (!openBtn && !quickSyncBtn)) return;
+    icsCalendarIntegrationInitialized = true;
+
     if (input) input.value = localStorage.getItem('perfekte-woche-ics-url') || '';
+
+    const openIcsModal = () => {
+      if (!modal) return;
+      console.log('[ICS UI] Opening ICS modal');
+      profileMenu?.classList.remove('open');
+      modal.classList.remove('hidden');
+      console.log('[ICS UI] Modal open state:', !modal.classList.contains('hidden'));
+      setIcsStatus('');
+      setTimeout(() => input?.focus(), 50);
+    };
 
     if (openBtn && modal) {
       openBtn.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        profileMenu?.classList.remove('open');
-        modal.classList.remove('hidden');
-        setIcsStatus('');
-        setTimeout(() => input?.focus(), 50);
+        console.log('[ICS UI] ICS button clicked');
+        openIcsModal();
       });
     }
 
@@ -3582,7 +3595,12 @@ async function syncSavedIcsCalendar() {
 }
 
 if (quickSyncBtn) {
-  quickSyncBtn.addEventListener('click', syncSavedIcsCalendar);
+  quickSyncBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    console.log('[ICS UI] ICS button clicked');
+    openIcsModal();
+  });
 }
 
 if (removeBtn) {
@@ -3605,5 +3623,9 @@ window.addEventListener('beforeunload', () => {
 });
 initCloudSync();
 
-document.addEventListener('DOMContentLoaded', initIcsCalendarIntegration);
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initIcsCalendarIntegration, { once: true });
+} else {
+  initIcsCalendarIntegration();
+}
 })();
