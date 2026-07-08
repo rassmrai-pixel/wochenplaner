@@ -1458,6 +1458,7 @@
   left: 5px;
   right: 5px;
   bottom: 3px;
+  z-index: 4;
   min-height: 13px;
   border-radius: 999px;
   background: rgba(15,23,42,0.42);
@@ -1476,6 +1477,7 @@
   position: absolute;
   right: 5px;
   top: calc(2 * var(--cell-h) + 4px);
+  z-index: 4;
   max-width: calc(100% - 10px);
   min-height: 13px;
   padding: 0 6px;
@@ -1499,22 +1501,23 @@
   top: 0;
   bottom: 0;
   pointer-events: none;
+  z-index: 2;
 }
 
 .event-embedded-child {
   position: absolute;
   left: 0;
   right: 0;
-  min-height: 10px;
+  min-height: 18px;
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 4px;
-  padding: 0 5px;
-  border: 1px solid rgba(255,255,255,0.28);
+  padding: 0 4px;
+  border: 1px solid rgba(255,255,255,0.22);
   border-left: 3px solid rgba(255,255,255,0.85);
-  border-radius: 6px;
-  background: rgba(15, 23, 42, 0.72);
+  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.78);
   color: white;
   font: inherit;
   font-size: 9px;
@@ -1523,7 +1526,7 @@
   overflow: hidden;
   pointer-events: auto;
   cursor: pointer;
-  box-shadow: 0 3px 10px rgba(0,0,0,0.28);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.24);
 }
 
 .event-embedded-check {

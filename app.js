@@ -828,9 +828,9 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     });
   }
 
-  function integratedEventsForEvent(eventId) {
+  function integratedEventsForEvent(eventId, events = currentEvents()) {
     if (!eventId) return [];
-    return currentEvents()
+    return events
       .filter(ev => ev.stackedIntoId === eventId || ev.parentId === eventId)
       .sort((a, b) => a.start - b.start || a.end - b.end || String(a.createdAt).localeCompare(String(b.createdAt)));
   }
@@ -856,14 +856,53 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
       );
   }
 
-  function blockFulfillmentStats(ev, subtasksOverride = null) {
+  function layoutEmbeddedChildren(children) {
+    const laidOut = [];
+    const groups = [];
+    let group = [];
+    let groupEnd = -1;
+    [...children].sort((a, b) => Number(a.start) - Number(b.start) || Number(a.end) - Number(b.end))
+      .forEach(child => {
+        if (!group.length || Number(child.start) < groupEnd) {
+          group.push(child);
+          groupEnd = Math.max(groupEnd, Number(child.end));
+        } else {
+          groups.push(group);
+          group = [child];
+          groupEnd = Number(child.end);
+        }
+      });
+    if (group.length) groups.push(group);
+
+    groups.forEach(items => {
+      const lanes = [];
+      items.forEach(child => {
+        let lane = lanes.findIndex(end => end <= Number(child.start));
+        if (lane === -1) {
+          lane = lanes.length;
+          lanes.push(Number(child.end));
+        } else {
+          lanes[lane] = Number(child.end);
+        }
+        laidOut.push({ ...child, _embeddedLane: lane, _embeddedLaneCount: lanes.length });
+      });
+      const laneCount = Math.max(1, lanes.length);
+      laidOut.slice(-items.length).forEach(child => { child._embeddedLaneCount = laneCount; });
+    });
+
+    return laidOut;
+  }
+
+  function blockFulfillmentStats(ev, subtasksOverride = null, events = currentEvents()) {
+    const parentItems = ev ? [{ done: Boolean(ev.done), missed: Boolean(ev.missed) }] : [];
     const sourceSubtasks = Array.isArray(subtasksOverride) ? subtasksOverride : ev?.subtasks;
     const subItems = Array.isArray(sourceSubtasks)
       ? sourceSubtasks.map(sub => ({ done: Boolean(sub.done), missed: Boolean(sub.missed) }))
       : [];
-    const childItems = integratedEventsForEvent(ev?.id)
+    const childItems = integratedEventsForEvent(ev?.id, events)
       .map(child => ({ done: Boolean(child.done), missed: Boolean(child.missed) }));
-    const items = [...subItems, ...childItems];
+    const containedTotal = subItems.length + childItems.length;
+    const items = [...parentItems, ...subItems, ...childItems];
     const total = items.length;
     const done = items.filter(item => item.done && !item.missed).length;
     const missed = items.filter(item => item.missed && !item.done).length;
@@ -871,33 +910,23 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
       total,
       done,
       missed,
+      containedTotal,
       open: Math.max(0, total - done - missed),
       score: total ? done / total : (ev?.done && !ev?.missed ? 1 : 0),
       percent: total ? makePercent(done, total) : (ev?.done && !ev?.missed ? 100 : 0)
     };
   }
 
-  function eventProgressStats(ev) {
-    const blockStats = blockFulfillmentStats(ev);
-    if (blockStats.total) return blockStats;
-    const done = ev?.done && !ev?.missed ? 1 : 0;
-    const missed = ev?.missed && !ev?.done ? 1 : 0;
-    return {
-      total: 1,
-      done,
-      missed,
-      open: Math.max(0, 1 - done - missed),
-      score: done,
-      percent: done ? 100 : 0
-    };
+  function eventProgressStats(ev, events = currentEvents()) {
+    return blockFulfillmentStats(ev, null, events);
   }
 
   function eventTrackingScore(ev) {
     return eventProgressStats(ev).score;
   }
 
-  function eventTrackingWeight(ev) {
-    const progress = eventProgressStats(ev);
+  function eventTrackingWeight(ev, events = currentEvents()) {
+    const progress = eventProgressStats(ev, events);
     return {
       totalWeight: progress.total,
       doneWeight: progress.done,
@@ -964,7 +993,7 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     const children = integratedEventsForEvent(eventId);
     const subtasks = eventId === editingId ? eventDraftSubtasks : cloneEventSubtasks(ev);
     const progress = blockFulfillmentStats(ev, subtasks);
-    if (!eventId || !ev || !progress.total) {
+    if (!eventId || !ev || !progress.containedTotal) {
       modalIntegratedEvents.innerHTML = '';
       modalIntegratedEvents.style.display = 'none';
       return;
@@ -1594,21 +1623,26 @@ source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
     div.title = `${days[ev.day]} ${isTemplateMode() ? '' : formatShortDate(getDayDate(ev.day)) + ' '}${eventTime(ev)} · ${ev.label}`;
     const integratedCount = integratedEventsForEvent(ev.id).length;
     const fulfillment = blockFulfillmentStats(ev);
-    const fulfillmentBadge = fulfillment.total ? `<div class="event-fulfillment-badge">${fulfillment.done}/${fulfillment.total}</div>` : '';
+    const fulfillmentBadge = fulfillment.containedTotal ? `<div class="event-fulfillment-badge">${fulfillment.done}/${fulfillment.total}</div>` : '';
     const integratedBadge = integratedCount ? `<div class="event-integrated-badge">+${integratedCount} im Block</div>` : '';
-    const scheduledChildren = scheduledIntegratedEventsForEvent(ev);
+    const scheduledChildren = layoutEmbeddedChildren(scheduledIntegratedEventsForEvent(ev));
     const embeddedChildren = scheduledChildren.length ? `
       <div class="event-embedded-children">
         ${scheduledChildren.map(child => {
-          const parentDuration = Math.max(1, Number(ev.end) - Number(ev.start));
-          const top = ((Number(child.start) - Number(ev.start)) / parentDuration) * 100;
-          const height = Math.max(10, ((Number(child.end) - Number(child.start)) / parentDuration) * 100);
+          const slotHeight = cellHeight();
+          const top = Math.max(0, Number(child.start) - Number(ev.start)) * slotHeight;
+          const height = Math.max(18, (Number(child.end) - Number(child.start)) * slotHeight - 2);
+          const laneCount = Math.max(1, Number(child._embeddedLaneCount) || 1);
+          const lane = Math.max(0, Number(child._embeddedLane) || 0);
+          const laneGap = laneCount > 1 ? 3 : 0;
+          const width = 100 / laneCount;
+          const left = lane * width;
           const childCat = state.categories[child.categoryId] || cat;
           return `
             <div
               class="event-embedded-child ${child.done ? 'done' : ''} ${child.missed ? 'missed' : ''}"
               data-event-id="${child.id}"
-              style="top:${top}%;height:calc(${height}% - 2px);border-left-color:${escapeHtml(childCat.color)}"
+              style="top:${top}px;height:${height}px;left:calc(${left}% + ${laneGap}px);right:auto;width:calc(${width}% - ${laneGap * 2}px);border-left-color:${escapeHtml(childCat.color)}"
               title="${escapeHtml(eventTime(child))} · ${escapeHtml(child.label)}"
             >
               <input class="event-embedded-check" type="checkbox" ${child.done ? 'checked' : ''} title="Erledigt" />
@@ -2490,17 +2524,26 @@ return div;
 
   function routineTrackingStats() {
     const trackableTemplate = state.templateEvents.filter(ev => state.categories[ev.categoryId]?.habit);
-    const done = trackableTemplate.reduce((sum, templateEv) => {
-      const weekEv = currentWeekEvents().find(ev => ev.source === 'routine' && ev.templateEventId === templateEv.id);
-      return sum + (weekEv ? eventTrackingScore(weekEv) : 0);
-    }, 0);
-    return { total: trackableTemplate.length, done, percent: makePercent(done, trackableTemplate.length) };
+    const weekEvents = currentWeekEvents();
+    const stats = trackableTemplate.reduce((acc, templateEv) => {
+      const weekEv = weekEvents.find(ev => ev.source === 'routine' && ev.templateEventId === templateEv.id);
+      const progress = weekEv ? eventProgressStats(weekEv, weekEvents) : { total: 1, done: 0 };
+      acc.total += progress.total;
+      acc.done += progress.done;
+      return acc;
+    }, { total: 0, done: 0 });
+    return { total: stats.total, done: stats.done, percent: makePercent(stats.done, stats.total) };
   }
 
   function extraTrackingStats() {
     const extras = currentWeekEvents().filter(ev => ev.source === 'extra' && !isIntegratedChild(ev) && state.categories[ev.categoryId]?.habit);
-    const done = extras.reduce((sum, ev) => sum + eventTrackingScore(ev), 0);
-    return { total: extras.length, done, percent: makePercent(done, extras.length) };
+    const stats = extras.reduce((acc, ev) => {
+      const progress = eventProgressStats(ev);
+      acc.total += progress.total;
+      acc.done += progress.done;
+      return acc;
+    }, { total: 0, done: 0 });
+    return { total: stats.total, done: stats.done, percent: makePercent(stats.done, stats.total) };
   }
 
   function trackingDateBase() {
@@ -2552,7 +2595,7 @@ return div;
         .forEach(templateEv => {
           const weekEv = weekEvents.find(ev => ev.source === 'routine' && ev.templateEventId === templateEv.id);
           const scoreSource = weekEv || templateEv;
-          const weights = weekEv ? eventTrackingWeight(scoreSource) : { totalWeight: 1, doneWeight: 0, missedWeight: 0, score: 0 };
+          const weights = weekEv ? eventTrackingWeight(scoreSource, weekEvents) : { totalWeight: 1, doneWeight: 0, missedWeight: 0, score: 0 };
           items.push({
             type: 'routine',
             done: Boolean(weekEv?.done),
@@ -2572,7 +2615,7 @@ return div;
       weekEvents
         .filter(ev => ev.day === dayIndex && ev.source === 'extra' && !isIntegratedChild(ev) && state.categories[ev.categoryId]?.habit)
         .forEach(ev => {
-          const weights = eventTrackingWeight(ev);
+          const weights = eventTrackingWeight(ev, weekEvents);
           items.push({
             type: 'extra',
             done: Boolean(ev.done),
