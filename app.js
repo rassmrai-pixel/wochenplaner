@@ -696,7 +696,7 @@
 
   const habitItems = currentWeekEvents()
     .filter(ev => ev.day === dayIndex && !isIntegratedChild(ev) && state.categories[ev.categoryId]?.habit)
-    .map(syncEventAutoComplete);
+    .map(ev => syncEventAutoComplete(ev));
 
   const dayTodos = state.todos
     .map(syncTodoAutoComplete)
@@ -770,6 +770,7 @@
 
   function syncEventAutoComplete(ev, events = currentEvents()) {
     if (!ev) return ev;
+    if (!Array.isArray(events)) events = currentEvents();
     if (!Array.isArray(ev.subtasks)) ev.subtasks = [];
     const integratedChildren = integratedEventsForEvent(ev.id, events);
     const autoItems = [
