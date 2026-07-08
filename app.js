@@ -9,6 +9,7 @@
   const storageKeyV1 = 'perfekte-woche-planer-v1';
   const authModeKey = 'perfekte-woche-auth-mode';
   const ICS_SYNC_TIMEOUT_MS = 60000;
+  const DEFAULT_ICS_SOURCE_ID = 'default-ics';
   const SUPABASE_URL = 'https://uwynzmdsveplxfqgwzqp.supabase.co';
   const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_zIKjzTf24k4BDsVrQAyeZQ_WALpNEkH';
   const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY) : null;
@@ -278,21 +279,31 @@
         allDay,
         date: ev.date || null,
         label: ev.label || 'Block',
+        title: ev.title || ev.label || 'Block',
         categoryId: s.categories[ev.categoryId] ? ev.categoryId : 'orga',
+        category: ev.category || null,
         done: Boolean(ev.done),
         missed: Boolean(ev.missed),
-source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
+        completed: Boolean(ev.completed),
+        source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
         templateEventId: ev.templateEventId || null,
+        parentId: ev.parentId || null,
         stackedIntoId: ev.stackedIntoId || null,
+        missingFromLastSync: Boolean(ev.missingFromLastSync),
+        syncStatus: ev.syncStatus || null,
+        location: ev.location || null,
+        description: ev.description || null,
+        duration: ev.duration ?? null,
         importSource: ev.importSource || null,
         provider: ev.provider || null,
         externalId: ev.externalId || null,
         externalCalendarId: ev.externalCalendarId || null,
-        sourceId: ev.sourceId || ev.externalCalendarId || ev.importSource || null,
+        sourceId: ev.sourceId || ev.externalCalendarId || ((ev.importSource === 'ics' || ev.provider === 'ics') ? DEFAULT_ICS_SOURCE_ID : null),
         editable: ev.editable ?? true,
         readOnly: ev.readOnly ?? false,
         isExternal: ev.isExternal ?? (ev.importSource === 'ics' || ev.provider === 'ics'),
         autoComplete: Boolean(ev.autoComplete),
+        autoCompleteFromSubtasks: Boolean(ev.autoCompleteFromSubtasks),
         subtasks: Array.isArray(ev.subtasks) ? ev.subtasks.map(sub => ({
           id: sub.id || id(),
           text: sub.text || 'Untertask',
@@ -3637,6 +3648,20 @@ function toggleMissed(eventId) {
   );
 }
 
+function icsExternalKey(sourceId, externalId) {
+  if (!sourceId || !externalId) return null;
+  return `${String(sourceId)}:${String(externalId)}`;
+}
+
+function icsExternalIdAliases(externalId) {
+  if (!externalId) return [];
+  const raw = String(externalId);
+  const aliases = new Set([raw]);
+  if (raw.startsWith('ics_')) aliases.add(raw.slice(4));
+  else aliases.add(`ics_${raw}`);
+  return [...aliases].filter(Boolean);
+}
+
 function clearImportedIcsEvents() {
   console.log('[ICS] Removing old ICS events');
   if (!state.weekEventsByWeek) state.weekEventsByWeek = {};
@@ -3672,7 +3697,9 @@ function summarizeIcsSkipReasons(skippedEvents) {
     let end = isAllDay ? null : timeValueToSlot(icsEvent.endTime, start + 4);
     if (!isAllDay && end <= start) end = Math.min(start + 4, slotsPerDay);
 
-    const externalId = icsEvent.id || icsEvent.uid || `ics_${index}_${eventDateKey}_${isAllDay ? 'all-day' : start}`;
+    const externalId = icsEvent.externalId || icsEvent.uid || icsEvent.id || `ics_${index}_${eventDateKey}_${isAllDay ? 'all-day' : start}`;
+    const sourceId = icsEvent.sourceId || icsEvent.externalCalendarId || DEFAULT_ICS_SOURCE_ID;
+    const duration = isAllDay ? null : Math.max(0, end - start);
 
     return {
   id: `ics_import_${externalId}`.replace(/[^a-zA-Z0-9_-]/g, '_'),
@@ -3682,9 +3709,14 @@ function summarizeIcsSkipReasons(skippedEvents) {
   date: eventDateKey,
   allDay: isAllDay,
   label: icsEvent.title || 'Kalendertermin',
+  title: icsEvent.title || 'Kalendertermin',
   categoryId: 'external',
+  location: icsEvent.location || null,
+  description: icsEvent.description || null,
+  duration,
 
   // wichtig: ICS-Termine sollen wie Planner-Events trackbar sein
+  completed: false,
   done: false,
   missed: false,
   source: 'extra',
@@ -3694,8 +3726,11 @@ function summarizeIcsSkipReasons(skippedEvents) {
   importSource: 'ics',
   provider: icsEvent.provider || 'ics',
   externalId,
-  sourceId: icsEvent.sourceId || externalId,
+  externalCalendarId: icsEvent.externalCalendarId || sourceId,
+  sourceId,
   isExternal: true,
+  missingFromLastSync: false,
+  syncStatus: 'synced',
   readOnly: isAllDay,
 
   // true = Doppelklick öffnet Editor, falls du später Kategorie/Subtasks ändern willst
@@ -3712,7 +3747,8 @@ function summarizeIcsSkipReasons(skippedEvents) {
   function importIcsEventsIntoPlanner(icsEvents) {
   ensureExternalCalendarCategory();
 
-  const existingByExternalId = {};
+  const existingByExternalKey = new Map();
+  const existingIcsEvents = [];
 
   if (!state.weekEventsByWeek) state.weekEventsByWeek = {};
 
@@ -3721,80 +3757,130 @@ function summarizeIcsSkipReasons(skippedEvents) {
 
     events.forEach((ev) => {
       if (ev.importSource === 'ics' && ev.externalId) {
-        existingByExternalId[ev.externalId] = {
-          done: Boolean(ev.done),
-          missed: Boolean(ev.missed),
-          categoryId: ev.categoryId || 'external',
-          subtasks: Array.isArray(ev.subtasks) ? ev.subtasks : [],
-          autoComplete: Boolean(ev.autoComplete),
-          editable: ev.editable !== false
-        };
+        const entry = { ev, weekKey };
+        existingIcsEvents.push(entry);
+        icsExternalIdAliases(ev.externalId).forEach((externalIdAlias) => {
+          [
+            icsExternalKey(ev.sourceId || DEFAULT_ICS_SOURCE_ID, externalIdAlias),
+            icsExternalKey(DEFAULT_ICS_SOURCE_ID, externalIdAlias),
+            icsExternalKey(ev.externalCalendarId, externalIdAlias),
+            icsExternalKey(ev.importSource, externalIdAlias)
+          ].filter(Boolean).forEach(key => {
+            if (!existingByExternalKey.has(key)) existingByExternalKey.set(key, entry);
+          });
+        });
       }
     });
   });
 
-  clearImportedIcsEvents();
-  console.log('[ICS] Adding new ICS events');
+  console.log('[ICS] Upserting ICS events');
 
   const importedExternalIds = new Set();
   const skippedEvents = [];
-  let importedCount = 0;
+  const processedKeys = new Set();
+  let processedCount = 0;
+  let createdCount = 0;
+  let updatedCount = 0;
 
 (icsEvents || []).forEach((icsEvent, index) => {
   const plannerEvent = plannerEventFromIcsEvent(icsEvent, index);
+  const externalKey = icsExternalKey(plannerEvent.sourceId, plannerEvent.externalId);
 
-  if (!plannerEvent.externalId) {
+  if (!externalKey) {
     skippedEvents.push({
-      reason: 'duplicate externalId/sourceId',
+      reason: 'missing externalId/sourceId',
       title: icsEvent.title || icsEvent.summary || 'Kalendertermin',
-      externalId: plannerEvent.externalId || null
+      externalId: plannerEvent.externalId || null,
+      sourceId: plannerEvent.sourceId || null
     });
     return;
   }
 
   // verhindert doppelte Termine direkt aus dem ICS-Feed
-  if (importedExternalIds.has(plannerEvent.externalId)) {
+  if (importedExternalIds.has(externalKey)) {
     skippedEvents.push({
       reason: 'duplicate externalId/sourceId',
       title: icsEvent.title || icsEvent.summary || 'Kalendertermin',
-      externalId: plannerEvent.externalId
+      externalId: plannerEvent.externalId,
+      sourceId: plannerEvent.sourceId
     });
     return;
   }
-  importedExternalIds.add(plannerEvent.externalId);
-
-  const previous = existingByExternalId[plannerEvent.externalId];
-
-  if (previous) {
-    plannerEvent.done = previous.done;
-    plannerEvent.missed = previous.missed;
-    plannerEvent.categoryId = previous.categoryId;
-    plannerEvent.subtasks = previous.subtasks;
-    plannerEvent.autoComplete = previous.autoComplete;
-    plannerEvent.editable = previous.editable;
-  }
+  importedExternalIds.add(externalKey);
+  processedKeys.add(externalKey);
+  processedCount++;
 
   const weekKey = weekStartKey(dateKeyToLocalDate(icsEvent.date || dateKey(new Date())));
 
   if (!state.weekEventsByWeek[weekKey]) state.weekEventsByWeek[weekKey] = [];
 
-  // letzter Schutz: in derselben Woche nicht nochmal denselben ICS-Termin pushen
-  const alreadyExists = state.weekEventsByWeek[weekKey].some(ev =>
-    isImportedIcsEvent(ev) && ev.externalId === plannerEvent.externalId
-  );
+  const existingEntry = existingByExternalKey.get(externalKey)
+    || existingByExternalKey.get(icsExternalKey(DEFAULT_ICS_SOURCE_ID, plannerEvent.externalId));
 
-  if (!alreadyExists) {
-    state.weekEventsByWeek[weekKey].push(plannerEvent);
-    importedCount++;
-  } else {
-    skippedEvents.push({
-      reason: 'duplicate externalId/sourceId',
-      title: plannerEvent.label,
+  if (existingEntry) {
+    const existing = existingEntry.ev;
+    const updatedEvent = {
+      ...existing,
+      title: plannerEvent.title,
+      label: plannerEvent.label,
+      date: plannerEvent.date,
+      day: plannerEvent.day,
+      start: plannerEvent.start,
+      end: plannerEvent.end,
+      allDay: plannerEvent.allDay,
+      duration: plannerEvent.duration,
+      location: plannerEvent.location,
+      description: plannerEvent.description,
+      importSource: plannerEvent.importSource,
+      provider: plannerEvent.provider,
       externalId: plannerEvent.externalId,
-      weekKey
-    });
+      externalCalendarId: plannerEvent.externalCalendarId,
+      sourceId: plannerEvent.sourceId,
+      isExternal: true,
+      readOnly: plannerEvent.readOnly,
+      editable: existing.editable ?? plannerEvent.editable,
+      missingFromLastSync: false,
+      syncStatus: 'updated',
+      parentId: existing.parentId ?? null,
+      stackedIntoId: existing.stackedIntoId ?? null,
+      completed: existing.completed ?? false,
+      done: existing.done ?? false,
+      missed: existing.missed ?? false,
+      categoryId: existing.categoryId || plannerEvent.categoryId,
+      category: existing.category ?? plannerEvent.category,
+      subtasks: Array.isArray(existing.subtasks) ? existing.subtasks : plannerEvent.subtasks,
+      autoComplete: existing.autoComplete ?? plannerEvent.autoComplete,
+      autoCompleteFromSubtasks: existing.autoCompleteFromSubtasks ?? plannerEvent.autoCompleteFromSubtasks ?? false
+    };
+
+    if (existingEntry.weekKey === weekKey) {
+      const existingIndex = state.weekEventsByWeek[weekKey].findIndex(ev => ev.id === existing.id);
+      if (existingIndex >= 0) state.weekEventsByWeek[weekKey][existingIndex] = updatedEvent;
+      else state.weekEventsByWeek[weekKey].push(updatedEvent);
+    } else {
+      state.weekEventsByWeek[existingEntry.weekKey] = (state.weekEventsByWeek[existingEntry.weekKey] || [])
+        .filter(ev => ev.id !== existing.id);
+      state.weekEventsByWeek[weekKey].push(updatedEvent);
+    }
+    updatedCount++;
+  } else {
+    plannerEvent.syncStatus = 'new';
+    state.weekEventsByWeek[weekKey].push(plannerEvent);
+    createdCount++;
   }
 });
+
+  let missingCount = 0;
+  existingIcsEvents.forEach(({ ev }) => {
+    const wasProcessed = icsExternalIdAliases(ev.externalId).some((externalIdAlias) => (
+      processedKeys.has(icsExternalKey(ev.sourceId || DEFAULT_ICS_SOURCE_ID, externalIdAlias))
+      || processedKeys.has(icsExternalKey(DEFAULT_ICS_SOURCE_ID, externalIdAlias))
+    ));
+    if (wasProcessed) return;
+    ev.missingFromLastSync = true;
+    ev.syncStatus = 'missing';
+    missingCount++;
+  });
 
   currentWeekEvents();
   console.log('[ICS] Saving state');
@@ -3807,7 +3893,10 @@ function summarizeIcsSkipReasons(skippedEvents) {
   const allDayImportedCount = allImportedStateEvents.filter(({ ev }) => ev.allDay).length;
   const skipReasonsSummary = summarizeIcsSkipReasons(skippedEvents);
 
-  console.log('[ICS] Client imported events:', importedCount);
+  console.log('[ICS] Client processed events:', processedCount);
+  console.log('[ICS] Client updated events:', updatedCount);
+  console.log('[ICS] Client new events:', createdCount);
+  console.log('[ICS] Client missing events:', missingCount);
   console.log('[ICS] Client skipped events:', skippedEvents.length);
   console.table(skipReasonsSummary);
   console.log('[ICS] Imported ICS state events:', allImportedStateEvents.length);
@@ -3829,7 +3918,11 @@ function summarizeIcsSkipReasons(skippedEvents) {
   })));
 
   return {
-    importedCount,
+    importedCount: createdCount,
+    processedCount,
+    updatedCount,
+    createdCount,
+    missingCount,
     skippedEvents,
     skippedCount: skippedEvents.length,
     skipReasonsSummary,
@@ -3943,11 +4036,14 @@ function summarizeIcsSkipReasons(skippedEvents) {
       if (clientSkippedEvents.length) detailParts.push(`${clientSkippedEvents.length} Duplikate`);
       const detailText = detailParts.length ? ` · Übersprungen: ${detailParts.join(', ')}` : '';
       const allDayText = allDayImported ? ` · davon ${allDayImported} ganztägig` : '';
-      setIcsSyncProgress(100, `Sync abgeschlossen · ${importDiagnostics.importedCount} Termine importiert${allDayText} · ${totalSkipped} übersprungen${detailText}`);
+      setIcsSyncProgress(100, `Sync abgeschlossen · ${importDiagnostics.processedCount} verarbeitet · ${importDiagnostics.updatedCount} aktualisiert · ${importDiagnostics.createdCount} neu · ${importDiagnostics.missingCount} nicht mehr gefunden · ${totalSkipped} übersprungen${allDayText}${detailText}`);
       console.log('[ICS] Sync diagnostics', {
         totalVevents,
         serverImported: events.length,
-        clientImported: importDiagnostics.importedCount,
+        clientProcessed: importDiagnostics.processedCount,
+        clientUpdated: importDiagnostics.updatedCount,
+        clientCreated: importDiagnostics.createdCount,
+        clientMissing: importDiagnostics.missingCount,
         allDayImported,
         serverSkipped: serverSkippedEvents.length,
         clientSkipped: clientSkippedEvents.length,

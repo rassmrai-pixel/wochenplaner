@@ -164,8 +164,12 @@ function parseIcsEvents(icsText) {
 
         return {
           id: `ics_${uid}`,
+          uid,
           source: "ics",
+          importSource: "ics",
           provider: "ics",
+          externalId: uid,
+          sourceId: "default-ics",
           type: "external_event",
           title: summary,
           date: allDayDate,
@@ -212,8 +216,12 @@ function parseIcsEvents(icsText) {
 
       return {
         id: `ics_${uid}`,
+        uid,
         source: "ics",
+        importSource: "ics",
         provider: "outlook",
+        externalId: uid,
+        sourceId: "default-ics",
         type: "external_event",
         title: summary,
         date: formatDate(start),
