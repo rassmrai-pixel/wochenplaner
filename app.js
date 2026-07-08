@@ -282,9 +282,9 @@
         title: ev.title || ev.label || 'Block',
         categoryId: s.categories[ev.categoryId] ? ev.categoryId : 'orga',
         category: ev.category || null,
-        done: Boolean(ev.done),
+        done: Boolean(ev.done || ev.completed),
         missed: Boolean(ev.missed),
-        completed: Boolean(ev.completed),
+        completed: Boolean(ev.completed || ev.done),
         source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
         templateEventId: ev.templateEventId || null,
         parentId: ev.parentId || null,
@@ -302,7 +302,7 @@
         editable: ev.editable ?? true,
         readOnly: ev.readOnly ?? false,
         isExternal: ev.isExternal ?? (ev.importSource === 'ics' || ev.provider === 'ics'),
-        autoComplete: Boolean(ev.autoComplete),
+        autoComplete: Boolean(ev.autoComplete || ev.autoCompleteFromSubtasks),
         autoCompleteFromSubtasks: Boolean(ev.autoCompleteFromSubtasks),
         subtasks: Array.isArray(ev.subtasks) ? ev.subtasks.map(sub => ({
           id: sub.id || id(),
@@ -751,14 +751,42 @@
 
 
 
-  function syncEventAutoComplete(ev) {
+  function isEventDone(ev) {
+    return Boolean(ev?.done || ev?.completed);
+  }
+
+  function setEventDoneStatus(ev, done) {
+    if (!ev) return ev;
+    const nextDone = Boolean(done);
+    ev.done = nextDone;
+    ev.completed = nextDone;
+    if (nextDone) ev.missed = false;
+    return ev;
+  }
+
+  function eventAutoCompleteEnabled(ev) {
+    return Boolean(ev?.autoComplete || ev?.autoCompleteFromSubtasks);
+  }
+
+  function syncEventAutoComplete(ev, events = currentEvents()) {
     if (!ev) return ev;
     if (!Array.isArray(ev.subtasks)) ev.subtasks = [];
-    if (ev.autoComplete && ev.subtasks.length) {
-  ev.done = ev.subtasks.every(sub => sub.done);
-  if (ev.done) ev.missed = false;
+    const integratedChildren = integratedEventsForEvent(ev.id, events);
+    const autoItems = [
+      ...ev.subtasks.map(sub => ({ done: Boolean(sub.done) })),
+      ...integratedChildren.map(child => ({ done: isEventDone(child) }))
+    ];
+    if (eventAutoCompleteEnabled(ev) && autoItems.length) {
+      setEventDoneStatus(ev, autoItems.every(item => item.done));
     }
     return ev;
+  }
+
+  function syncParentAutoCompleteForChild(child, events = currentEvents()) {
+    const parentId = child?.stackedIntoId || child?.parentId;
+    if (!parentId) return;
+    const parent = events.find(ev => ev.id === parentId);
+    if (parent) syncEventAutoComplete(parent, events);
   }
 
   function cloneEventSubtasks(ev) {
@@ -905,13 +933,13 @@
   }
 
   function blockFulfillmentStats(ev, subtasksOverride = null, events = currentEvents()) {
-    const parentItems = ev ? [{ done: Boolean(ev.done), missed: Boolean(ev.missed) }] : [];
+    const parentItems = ev ? [{ done: isEventDone(ev), missed: Boolean(ev.missed) }] : [];
     const sourceSubtasks = Array.isArray(subtasksOverride) ? subtasksOverride : ev?.subtasks;
     const subItems = Array.isArray(sourceSubtasks)
       ? sourceSubtasks.map(sub => ({ done: Boolean(sub.done), missed: Boolean(sub.missed) }))
       : [];
     const childItems = integratedEventsForEvent(ev?.id, events)
-      .map(child => ({ done: Boolean(child.done), missed: Boolean(child.missed) }));
+      .map(child => ({ done: isEventDone(child), missed: Boolean(child.missed) }));
     const containedTotal = subItems.length + childItems.length;
     const items = [...parentItems, ...subItems, ...childItems];
     const total = items.length;
@@ -923,8 +951,8 @@
       missed,
       containedTotal,
       open: Math.max(0, total - done - missed),
-      score: total ? done / total : (ev?.done && !ev?.missed ? 1 : 0),
-      percent: total ? makePercent(done, total) : (ev?.done && !ev?.missed ? 100 : 0)
+      score: total ? done / total : (isEventDone(ev) && !ev?.missed ? 1 : 0),
+      percent: total ? makePercent(done, total) : (isEventDone(ev) && !ev?.missed ? 100 : 0)
     };
   }
 
@@ -962,12 +990,14 @@
       .sort((a, b) => a.start - b.start || b.end - a.end);
   }
 
-  function fillModalStackedIntoSelect(ev = null) {
+  function fillModalStackedIntoSelect(ev = null, { preserveSelection = true } = {}) {
     if (!modalStackedInto) return;
     const day = Number(modalDay.value);
     const start = Number(modalStart.value);
     const end = Number(modalEnd.value);
-    const selectedParentId = modalStackedInto.value || ev?.stackedIntoId || ev?.parentId || '';
+    const selectedParentId = preserveSelection
+      ? (modalStackedInto.value || ev?.stackedIntoId || ev?.parentId || '')
+      : (ev?.stackedIntoId || ev?.parentId || '');
     const candidates = parentBlockCandidates(day, start, end, ev?.id || editingId || null);
 
     modalStackedInto.innerHTML = '';
@@ -1024,8 +1054,8 @@
             <strong>${escapeHtml(sub.text)}</strong>
           </div>`).join('')}
         ${children.map(child => `
-          <div class="event-integrated-row ${child.done ? 'done' : ''} ${child.missed ? 'missed' : ''}" data-event-id="${child.id}">
-            <input class="event-integrated-check" type="checkbox" ${child.done ? 'checked' : ''} title="Erledigt" />
+          <div class="event-integrated-row ${isEventDone(child) ? 'done' : ''} ${child.missed ? 'missed' : ''}" data-event-id="${child.id}">
+            <input class="event-integrated-check" type="checkbox" ${isEventDone(child) ? 'checked' : ''} title="Erledigt" />
             <span>${hasScheduledTime(child) ? escapeHtml(eventTime(child)) : 'Ohne Zeit'}</span>
             <strong>${escapeHtml(child.label)}</strong>
             <button type="button" class="event-integrated-missed ${child.missed ? 'active' : ''}" title="Nicht eingehalten">!</button>
@@ -1050,6 +1080,7 @@
           sourceSub.done = sub.done;
           if (sourceSub.done) sourceSub.missed = false;
           syncEventAutoComplete(sourceEvent);
+          syncParentAutoCompleteForChild(sourceEvent);
           saveState();
           renderAll();
         }
@@ -1617,7 +1648,7 @@
     syncEventAutoComplete(ev);
     const cat = state.categories[ev.categoryId] || state.categories.orga;
     const div = document.createElement('div');
-    div.className = `event ${ev.done ? 'done' : ''} ${ev.missed ? 'missed' : ''} ${ev.source === 'extra' ? 'extra-event' : ''} ${ev.importSource === 'ics' ? 'external-calendar-event' : ''}`;
+    div.className = `event ${isEventDone(ev) ? 'done' : ''} ${ev.missed ? 'missed' : ''} ${ev.source === 'extra' ? 'extra-event' : ''} ${ev.importSource === 'ics' ? 'external-calendar-event' : ''}`;
     div.dataset.id = ev.id;
     const gap = 3;
     const laneCount = ev._laneCount || 1;
@@ -1651,12 +1682,12 @@
           const childCat = state.categories[child.categoryId] || cat;
           return `
             <div
-              class="event-embedded-child ${child.done ? 'done' : ''} ${child.missed ? 'missed' : ''}"
+              class="event-embedded-child ${isEventDone(child) ? 'done' : ''} ${child.missed ? 'missed' : ''}"
               data-event-id="${child.id}"
               style="top:${top}px;height:${height}px;left:calc(${left}% + ${laneGap}px);right:auto;width:calc(${width}% - ${laneGap * 2}px);border-left-color:${escapeHtml(childCat.color)}"
               title="${escapeHtml(eventTime(child))} · ${escapeHtml(child.label)}"
             >
-              <input class="event-embedded-check" type="checkbox" ${child.done ? 'checked' : ''} title="Erledigt" />
+              <input class="event-embedded-check" type="checkbox" ${isEventDone(child) ? 'checked' : ''} title="Erledigt" />
               <span>${escapeHtml(timeLabel(child.start))}</span>
               <strong>${escapeHtml(child.label)}</strong>
               <button class="event-embedded-missed ${child.missed ? 'active' : ''}" type="button" title="Nicht eingehalten">!</button>
@@ -1667,7 +1698,7 @@
     const trackable = isWeekMode() && Boolean(cat.habit);
     div.innerHTML = `
   <div class="event-title-row">
-    ${trackable ? `<input class="event-check" type="checkbox" ${ev.done ? 'checked' : ''} ${ev.autoComplete && Array.isArray(ev.subtasks) && ev.subtasks.length ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : 'title="Erledigt"'} />` : ''}
+    ${trackable ? `<input class="event-check" type="checkbox" ${isEventDone(ev) ? 'checked' : ''} ${eventAutoCompleteEnabled(ev) && (Array.isArray(ev.subtasks) && ev.subtasks.length || integratedCount) ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : 'title="Erledigt"'} />` : ''}
     ${trackable ? `<button class="event-missed-btn ${ev.missed ? 'active' : ''}" type="button" title="Nicht eingehalten">!</button>` : ''}
     <span class="event-title">${escapeHtml(ev.label)}</span>
   </div>
@@ -1744,6 +1775,7 @@ return div;
       label: preset.label || state.categories[preset.categoryId || state.selectedCategory]?.label || 'Block',
       categoryId: preset.categoryId || state.selectedCategory,
       done: false,
+      completed: false,
       missed: false,
       source: preset?.source || (isTemplateMode() ? 'routine' : 'extra'),
       templateEventId: null,
@@ -1773,7 +1805,7 @@ return div;
     modalDay.value = String(ev.day);
     modalStart.value = String(ev.start);
     modalEnd.value = String(ev.end);
-    fillModalStackedIntoSelect(ev);
+    fillModalStackedIntoSelect(ev, { preserveSelection: false });
     renderModalIntegratedEvents(ev.id);
     deleteBlockBtn.style.display = eventId ? '' : 'none';
     updateModalInfo();
@@ -1855,9 +1887,9 @@ return div;
     const cat = state.categories[ev.categoryId] || state.categories.orga;
     const item = document.createElement('div');
     const stats = eventSubtaskStats(ev);
-    const autoDisabled = ev.autoComplete && stats.total > 0;
-    item.className = `habit-item ${type === 'scheduled' ? 'scheduled-todo-item' : 'routine-item'} ${ev.done ? 'done' : ''} ${ev.missed ? 'missed' : ''}`;
-    const statusText = ev.missed ? ' · Nicht eingehalten' : (ev.done ? ' · Erledigt' : '');
+    const autoDisabled = eventAutoCompleteEnabled(ev) && stats.total > 0;
+    item.className = `habit-item ${type === 'scheduled' ? 'scheduled-todo-item' : 'routine-item'} ${isEventDone(ev) ? 'done' : ''} ${ev.missed ? 'missed' : ''}`;
+    const statusText = ev.missed ? ' · Nicht eingehalten' : (isEventDone(ev) ? ' · Erledigt' : '');
     const subtasksHtml = stats.total ? `
       <div class="habit-subtasks">
         ${ev.subtasks.map(sub => `
@@ -1878,10 +1910,10 @@ return div;
           </button>`).join('')}
       </div>` : '';
     item.innerHTML = `
-      <input class="habit-main-check" type="checkbox" ${ev.done ? 'checked' : ''} ${autoDisabled ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : ''} />
+      <input class="habit-main-check" type="checkbox" ${isEventDone(ev) ? 'checked' : ''} ${autoDisabled ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : ''} />
       <div>
         <div class="habit-name">${escapeHtml(ev.label)}</div>
-        <div class="habit-meta">${eventTime(ev)} · ${escapeHtml(cat.label)}${type === 'scheduled' ? ' · eingeplant' : ' · Routine'}${stats.total ? ` · Untertasks ${stats.done}/${stats.total}` : ''}${integratedChildren.length ? ` · ${integratedChildren.length} im Block` : ''}${ev.autoComplete ? ' · Auto' : ''}${statusText}</div>
+        <div class="habit-meta">${eventTime(ev)} · ${escapeHtml(cat.label)}${type === 'scheduled' ? ' · eingeplant' : ' · Routine'}${stats.total ? ` · Untertasks ${stats.done}/${stats.total}` : ''}${integratedChildren.length ? ` · ${integratedChildren.length} im Block` : ''}${eventAutoCompleteEnabled(ev) ? ' · Auto' : ''}${statusText}</div>
         ${stats.total ? `<div class="habit-subtask-summary">${stats.done}/${stats.total} erledigt · ${stats.percent}%</div>` : ''}
       </div>
       <button type="button" class="small ghost habit-edit-btn">Bearbeiten</button>
@@ -1889,12 +1921,12 @@ return div;
       ${integratedHtml}
       <div class="habit-actions">
         <button type="button" class="small ghost habit-add-subtask-btn">+ Untertask</button>
-        <button type="button" class="small ghost habit-auto-btn">${ev.autoComplete ? 'Auto aus' : 'Auto an'}</button>
+        <button type="button" class="small ghost habit-auto-btn">${eventAutoCompleteEnabled(ev) ? 'Auto aus' : 'Auto an'}</button>
         <button type="button" class="small danger habit-missed-btn ${ev.missed ? 'active' : ''}">${ev.missed ? 'Nicht eingehalten ✓' : 'Nicht eingehalten'}</button>
       </div>`;
     const cb = item.querySelector('.habit-main-check');
     cb.addEventListener('change', () => {
-      if (ev.autoComplete && ev.subtasks.length) return;
+      if (eventAutoCompleteEnabled(ev) && (ev.subtasks.length || integratedChildren.length)) return;
       toggleDone(ev.id, cb.checked);
     });
     item.querySelector('.habit-edit-btn').addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); openEditor(ev.id); });
@@ -1902,7 +1934,14 @@ return div;
       e.preventDefault(); e.stopPropagation(); addSubtaskToEvent(ev);
     });
     item.querySelector('.habit-auto-btn').addEventListener('click', e => {
-      e.preventDefault(); e.stopPropagation(); ev.autoComplete = !ev.autoComplete; syncEventAutoComplete(ev); saveState(); renderAll();
+      e.preventDefault(); e.stopPropagation();
+      const autoComplete = !eventAutoCompleteEnabled(ev);
+      ev.autoComplete = autoComplete;
+      ev.autoCompleteFromSubtasks = autoComplete;
+      syncEventAutoComplete(ev);
+      syncParentAutoCompleteForChild(ev);
+      saveState();
+      renderAll();
     });
     item.querySelector('.habit-missed-btn').addEventListener('click', e => {
       e.preventDefault(); e.stopPropagation(); toggleMissed(ev.id);
@@ -1912,7 +1951,12 @@ return div;
       const sub = ev.subtasks.find(x => x.id === subId);
       if (!sub) return;
       row.querySelector('.habit-subtask-check').addEventListener('change', e => {
-        e.stopPropagation(); sub.done = e.target.checked; syncEventAutoComplete(ev); saveState(); renderAll();
+        e.stopPropagation();
+        sub.done = e.target.checked;
+        syncEventAutoComplete(ev);
+        syncParentAutoCompleteForChild(ev);
+        saveState();
+        renderAll();
       });
       row.querySelector('.habit-subtask-edit').addEventListener('click', e => {
         e.preventDefault(); e.stopPropagation();
@@ -1941,6 +1985,7 @@ return div;
     if (!Array.isArray(ev.subtasks)) ev.subtasks = [];
     ev.subtasks.push({ id: id(), text: clean, done: false, createdAt: new Date().toISOString() });
     syncEventAutoComplete(ev);
+    syncParentAutoCompleteForChild(ev);
     saveState();
     renderAll();
   }
@@ -2146,7 +2191,7 @@ return div;
     const dayEvents = currentWeekEvents()
       .filter(ev => ev.day === state.activeHabitDay)
       .filter(ev => !isIntegratedChild(ev))
-      .filter(ev => filter === 'all' || (filter === 'done' ? ev.done : (filter === 'missed' ? ev.missed : (!ev.done && !ev.missed))))
+      .filter(ev => filter === 'all' || (filter === 'done' ? isEventDone(ev) : (filter === 'missed' ? ev.missed : (!isEventDone(ev) && !ev.missed))))
       .sort((a, b) => a.start - b.start || a.end - b.end);
 
     const taskFilter = state.drawerTaskFilter || 'all';
@@ -2180,7 +2225,7 @@ return div;
       routineSection.innerHTML = `
         <div class="drawer-task-section-head">
           <span>Habits / Routine</span>
-          <span class="drawer-section-badge">${routineList.filter(ev => ev.done).length}/${routineList.length} · ${routineList.filter(ev => ev.missed).length}!</span>
+          <span class="drawer-section-badge">${routineList.filter(isEventDone).length}/${routineList.length} · ${routineList.filter(ev => ev.missed).length}!</span>
         </div>
         <div class="drawer-task-section-sub">Feste Bestandteile deiner Routine-Vorlage. Orange markiert.</div>`;
       if (!routineList.length) {
@@ -2198,7 +2243,7 @@ return div;
       scheduledSection.innerHTML = `
         <div class="drawer-task-section-head">
           <span>To-dos mit Uhrzeit</span>
-          <span class="drawer-section-badge">${scheduledTodos.filter(ev => ev.done).length}/${scheduledTodos.length} · ${scheduledTodos.filter(ev => ev.missed).length}!</span>
+          <span class="drawer-section-badge">${scheduledTodos.filter(isEventDone).length}/${scheduledTodos.length} · ${scheduledTodos.filter(ev => ev.missed).length}!</span>
         </div>
         <div class="drawer-task-section-sub">Spontane oder geplante Aufgaben, die schon als Kalenderblock eingeplant sind.</div>`;
       if (!scheduledTodos.length) {
@@ -2448,7 +2493,7 @@ return div;
     const all = currentWeekEvents()
       .filter(ev => ev.day === d && state.categories[ev.categoryId]?.habit)
       .sort((a, b) => a.start - b.start || a.end - b.end);
-    const done = all.filter(ev => ev.done).length;
+    const done = all.filter(isEventDone).length;
     const missed = all.filter(ev => ev.missed).length;
     taskProgress.textContent = `${done}/${all.length} erledigt · ${missed} nicht eingehalten`;
     taskList.innerHTML = '';
@@ -2461,9 +2506,9 @@ return div;
     all.forEach(ev => {
       const cat = state.categories[ev.categoryId] || state.categories.orga;
       const item = document.createElement('label');
-      item.className = `task-card ${ev.done ? 'done' : ''} ${ev.missed ? 'missed' : ''}`;
+      item.className = `task-card ${isEventDone(ev) ? 'done' : ''} ${ev.missed ? 'missed' : ''}`;
       item.innerHTML = `
-        <input type="checkbox" ${ev.done ? 'checked' : ''} />
+        <input type="checkbox" ${isEventDone(ev) ? 'checked' : ''} />
         <div class="task-main">
           <div class="task-name">${escapeHtml(ev.label)}</div>
           <div class="task-meta">${escapeHtml(cat.label)}</div>
@@ -2629,7 +2674,7 @@ return div;
           const weights = eventTrackingWeight(ev, weekEvents);
           items.push({
             type: 'extra',
-            done: Boolean(ev.done),
+            done: isEventDone(ev),
             score: weights.score,
             totalWeight: weights.totalWeight,
             doneWeight: weights.doneWeight,
@@ -3222,10 +3267,8 @@ return div;
   const ev = currentEvents().find(x => x.id === eventId);
   if (!ev) return;
 
-  ev.done = Boolean(done);
-
-  // Wenn erledigt, dann nicht mehr als "nicht eingehalten" zählen
-  if (ev.done) ev.missed = false;
+  setEventDoneStatus(ev, done);
+  syncParentAutoCompleteForChild(ev);
 
   saveState();
   renderAll();
@@ -3238,7 +3281,8 @@ function toggleMissed(eventId) {
   ev.missed = !Boolean(ev.missed);
 
   // Wenn nicht eingehalten, dann nicht gleichzeitig erledigt
-  if (ev.missed) ev.done = false;
+  if (ev.missed) setEventDoneStatus(ev, false);
+  syncParentAutoCompleteForChild(ev);
 
   saveState();
   renderAll();
@@ -3498,14 +3542,31 @@ function toggleMissed(eventId) {
     const day = Number(modalDay.value);
     const start = Number(modalStart.value);
     const end = Number(modalEnd.value);
-    const stackedIntoId = modalStackedInto?.value || null;
+    const selectedStackedIntoId = modalStackedInto?.value || null;
+    const stackedIntoId = selectedStackedIntoId && selectedStackedIntoId !== editingId ? selectedStackedIntoId : null;
     if (Number.isNaN(day) || Number.isNaN(start) || Number.isNaN(end) || end <= start) {
       alert('Die Endzeit muss nach der Startzeit liegen.');
       return;
     }
     if (editingId) {
       const ev = currentEvents().find(x => x.id === editingId);
-      if (ev) { Object.assign(ev, { day, start, end, label, categoryId, stackedIntoId, parentId: null, autoComplete: Boolean(modalAutoComplete?.checked), subtasks: cloneEventSubtasks({ subtasks: eventDraftSubtasks }) }); syncEventAutoComplete(ev); }
+      if (ev) {
+        const autoComplete = Boolean(modalAutoComplete?.checked);
+        Object.assign(ev, {
+          day,
+          start,
+          end,
+          label,
+          categoryId,
+          stackedIntoId,
+          parentId: null,
+          autoComplete,
+          autoCompleteFromSubtasks: autoComplete,
+          subtasks: cloneEventSubtasks({ subtasks: eventDraftSubtasks })
+        });
+        syncEventAutoComplete(ev);
+        syncParentAutoCompleteForChild(ev);
+      }
     } else {
   const newEventId = id();
 
@@ -3517,11 +3578,13 @@ function toggleMissed(eventId) {
     label,
     categoryId,
     done: false,
+    completed: false,
     missed: false,
     source: (presetSource || (isTemplateMode() ? 'routine' : 'extra')),
     templateEventId: null,
     stackedIntoId,
     autoComplete: Boolean(modalAutoComplete?.checked),
+    autoCompleteFromSubtasks: Boolean(modalAutoComplete?.checked),
     subtasks: cloneEventSubtasks({ subtasks: eventDraftSubtasks }),
     createdAt: new Date().toISOString()
   });
