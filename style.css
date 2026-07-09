@@ -2695,10 +2695,200 @@
       transition: width 0.25s ease;
     }
 
-    .event.external-calendar-event {
+.event.external-calendar-event {
   border-left-color: rgba(191, 219, 254, 0.95);
   box-shadow: 0 8px 18px rgba(0,0,0,0.26), inset 0 0 0 2px rgba(191,219,254,0.22);
   cursor: pointer;
+}
+
+/* Layer hierarchy and focused UI fixes */
+header {
+  z-index: 500;
+  overflow: visible;
+}
+
+.toolbar,
+.profile-menu {
+  position: relative;
+  z-index: 5200;
+}
+
+.profile-dropdown {
+  z-index: 5201;
+  background: #0f172a;
+  border-color: rgba(148, 163, 184, 0.32);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
+}
+
+.calendar,
+.day-column,
+.time-grid {
+  z-index: 1;
+}
+
+.event {
+  z-index: 10;
+}
+
+.event:hover {
+  z-index: 12;
+}
+
+.current-time-line {
+  z-index: 20;
+}
+
+.modal-backdrop {
+  z-index: 6000;
+}
+
+.modal {
+  z-index: 6001;
+}
+
+.ics-modal {
+  z-index: 6000;
+}
+
+.ics-modal-card {
+  position: relative;
+}
+
+.ics-modal-header,
+.modal-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.ics-modal-header h2,
+.modal-title-row h2 {
+  margin: 0;
+}
+
+.ics-modal-close,
+.modal-close-btn {
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(148, 163, 184, 0.36);
+  background: rgba(15, 23, 42, 0.06);
+  color: inherit;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.ics-modal-close:hover,
+.modal-close-btn:hover {
+  border-color: rgba(56, 189, 248, 0.65);
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.help-modal {
+  width: min(560px, 100%);
+}
+
+.help-copy {
+  display: grid;
+  gap: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+  max-height: min(58vh, 520px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.help-copy p {
+  margin: 0;
+}
+
+.event.event-movable {
+  cursor: grab;
+}
+
+.event.event-movable:active,
+.event.dragging {
+  cursor: grabbing;
+}
+
+.event.dragging {
+  opacity: 0.52;
+  outline: 2px solid rgba(255, 255, 255, 0.88);
+}
+
+.day-column.move-target {
+  background: rgba(56, 189, 248, 0.13);
+  box-shadow: inset 0 0 0 2px rgba(56, 189, 248, 0.55);
+}
+
+@media (max-width: 768px) {
+  header {
+    padding: 10px 12px;
+    align-items: center;
+  }
+
+  header h1,
+  header .subtitle,
+  .hint.calendar-hint,
+  .planner-note,
+  .footer-note {
+    display: none;
+  }
+
+  .toolbar {
+    width: 100%;
+    margin-left: 0;
+    padding-top: 0;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  #quickIcsSyncBtn,
+  #todoDrawerToggleBtn {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 42px;
+    padding-inline: 10px;
+  }
+
+  .profile-button {
+    width: 42px;
+    height: 42px;
+    min-height: 42px;
+  }
+
+  .app {
+    padding-top: 10px;
+  }
+
+  .cloud-panel {
+    margin-bottom: 10px;
+  }
+
+  .planner-switch,
+  .week-nav,
+  .view-switch {
+    gap: 6px;
+  }
+
+  .profile-dropdown {
+    position: fixed;
+    top: 58px;
+    right: 10px;
+    width: min(320px, calc(100vw - 20px));
+    max-height: calc(100vh - 76px);
+    overflow: auto;
+  }
+
+  .help-modal {
+    max-height: calc(100vh - 36px);
+  }
 }
 
  

@@ -31,6 +31,7 @@
           <div class="profile-actions">
   <button class="ghost" id="profileAccountBtn" type="button">Kontoinformationen</button>
   <button class="ghost" id="openIcsModalBtn" type="button">ICS-Kalender verbinden</button>
+  <button class="ghost" id="profileHelpBtn" type="button">Hilfe</button>
   <button class="danger" id="profileLogoutBtn" type="button">Ausloggen</button>
 </div>
         </div>
@@ -392,10 +393,28 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="helpModalBackdrop">
+    <div class="modal help-modal">
+      <div class="modal-title-row">
+        <h2>Hilfe</h2>
+        <button class="modal-close-btn" id="closeHelpModalBtn" type="button" aria-label="Schließen">×</button>
+      </div>
+      <div class="help-copy">
+        <p>Wähle eine Kategorie und ziehe über freie Zeitfelder, um neue Blöcke zu setzen. Doppelklick auf einen Block öffnet die Bearbeitung.</p>
+        <p>Checkboxen im Kalender und im Habit Tracker sind synchron. Fahrt wird nicht getrackt, Orga schon.</p>
+        <p>Mit dem To-do Planner sammelst du Aufgaben und planst sie später als Kalenderblock ein. Mit der Tages-Taskansicht kannst du ohne Kalender nur abhaken.</p>
+        <p>Cloud Sync speichert deine Planung geräteübergreifend, sobald du eingeloggt bist. Im lokalen Modus bleiben Daten nur in diesem Browser.</p>
+      </div>
+    </div>
+  </div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <div id="icsModal" class="ics-modal hidden">
     <div class="ics-modal-card">
-      <h2>ICS-Kalender verbinden</h2>
+      <div class="ics-modal-header">
+        <h2>ICS-Kalender verbinden</h2>
+        <button id="closeIcsModalXBtn" class="ics-modal-close" type="button" aria-label="Schließen">×</button>
+      </div>
       <p>Füge deinen Outlook-ICS-Link ein. Die Termine werden nur gelesen und in deinem Planner angezeigt.</p>
 
       <input

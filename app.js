@@ -70,6 +70,8 @@
   let dragDay = null;
   let dragStart = null;
   let dragEnd = null;
+  let movingEventId = null;
+  let movingOverDay = null;
   let editingId = null;
   let editingCategoryId = null;
   let pendingTodoId = null;
@@ -228,7 +230,10 @@
   const profileName = document.getElementById('profileName');
   const profileSub = document.getElementById('profileSub');
   const profileAccountBtn = document.getElementById('profileAccountBtn');
+  const profileHelpBtn = document.getElementById('profileHelpBtn');
   const profileLogoutBtn = document.getElementById('profileLogoutBtn');
+  const helpModalBackdrop = document.getElementById('helpModalBackdrop');
+  const closeHelpModalBtn = document.getElementById('closeHelpModalBtn');
   const categoryModalBackdrop = document.getElementById('categoryModalBackdrop');
   const categoryModalTitle = document.getElementById('categoryModalTitle');
   const categoryLabel = document.getElementById('categoryLabel');
@@ -1317,6 +1322,7 @@
       col.className = `day-column ${isWeekMode() && dayDateKey === today.dateKey ? 'today' : ''}`;
       col.style.gridColumn = String(d + 2);
       col.dataset.day = d;
+      setupEventDayDropTarget(col, d);
 
       for (let s = 0; s < slotsPerDay; s++) {
         const slot = document.createElement('div');
@@ -1608,6 +1614,59 @@
       if (s >= a && s <= b) slot.classList.add('selected');
     });
   }
+
+  function canMoveEventAcrossDays(ev) {
+    return Boolean(ev)
+      && isWeekMode()
+      && !ev.allDay
+      && !isIntegratedChild(ev)
+      && hasScheduledTime(ev);
+  }
+
+  function clearMoveDayHighlight() {
+    document.querySelectorAll('.day-column.move-target').forEach(col => col.classList.remove('move-target'));
+    movingOverDay = null;
+  }
+
+  function moveEventToDay(eventId, day) {
+    const ev = currentEvents().find(item => item.id === eventId);
+    const nextDay = clamp(Number(day), 0, 6);
+    if (!canMoveEventAcrossDays(ev) || Number(ev.day) === nextDay) return false;
+
+    ev.day = nextDay;
+    ev.date = isTemplateMode() ? null : dateKey(getDayDate(nextDay));
+    if (ev.missingFromLastSync) ev.syncStatus = ev.syncStatus || 'local-moved';
+    syncEventAutoComplete(ev);
+    saveState();
+    renderAll();
+    return true;
+  }
+
+  function setupEventDayDropTarget(col, day) {
+    col.addEventListener('dragover', event => {
+      if (!movingEventId) return;
+      event.preventDefault();
+      if (movingOverDay !== day) {
+        clearMoveDayHighlight();
+        movingOverDay = day;
+      }
+      col.classList.add('move-target');
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    });
+
+    col.addEventListener('dragleave', event => {
+      if (!col.contains(event.relatedTarget)) col.classList.remove('move-target');
+    });
+
+    col.addEventListener('drop', event => {
+      if (!movingEventId) return;
+      event.preventDefault();
+      const eventId = event.dataTransfer?.getData('text/plain') || movingEventId;
+      clearMoveDayHighlight();
+      moveEventToDay(eventId, day);
+      movingEventId = null;
+    });
+  }
   function clearSelection() { document.querySelectorAll('.slot.selected').forEach(el => el.classList.remove('selected')); }
 
   function layoutDayEvents(events) {
@@ -1651,6 +1710,10 @@
     const div = document.createElement('div');
     div.className = `event ${isEventDone(ev) ? 'done' : ''} ${ev.missed ? 'missed' : ''} ${ev.source === 'extra' ? 'extra-event' : ''} ${ev.importSource === 'ics' ? 'external-calendar-event' : ''}`;
     div.dataset.id = ev.id;
+    if (canMoveEventAcrossDays(ev)) {
+      div.draggable = true;
+      div.classList.add('event-movable');
+    }
     const gap = 3;
     const laneCount = ev._laneCount || 1;
     const totalGap = (laneCount - 1) * gap;
@@ -1707,10 +1770,30 @@
   ${embeddedChildren}
   ${fulfillmentBadge}
   ${integratedBadge}`;
+    div.querySelectorAll('input, button, select, textarea, a').forEach(control => {
+      control.draggable = false;
+    });
 
     div.addEventListener('mousedown', e => e.stopPropagation());
     div.addEventListener('click', e => e.stopPropagation());
     div.addEventListener('dblclick', e => { e.preventDefault(); e.stopPropagation(); if (ev.editable !== false) openEditor(ev.id); });
+    div.addEventListener('dragstart', e => {
+      if (!canMoveEventAcrossDays(ev) || e.target.closest('input, button, select, textarea, a')) {
+        e.preventDefault();
+        return;
+      }
+      movingEventId = ev.id;
+      div.classList.add('dragging');
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', ev.id);
+      }
+    });
+    div.addEventListener('dragend', () => {
+      div.classList.remove('dragging');
+      movingEventId = null;
+      clearMoveDayHighlight();
+    });
     const checkbox = div.querySelector('.event-check');
 if (checkbox) {
   checkbox.addEventListener('click', e => {
@@ -1814,6 +1897,16 @@ return div;
   }
 
   function closeModal() { modalBackdrop.style.display = 'none'; editingId = null; pendingTodoId = null; presetSource = null; eventDraftSubtasks = []; }
+
+  function openHelpModal() {
+    if (!helpModalBackdrop) return;
+    profileMenu?.classList.remove('open');
+    helpModalBackdrop.style.display = 'flex';
+  }
+
+  function closeHelpModal() {
+    if (helpModalBackdrop) helpModalBackdrop.style.display = 'none';
+  }
 
 
   function renderEventDraftSubtasks() {
@@ -3360,6 +3453,11 @@ function toggleMissed(eventId) {
       ? `Eingeloggt als ${cloudUser.email || 'Nutzer'}\nCloud Sync ist aktiv.`
       : 'Lokaler Modus aktiv. Deine Daten werden nur in diesem Browser gespeichert.');
   };
+  if (profileHelpBtn) profileHelpBtn.onclick = openHelpModal;
+  if (closeHelpModalBtn) closeHelpModalBtn.onclick = closeHelpModal;
+  if (helpModalBackdrop) helpModalBackdrop.addEventListener('click', e => {
+    if (e.target === helpModalBackdrop) closeHelpModal();
+  });
   document.addEventListener('click', (e) => {
     if (profileMenu && !profileMenu.contains(e.target)) profileMenu.classList.remove('open');
   });
@@ -3637,7 +3735,10 @@ function toggleMissed(eventId) {
 
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      if (modalBackdrop.style.display === 'flex') closeModal();
+      const icsModal = document.getElementById('icsModal');
+      if (icsModal && !icsModal.classList.contains('hidden')) icsModal.classList.add('hidden');
+      else if (helpModalBackdrop?.style.display === 'flex') closeHelpModal();
+      else if (modalBackdrop.style.display === 'flex') closeModal();
       else if (state.todoDrawerOpen) {
         state.todoDrawerOpen = false;
         saveState();
@@ -4160,6 +4261,7 @@ async function syncSavedIcsCalendar() {
   function initIcsCalendarIntegration() {
     const openBtn = document.getElementById('openIcsModalBtn');
     const closeBtn = document.getElementById('closeIcsModalBtn');
+    const closeXBtn = document.getElementById('closeIcsModalXBtn');
     const syncBtn = document.getElementById('syncIcsBtn');
     const quickSyncBtn = document.getElementById('quickIcsSyncBtn');
     const removeBtn = document.getElementById('removeIcsBtn');
@@ -4191,13 +4293,14 @@ async function syncSavedIcsCalendar() {
       });
     }
 
-    if (closeBtn && modal) {
-      closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
-    }
+    const closeIcsModal = () => modal?.classList.add('hidden');
+
+    if (closeBtn && modal) closeBtn.addEventListener('click', closeIcsModal);
+    if (closeXBtn && modal) closeXBtn.addEventListener('click', closeIcsModal);
 
     if (modal) {
       modal.addEventListener('click', (event) => {
-        if (event.target === modal) modal.classList.add('hidden');
+        if (event.target === modal) closeIcsModal();
       });
     }
 
