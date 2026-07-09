@@ -72,6 +72,9 @@
   let dragEnd = null;
   let movingEventId = null;
   let movingOverDay = null;
+  let movingPointerOffsetY = 0;
+  let movingOriginalStart = null;
+  let movingOriginalEnd = null;
   let editingId = null;
   let editingCategoryId = null;
   let pendingTodoId = null;
@@ -719,9 +722,17 @@
     return acc;
   }, { total: 0, done: 0, missed: 0 });
 
-  const total = eventStats.total + dayTodos.length;
-  const done = eventStats.done + dayTodos.filter(todo => isTodoDone(todo)).length;
-  const missed = eventStats.missed;
+  const todoStats = dayTodos.reduce((acc, todo) => {
+    const progress = todoFulfillmentStats(todo);
+    acc.total += progress.total;
+    acc.done += progress.done;
+    acc.missed += progress.missed;
+    return acc;
+  }, { total: 0, done: 0, missed: 0 });
+
+  const total = eventStats.total + todoStats.total;
+  const done = eventStats.done + todoStats.done;
+  const missed = eventStats.missed + todoStats.missed;
   const open = Math.max(0, total - done - missed);
 
   return { total, done, missed, open, percent: makePercent(done, total) };
@@ -808,6 +819,19 @@
   function isTodoDone(todo) {
     syncTodoAutoComplete(todo);
     return Boolean(todo.done || todo.status === 'done');
+  }
+
+  function todoFulfillmentStats(todo) {
+    if (!todo) return { total: 0, done: 0, missed: 0, open: 0, percent: 0 };
+    syncTodoAutoComplete(todo);
+    const subItems = Array.isArray(todo.subtasks)
+      ? todo.subtasks.map(sub => ({ done: Boolean(sub.done), missed: Boolean(sub.missed) }))
+      : [];
+    const items = [{ done: isTodoDone(todo), missed: false }, ...subItems];
+    const total = items.length;
+    const done = items.filter(item => item.done && !item.missed).length;
+    const missed = items.filter(item => item.missed && !item.done).length;
+    return { total, done, missed, open: Math.max(0, total - done - missed), percent: makePercent(done, total) };
   }
 
   function todoCompletionStats() {
@@ -1461,6 +1485,7 @@
       event.preventDefault();
       event.stopPropagation();
     }
+    if (state.openHeaderTodoDay === null || state.openHeaderTodoDay === undefined) return;
     state.openHeaderTodoDay = null;
     saveState();
     renderAll();
@@ -1471,6 +1496,9 @@
       event.preventDefault();
       event.stopPropagation();
     }
+    if (weekSettings) weekSettings.classList.remove('open');
+    if (profileMenu) profileMenu.classList.remove('open');
+    if (drawerHabitPanel) drawerHabitPanel.classList.remove('filter-open');
     state.activeHabitDay = clamp(Number(dayIndex), 0, 6);
     state.openHeaderTodoDay = null;
     state.todoDrawerOpen = true;
@@ -1636,10 +1664,21 @@
     movingOverDay = null;
   }
 
+  function resetEventMoveState() {
+    movingEventId = null;
+    movingPointerOffsetY = 0;
+    movingOriginalStart = null;
+    movingOriginalEnd = null;
+    clearMoveDayHighlight();
+  }
+
   function eventStartSlotFromDrop(dayColumn, event) {
     const rect = dayColumn.getBoundingClientRect();
-    const rawSlot = (event.clientY - rect.top) / cellHeight();
-    return clamp(Math.round(rawSlot), 0, slotsPerDay);
+    const measuredSlotHeight = rect.height / slotsPerDay;
+    const pixelsPerSlot = Number.isFinite(measuredSlotHeight) && measuredSlotHeight > 0 ? measuredSlotHeight : cellHeight();
+    const topEdgeY = event.clientY - movingPointerOffsetY;
+    const rawSlot = (topEdgeY - rect.top) / pixelsPerSlot;
+    return Math.round(rawSlot);
   }
 
   function moveEventToSlot(eventId, day, startSlot) {
@@ -1647,8 +1686,10 @@
     const nextDay = clamp(Number(day), 0, 6);
     if (!canMoveEventAcrossDays(ev)) return false;
 
-    const duration = Number(ev.end) - Number(ev.start);
-    const nextStart = clamp(Number(startSlot), 0, slotsPerDay);
+    const originalStart = Number.isFinite(Number(movingOriginalStart)) ? Number(movingOriginalStart) : Number(ev.start);
+    const originalEnd = Number.isFinite(Number(movingOriginalEnd)) ? Number(movingOriginalEnd) : Number(ev.end);
+    const duration = originalEnd - originalStart;
+    const nextStart = Number(startSlot);
     const nextEnd = nextStart + duration;
     if (!Number.isFinite(duration) || duration <= 0 || nextStart < 0 || nextEnd > slotsPerDay) return false;
     if (Number(ev.day) === nextDay && Number(ev.start) === nextStart && Number(ev.end) === nextEnd) return false;
@@ -1687,7 +1728,7 @@
       const targetStart = eventStartSlotFromDrop(col, event);
       clearMoveDayHighlight();
       moveEventToSlot(eventId, day, targetStart);
-      movingEventId = null;
+      resetEventMoveState();
     });
   }
   function clearSelection() { document.querySelectorAll('.slot.selected').forEach(el => el.classList.remove('selected')); }
@@ -1805,7 +1846,11 @@
         e.preventDefault();
         return;
       }
+      const rect = div.getBoundingClientRect();
       movingEventId = ev.id;
+      movingPointerOffsetY = clamp(e.clientY - rect.top, 0, Math.max(rect.height, 0));
+      movingOriginalStart = Number(ev.start);
+      movingOriginalEnd = Number(ev.end);
       div.classList.add('dragging');
       if (e.dataTransfer) {
         e.dataTransfer.effectAllowed = 'move';
@@ -1814,8 +1859,7 @@
     });
     div.addEventListener('dragend', () => {
       div.classList.remove('dragging');
-      movingEventId = null;
-      clearMoveDayHighlight();
+      resetEventMoveState();
     });
     const checkbox = div.querySelector('.event-check');
 if (checkbox) {
@@ -1929,6 +1973,13 @@ return div;
 
   function closeHelpModal() {
     if (helpModalBackdrop) helpModalBackdrop.style.display = 'none';
+  }
+
+  function closeAllPopovers() {
+    if (weekSettings) weekSettings.classList.remove('open');
+    if (profileMenu) profileMenu.classList.remove('open');
+    if (drawerHabitPanel) drawerHabitPanel.classList.remove('filter-open');
+    closeHeaderTodos();
   }
 
 
@@ -2330,6 +2381,8 @@ return div;
 
     const routineList = dayEvents.filter(ev => ev.source !== 'extra' && state.categories[ev.categoryId]?.habit);
     const scheduledTodos = dayEvents.filter(ev => ev.source === 'extra');
+    const routineStats = eventListProgressStats(routineList);
+    const scheduledStats = eventListProgressStats(scheduledTodos);
 
     if (drawerDayTodos?.parentElement === habitList) drawerDayTodos.remove();
     habitList.innerHTML = '';
@@ -2342,7 +2395,7 @@ return div;
       routineSection.innerHTML = `
         <div class="drawer-task-section-head">
           <span>Habits / Routine</span>
-          <span class="drawer-section-badge">${routineList.filter(isEventDone).length}/${routineList.length} · ${routineList.filter(ev => ev.missed).length}!</span>
+          <span class="drawer-section-badge">${routineStats.done}/${routineStats.total} · ${routineStats.missed}!</span>
         </div>
         <div class="drawer-task-section-sub">Feste Bestandteile deiner Routine-Vorlage. Orange markiert.</div>`;
       if (!routineList.length) {
@@ -2360,7 +2413,7 @@ return div;
       scheduledSection.innerHTML = `
         <div class="drawer-task-section-head">
           <span>To-dos mit Uhrzeit</span>
-          <span class="drawer-section-badge">${scheduledTodos.filter(isEventDone).length}/${scheduledTodos.length} · ${scheduledTodos.filter(ev => ev.missed).length}!</span>
+          <span class="drawer-section-badge">${scheduledStats.done}/${scheduledStats.total} · ${scheduledStats.missed}!</span>
         </div>
         <div class="drawer-task-section-sub">Spontane oder geplante Aufgaben, die schon als Kalenderblock eingeplant sind.</div>`;
       if (!scheduledTodos.length) {
@@ -2412,11 +2465,28 @@ return div;
       acc.missed += progress.missed;
       return acc;
     }, { total: 0, done: 0, missed: 0 });
-    const total = eventStats.total + untimedItems.length;
-    const done = eventStats.done + untimedItems.filter(todo => isTodoDone(todo)).length;
-    const missed = eventStats.missed;
+    const todoStats = untimedItems.reduce((acc, todo) => {
+      const progress = todoFulfillmentStats(todo);
+      acc.total += progress.total;
+      acc.done += progress.done;
+      acc.missed += progress.missed;
+      return acc;
+    }, { total: 0, done: 0, missed: 0 });
+    const total = eventStats.total + todoStats.total;
+    const done = eventStats.done + todoStats.done;
+    const missed = eventStats.missed + todoStats.missed;
     const open = Math.max(total - done - missed, 0);
     return { total, done, missed, open, percent: makePercent(done, total) };
+  }
+
+  function eventListProgressStats(events) {
+    return events.reduce((acc, ev) => {
+      const progress = eventProgressStats(ev);
+      acc.total += progress.total;
+      acc.done += progress.done;
+      acc.missed += progress.missed;
+      return acc;
+    }, { total: 0, done: 0, missed: 0 });
   }
 
 
@@ -2608,11 +2678,16 @@ return div;
     const d = state.activeHabitDay;
     taskTitle.textContent = `${days[d]} ${formatShortDate(getDayDate(d))} · Tages-Tasks`;
     const all = currentWeekEvents()
-      .filter(ev => ev.day === d && state.categories[ev.categoryId]?.habit)
+      .filter(ev => ev.day === d && !isIntegratedChild(ev) && state.categories[ev.categoryId]?.habit)
       .sort((a, b) => a.start - b.start || a.end - b.end);
-    const done = all.filter(isEventDone).length;
-    const missed = all.filter(ev => ev.missed).length;
-    taskProgress.textContent = `${done}/${all.length} erledigt · ${missed} nicht eingehalten`;
+    const stats = all.reduce((acc, ev) => {
+      const progress = eventProgressStats(ev);
+      acc.total += progress.total;
+      acc.done += progress.done;
+      acc.missed += progress.missed;
+      return acc;
+    }, { total: 0, done: 0, missed: 0 });
+    taskProgress.textContent = `${stats.done}/${stats.total} erledigt · ${stats.missed} nicht eingehalten`;
     taskList.innerHTML = '';
 
     if (!all.length) {
@@ -2696,11 +2771,12 @@ return div;
   // ==================================================
 
   function routineTrackingStats() {
-    const trackableTemplate = state.templateEvents.filter(ev => state.categories[ev.categoryId]?.habit);
+    const trackableTemplate = state.templateEvents.filter(ev => !isIntegratedChild(ev) && state.categories[ev.categoryId]?.habit);
     const weekEvents = currentWeekEvents();
     const stats = trackableTemplate.reduce((acc, templateEv) => {
       const weekEv = weekEvents.find(ev => ev.source === 'routine' && ev.templateEventId === templateEv.id);
-      const progress = weekEv ? eventProgressStats(weekEv, weekEvents) : { total: 1, done: 0 };
+      const templateProgress = eventProgressStats(templateEv, state.templateEvents);
+      const progress = weekEv ? eventProgressStats(weekEv, weekEvents) : { total: templateProgress.total, done: 0 };
       acc.total += progress.total;
       acc.done += progress.done;
       return acc;
@@ -2764,14 +2840,17 @@ return div;
       const dayIndex = (date.getDay() + 6) % 7;
       const weekEvents = weekEventsForKey(weekKey);
       state.templateEvents
-        .filter(ev => ev.day === dayIndex && state.categories[ev.categoryId]?.habit)
+        .filter(ev => ev.day === dayIndex && !isIntegratedChild(ev) && state.categories[ev.categoryId]?.habit)
         .forEach(templateEv => {
           const weekEv = weekEvents.find(ev => ev.source === 'routine' && ev.templateEventId === templateEv.id);
           const scoreSource = weekEv || templateEv;
-          const weights = weekEv ? eventTrackingWeight(scoreSource, weekEvents) : { totalWeight: 1, doneWeight: 0, missedWeight: 0, score: 0 };
+          const templateProgress = eventProgressStats(templateEv, state.templateEvents);
+          const weights = weekEv
+            ? eventTrackingWeight(scoreSource, weekEvents)
+            : { totalWeight: templateProgress.total, doneWeight: 0, missedWeight: 0, score: 0 };
           items.push({
             type: 'routine',
-            done: Boolean(weekEv?.done),
+            done: isEventDone(weekEv),
             score: weights.score,
             totalWeight: weights.totalWeight,
             doneWeight: weights.doneWeight,
@@ -3454,6 +3533,8 @@ function toggleMissed(eventId) {
   if (weekSettingsBtn && weekSettings) {
     weekSettingsBtn.onclick = (e) => {
       e.stopPropagation();
+      if (profileMenu) profileMenu.classList.remove('open');
+      if (drawerHabitPanel) drawerHabitPanel.classList.remove('filter-open');
       weekSettings.classList.toggle('open');
     };
   }
@@ -3467,6 +3548,8 @@ function toggleMissed(eventId) {
   logoutBtn.onclick = signOut;
   if (profileButton) profileButton.onclick = (e) => {
     e.stopPropagation();
+    if (weekSettings) weekSettings.classList.remove('open');
+    if (drawerHabitPanel) drawerHabitPanel.classList.remove('filter-open');
     profileMenu.classList.toggle('open');
   };
   if (profileLogoutBtn) profileLogoutBtn.onclick = signOut;
@@ -3487,10 +3570,12 @@ function toggleMissed(eventId) {
   skipLoginBtn.onclick = skipLoginLocal;
   authPassword.addEventListener('keydown', e => { if (e.key === 'Enter') signInWithPassword(); });
 
-  drawerHabitBtn.onclick = () => { state.drawerView = 'habit'; saveState(); renderTodoDrawer(); renderHabits(); };
-  drawerTodoBtn.onclick = () => { state.drawerView = 'todo'; saveState(); renderTodoDrawer(); setTimeout(() => todoInput.focus(), 80); };
+  drawerHabitBtn.onclick = () => { closeAllPopovers(); state.drawerView = 'habit'; saveState(); renderTodoDrawer(); renderHabits(); };
+  drawerTodoBtn.onclick = () => { closeAllPopovers(); state.drawerView = 'todo'; saveState(); renderTodoDrawer(); setTimeout(() => todoInput.focus(), 80); };
   if (drawerFilterMobileToggle && drawerHabitPanel) {
     drawerFilterMobileToggle.onclick = () => {
+      if (weekSettings) weekSettings.classList.remove('open');
+      if (profileMenu) profileMenu.classList.remove('open');
       drawerHabitPanel.classList.toggle('filter-open');
     };
   }
@@ -3506,6 +3591,7 @@ function toggleMissed(eventId) {
     drawerQuickAddBtn.onclick = e => {
       e.preventDefault();
       e.stopPropagation();
+      closeAllPopovers();
       if (state.drawerView === 'todo') {
         state.todoDrawerOpen = true;
         state.drawerView = 'todo';
@@ -3540,12 +3626,12 @@ function toggleMissed(eventId) {
       changeDrawerDay(diffX > 0 ? -1 : 1);
     }, { passive: true });
   }
-  drawerDaySelect.onchange = () => { state.activeHabitDay = Number(drawerDaySelect.value); updateDrawerFilterMobileLabel(); saveState(); renderAll(); };
+  drawerDaySelect.onchange = () => { closeAllPopovers(); state.activeHabitDay = Number(drawerDaySelect.value); updateDrawerFilterMobileLabel(); saveState(); renderAll(); };
   drawerHabitFilter.onchange = () => { state.drawerHabitFilter = drawerHabitFilter.value; updateDrawerFilterMobileLabel(); saveState(); renderHabits(); };
-  if (drawerTaskAllBtn) drawerTaskAllBtn.onclick = () => { state.drawerTaskFilter = 'all'; saveState(); renderAll(); };
-  if (drawerTaskTimedBtn) drawerTaskTimedBtn.onclick = () => { state.drawerTaskFilter = 'timed'; saveState(); renderAll(); };
-  if (drawerTaskUntimedBtn) drawerTaskUntimedBtn.onclick = () => { state.drawerTaskFilter = 'untimed'; saveState(); renderAll(); };
-  if (drawerTaskFilterSelect) drawerTaskFilterSelect.onchange = () => { state.drawerTaskFilter = drawerTaskFilterSelect.value; saveState(); renderAll(); };
+  if (drawerTaskAllBtn) drawerTaskAllBtn.onclick = () => { closeAllPopovers(); state.drawerTaskFilter = 'all'; saveState(); renderAll(); };
+  if (drawerTaskTimedBtn) drawerTaskTimedBtn.onclick = () => { closeAllPopovers(); state.drawerTaskFilter = 'timed'; saveState(); renderAll(); };
+  if (drawerTaskUntimedBtn) drawerTaskUntimedBtn.onclick = () => { closeAllPopovers(); state.drawerTaskFilter = 'untimed'; saveState(); renderAll(); };
+  if (drawerTaskFilterSelect) drawerTaskFilterSelect.onchange = () => { closeAllPopovers(); state.drawerTaskFilter = drawerTaskFilterSelect.value; saveState(); renderAll(); };
   trackingTodayBtn.onclick = () => { state.trackingView = 'today'; saveState(); renderAll(); };
   trackingWeekBtn.onclick = () => { state.trackingView = 'week'; saveState(); renderAll(); };
   trackingMonthBtn.onclick = () => { state.trackingView = 'month'; saveState(); renderAll(); };
@@ -3553,10 +3639,11 @@ function toggleMissed(eventId) {
   trackingDateInput.onchange = () => { state.trackingDate = trackingDateInput.value || dateKey(new Date()); saveState(); renderAll(); };
   trackingFilterSelect.onchange = () => { state.trackingFilter = trackingFilterSelect.value; saveState(); renderTracking(); };
   calendarModeBtn.onclick = () => { state.viewMode = 'calendar'; saveState(); renderAll(); };
-  taskModeBtn.onclick = () => { state.viewMode = 'tasks'; saveState(); renderAll(); };
+  taskModeBtn.onclick = () => { closeAllPopovers(); state.viewMode = 'tasks'; saveState(); renderAll(); };
   document.getElementById('taskBackToCalendarBtn').onclick = () => { state.viewMode = 'calendar'; saveState(); renderAll(); };
   taskDaySelect.onchange = () => { state.activeHabitDay = Number(taskDaySelect.value); saveState(); renderAll(); };
   todoDrawerToggleBtn.onclick = () => {
+    closeAllPopovers();
     const willOpen = !state.todoDrawerOpen;
     state.todoDrawerOpen = willOpen;
     if (willOpen) state.drawerView = 'habit';
@@ -3573,6 +3660,13 @@ function toggleMissed(eventId) {
     saveState();
     renderTodoDrawer();
   };
+  if (todoDrawer) {
+    todoDrawer.addEventListener('scroll', () => {
+      if (weekSettings) weekSettings.classList.remove('open');
+      if (profileMenu) profileMenu.classList.remove('open');
+      if (drawerHabitPanel) drawerHabitPanel.classList.remove('filter-open');
+    }, { passive: true });
+  }
   document.getElementById('addCategoryBtn').onclick = () => openCategoryEditor(null);
 
   cancelCategoryModalBtn.onclick = closeCategoryModal;
