@@ -1979,6 +1979,7 @@ return div;
     if (weekSettings) weekSettings.classList.remove('open');
     if (profileMenu) profileMenu.classList.remove('open');
     if (drawerHabitPanel) drawerHabitPanel.classList.remove('filter-open');
+    if (weekDateInput) weekDateInput.blur();
     closeHeaderTodos();
   }
 
@@ -3213,6 +3214,13 @@ return div;
   function renderTodoDrawer() {
     const isOpen = Boolean(state.todoDrawerOpen);
     const view = state.drawerView === 'todo' ? 'todo' : 'habit';
+    if (isOpen) {
+      if (weekSettings) weekSettings.classList.remove('open');
+      if (profileMenu) profileMenu.classList.remove('open');
+      if (drawerHabitPanel) drawerHabitPanel.classList.remove('filter-open');
+      if (weekDateInput) weekDateInput.blur();
+      state.openHeaderTodoDay = null;
+    }
     document.body.classList.toggle('todo-drawer-open', isOpen);
     todoDrawerToggleBtn.classList.toggle('active', isOpen);
     todoDrawerToggleBtn.setAttribute('aria-expanded', String(isOpen));

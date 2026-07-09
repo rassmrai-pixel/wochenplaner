@@ -2713,6 +2713,27 @@ header {
   z-index: 5200;
 }
 
+body.todo-drawer-open .todo-drawer-backdrop {
+  z-index: 5300;
+}
+
+body.todo-drawer-open .todo-drawer {
+  z-index: 5400;
+}
+
+body.todo-drawer-open header,
+body.todo-drawer-open .toolbar,
+body.todo-drawer-open .week-nav,
+body.todo-drawer-open .week-settings,
+body.todo-drawer-open .profile-menu {
+  z-index: 500;
+}
+
+body.todo-drawer-open .week-settings.open .week-settings-menu,
+body.todo-drawer-open .profile-menu.open .profile-dropdown {
+  display: none;
+}
+
 .profile-dropdown {
   z-index: 5201;
   background: #0f172a;
