@@ -1140,6 +1140,14 @@
       };
       legend.appendChild(pill);
     });
+
+    const addPill = document.createElement('button');
+    addPill.type = 'button';
+    addPill.className = 'pill add-category-pill';
+    addPill.title = 'Neue Kategorie erstellen';
+    addPill.textContent = '+';
+    addPill.onclick = () => openCategoryEditor(null);
+    legend.appendChild(addPill);
   }
 
 
@@ -1628,12 +1636,26 @@
     movingOverDay = null;
   }
 
-  function moveEventToDay(eventId, day) {
+  function eventStartSlotFromDrop(dayColumn, event) {
+    const rect = dayColumn.getBoundingClientRect();
+    const rawSlot = (event.clientY - rect.top) / cellHeight();
+    return clamp(Math.round(rawSlot), 0, slotsPerDay);
+  }
+
+  function moveEventToSlot(eventId, day, startSlot) {
     const ev = currentEvents().find(item => item.id === eventId);
     const nextDay = clamp(Number(day), 0, 6);
-    if (!canMoveEventAcrossDays(ev) || Number(ev.day) === nextDay) return false;
+    if (!canMoveEventAcrossDays(ev)) return false;
+
+    const duration = Number(ev.end) - Number(ev.start);
+    const nextStart = clamp(Number(startSlot), 0, slotsPerDay);
+    const nextEnd = nextStart + duration;
+    if (!Number.isFinite(duration) || duration <= 0 || nextStart < 0 || nextEnd > slotsPerDay) return false;
+    if (Number(ev.day) === nextDay && Number(ev.start) === nextStart && Number(ev.end) === nextEnd) return false;
 
     ev.day = nextDay;
+    ev.start = nextStart;
+    ev.end = nextEnd;
     ev.date = isTemplateMode() ? null : dateKey(getDayDate(nextDay));
     if (ev.missingFromLastSync) ev.syncStatus = ev.syncStatus || 'local-moved';
     syncEventAutoComplete(ev);
@@ -1662,8 +1684,9 @@
       if (!movingEventId) return;
       event.preventDefault();
       const eventId = event.dataTransfer?.getData('text/plain') || movingEventId;
+      const targetStart = eventStartSlotFromDrop(col, event);
       clearMoveDayHighlight();
-      moveEventToDay(eventId, day);
+      moveEventToSlot(eventId, day, targetStart);
       movingEventId = null;
     });
   }
