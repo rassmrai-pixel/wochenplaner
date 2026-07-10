@@ -306,6 +306,22 @@
         provider: ev.provider || null,
         externalId: ev.externalId || null,
         externalCalendarId: ev.externalCalendarId || null,
+        sourceUid: ev.sourceUid || ev.uid || null,
+        sourceKey: ev.sourceKey || null,
+        recurrenceId: ev.recurrenceId || null,
+        occurrenceStart: ev.occurrenceStart || null,
+        originalStart: ev.originalStart || null,
+        originalEnd: ev.originalEnd || null,
+        displayDate: ev.displayDate || ev.date || null,
+        splitFromMultiDay: Boolean(ev.splitFromMultiDay),
+        importedFromIcs: Boolean(ev.importedFromIcs || ev.importSource === 'ics' || ev.provider === 'ics'),
+        status: ev.status || null,
+        sequence: ev.sequence || null,
+        dtstamp: ev.dtstamp || null,
+        lastModified: ev.lastModified || null,
+        className: ev.className || null,
+        transp: ev.transp || null,
+        microsoftInstanceType: ev.microsoftInstanceType || null,
         sourceId: ev.sourceId || ev.externalCalendarId || ((ev.importSource === 'ics' || ev.provider === 'ics') ? DEFAULT_ICS_SOURCE_ID : null),
         editable: ev.editable ?? true,
         readOnly: ev.readOnly ?? false,
@@ -3990,9 +4006,10 @@ function summarizeIcsSkipReasons(skippedEvents) {
     const externalId = icsEvent.externalId || icsEvent.uid || icsEvent.id || `ics_${index}_${eventDateKey}_${isAllDay ? 'all-day' : start}`;
     const sourceId = icsEvent.sourceId || icsEvent.externalCalendarId || DEFAULT_ICS_SOURCE_ID;
     const duration = isAllDay ? null : Math.max(0, end - start);
+    const stableId = icsEvent.id || `ics_import_${externalId}`;
 
     return {
-  id: `ics_import_${externalId}`.replace(/[^a-zA-Z0-9_-]/g, '_'),
+  id: String(stableId).replace(/[^a-zA-Z0-9_-]/g, '_'),
   day,
   start,
   end,
@@ -4018,6 +4035,22 @@ function summarizeIcsSkipReasons(skippedEvents) {
   externalId,
   externalCalendarId: icsEvent.externalCalendarId || sourceId,
   sourceId,
+  sourceUid: icsEvent.sourceUid || icsEvent.uid || null,
+  sourceKey: icsEvent.sourceKey || null,
+  recurrenceId: icsEvent.recurrenceId || null,
+  occurrenceStart: icsEvent.occurrenceStart || null,
+  originalStart: icsEvent.originalStart || null,
+  originalEnd: icsEvent.originalEnd || null,
+  displayDate: icsEvent.displayDate || eventDateKey,
+  splitFromMultiDay: Boolean(icsEvent.splitFromMultiDay),
+  importedFromIcs: true,
+  status: icsEvent.status || null,
+  sequence: icsEvent.sequence || null,
+  dtstamp: icsEvent.dtstamp || null,
+  lastModified: icsEvent.lastModified || null,
+  className: icsEvent.className || null,
+  transp: icsEvent.transp || null,
+  microsoftInstanceType: icsEvent.microsoftInstanceType || null,
   isExternal: true,
   missingFromLastSync: false,
   syncStatus: 'synced',
@@ -4126,6 +4159,22 @@ function summarizeIcsSkipReasons(skippedEvents) {
       externalId: plannerEvent.externalId,
       externalCalendarId: plannerEvent.externalCalendarId,
       sourceId: plannerEvent.sourceId,
+      sourceUid: plannerEvent.sourceUid,
+      sourceKey: plannerEvent.sourceKey,
+      recurrenceId: plannerEvent.recurrenceId,
+      occurrenceStart: plannerEvent.occurrenceStart,
+      originalStart: plannerEvent.originalStart,
+      originalEnd: plannerEvent.originalEnd,
+      displayDate: plannerEvent.displayDate,
+      splitFromMultiDay: plannerEvent.splitFromMultiDay,
+      importedFromIcs: true,
+      status: plannerEvent.status,
+      sequence: plannerEvent.sequence,
+      dtstamp: plannerEvent.dtstamp,
+      lastModified: plannerEvent.lastModified,
+      className: plannerEvent.className,
+      transp: plannerEvent.transp,
+      microsoftInstanceType: plannerEvent.microsoftInstanceType,
       isExternal: true,
       readOnly: plannerEvent.readOnly,
       editable: existing.editable ?? plannerEvent.editable,
@@ -4167,8 +4216,9 @@ function summarizeIcsSkipReasons(skippedEvents) {
       || processedKeys.has(icsExternalKey(DEFAULT_ICS_SOURCE_ID, externalIdAlias))
     ));
     if (wasProcessed) return;
-    ev.missingFromLastSync = true;
-    ev.syncStatus = 'missing';
+    Object.keys(state.weekEventsByWeek).forEach((weekKey) => {
+      state.weekEventsByWeek[weekKey] = (state.weekEventsByWeek[weekKey] || []).filter(item => item.id !== ev.id);
+    });
     missingCount++;
   });
 
