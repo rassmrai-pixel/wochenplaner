@@ -1462,21 +1462,21 @@
   line-height: 1;
 }
 
-.event-has-embedded-children.details-collapsed .event-time,
-.event-has-embedded-children.details-collapsed .event-fulfillment-badge,
-.event-has-embedded-children.details-collapsed .event-integrated-badge,
-.event-has-embedded-children.details-collapsed .event-check,
-.event-has-embedded-children.details-collapsed .event-missed-btn,
-.event-has-embedded-children.details-collapsed .event-title,
-.event-has-embedded-children.details-collapsed .event-compact-meta {
+.event-has-start-aligned-child.details-collapsed .event-time,
+.event-has-start-aligned-child.details-collapsed .event-fulfillment-badge,
+.event-has-start-aligned-child.details-collapsed .event-integrated-badge,
+.event-has-start-aligned-child.details-collapsed .event-check,
+.event-has-start-aligned-child.details-collapsed .event-missed-btn,
+.event-has-start-aligned-child.details-collapsed .event-title,
+.event-has-start-aligned-child.details-collapsed .event-compact-meta {
   display: none;
 }
 
-.event-has-embedded-children.details-open .event-compact-meta {
+.event-has-start-aligned-child.details-open .event-compact-meta {
   display: none;
 }
 
-.event-has-embedded-children.details-collapsed .event-main-row {
+.event-has-start-aligned-child.details-collapsed .event-main-row {
   left: auto;
   right: 4px;
   width: 20px;
@@ -1517,7 +1517,7 @@
   transform: rotate(0deg);
 }
 
-.event-has-embedded-children.details-open .event-compact-toggle {
+.event-has-start-aligned-child.details-open .event-compact-toggle {
   transform: rotate(90deg);
 }
 

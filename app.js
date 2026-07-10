@@ -1838,10 +1838,11 @@
     const fulfillmentBadge = fulfillment.containedTotal ? `<div class="event-fulfillment-badge">${fulfillment.done}/${fulfillment.total}</div>` : '';
     const integratedBadge = integratedCount ? `<div class="event-integrated-badge">+${integratedCount} im Block</div>` : '';
     const scheduledChildren = layoutEmbeddedChildren(scheduledIntegratedEventsForEvent(ev));
-    const hasEmbeddedChildren = scheduledChildren.length > 0;
-    const compactDetailsOpen = hasEmbeddedChildren && openCompactEventIds.has(ev.id);
-    if (hasEmbeddedChildren) {
-      div.classList.add('event-has-embedded-children', compactDetailsOpen ? 'details-open' : 'details-collapsed');
+    const sameStartChildren = scheduledChildren.filter(child => Number(child.start) === Number(ev.start));
+    const hasStartAlignedChild = sameStartChildren.length > 0;
+    const compactDetailsOpen = hasStartAlignedChild && openCompactEventIds.has(ev.id);
+    if (hasStartAlignedChild) {
+      div.classList.add('event-has-start-aligned-child', compactDetailsOpen ? 'details-open' : 'details-collapsed');
     }
     const embeddedChildren = scheduledChildren.length ? `
       <div class="event-embedded-children">
@@ -1869,14 +1870,14 @@
             </div>`;
         }).join('')}
       </div>` : '';
-    const compactToggle = hasEmbeddedChildren ? `
+    const compactToggle = hasStartAlignedChild ? `
       <button
         class="event-compact-toggle"
         type="button"
         title="${compactDetailsOpen ? 'Details einklappen' : 'Details ausklappen'}"
         aria-expanded="${compactDetailsOpen ? 'true' : 'false'}"
       >&rsaquo;</button>` : '';
-    const compactMeta = hasEmbeddedChildren ? `<span class="event-compact-meta">${eventTime(ev)}${fulfillment.containedTotal ? ` · ${fulfillment.done}/${fulfillment.total}` : ''}</span>` : '';
+    const compactMeta = hasStartAlignedChild ? `<span class="event-compact-meta">${eventTime(ev)}${fulfillment.containedTotal ? ` · ${fulfillment.done}/${fulfillment.total}` : ''}</span>` : '';
 
     const trackable = isWeekMode() && Boolean(cat.habit);
     div.innerHTML = `
