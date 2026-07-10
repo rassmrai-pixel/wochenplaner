@@ -105,8 +105,84 @@ function pad2(value) {
   return String(value).padStart(2, "0");
 }
 
+function parseDateOnlyValue(value) {
+  const match = String(value || "").trim().match(/^(\d{4})-?(\d{2})-?(\d{2})$/);
+  if (!match) return null;
+  const [, year, month, day] = match;
+  return {
+    type: "date-only",
+    isDateOnly: true,
+    isDate: true,
+    year: Number(year),
+    month: Number(month),
+    day: Number(day),
+    hour: 0,
+    minute: 0,
+    second: 0,
+    timezone: null,
+    raw: String(value || "").trim()
+  };
+}
+
 function dateKeyFromParts(parts) {
   return `${String(parts.year).padStart(4, "0")}-${pad2(parts.month)}-${pad2(parts.day)}`;
+}
+
+function formatDateOnly(dateOnly) {
+  return dateKeyFromParts(dateOnly);
+}
+
+function addDaysToDateOnly(dateOnly, amount) {
+  let year = Number(dateOnly.year);
+  let month = Number(dateOnly.month);
+  let day = Number(dateOnly.day) + Number(amount || 0);
+
+  while (day > daysInMonth(year, month)) {
+    day -= daysInMonth(year, month);
+    month += 1;
+    if (month > 12) {
+      month = 1;
+      year += 1;
+    }
+  }
+
+  while (day < 1) {
+    month -= 1;
+    if (month < 1) {
+      month = 12;
+      year -= 1;
+    }
+    day += daysInMonth(year, month);
+  }
+
+  return {
+    ...dateOnly,
+    type: "date-only",
+    isDateOnly: true,
+    isDate: true,
+    year,
+    month,
+    day,
+    hour: 0,
+    minute: 0,
+    second: 0,
+    timezone: null,
+    date: `${String(year).padStart(4, "0")}-${pad2(month)}-${pad2(day)}`,
+    dateKey: `${String(year).padStart(4, "0")}-${pad2(month)}-${pad2(day)}`,
+    key: `${String(year).padStart(4, "0")}-${pad2(month)}-${pad2(day)}`,
+    time: null
+  };
+}
+
+function expandDateOnlyRangeExclusive(startDateOnly, endDateOnly) {
+  const dates = [];
+  let cursor = startDateOnly;
+  const endKey = formatDateOnly(endDateOnly);
+  while (compareDateKeys(formatDateOnly(cursor), endKey) < 0) {
+    dates.push(formatDateOnly(cursor));
+    cursor = addDaysToDateOnly(cursor, 1);
+  }
+  return dates;
 }
 
 function timeFromParts(parts) {
@@ -230,11 +306,10 @@ function parseIcsDateValue(property) {
   const isDate = property.params?.VALUE === "DATE" || /^\d{8}$/.test(value);
 
   if (isDate) {
-    const match = value.match(/^(\d{4})(\d{2})(\d{2})$/);
-    if (!match) return null;
-    const [, year, month, day] = match;
-    const parts = { year: Number(year), month: Number(month), day: Number(day), hour: 0, minute: 0, second: 0 };
-    return { ...parts, isDate: true, timezone, raw: value, dateKey: dateKeyFromParts(parts), time: null, key: dateKeyFromParts(parts) };
+    const dateOnly = parseDateOnlyValue(value);
+    if (!dateOnly) return null;
+    const date = formatDateOnly(dateOnly);
+    return { ...dateOnly, date, dateKey: date, time: null, key: date };
   }
 
   const match = value.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z)?$/);
@@ -315,7 +390,7 @@ function eventDateBounds(event) {
   const durationMs = parseIcsDuration(event.duration);
   let end = parseIcsDateValue(event.dtEnd);
   if (!end && durationMs && !start.isDate) end = addDurationToDateTime(start, durationMs);
-  if (!end && start.isDate) end = { ...start, dateKey: addDaysToDateKey(start.dateKey, 1), key: addDaysToDateKey(start.dateKey, 1) };
+  if (!end && start.isDateOnly) end = addDaysToDateOnly(start, 1);
   if (!end && !start.isDate) end = addDurationToDateTime(start, 60 * 60 * 1000);
   return { start, end, durationMs: durationMs || null };
 }
@@ -531,10 +606,19 @@ function expandMultiDayEventForDisplay(item) {
   };
 
   if (allDay) {
-    const endExclusive = end?.dateKey || addDaysToDateKey(start.dateKey, 1);
-    const days = [];
-    for (let date = start.dateKey; compareDateKeys(date, endExclusive) < 0; date = addDaysToDateKey(date, 1)) {
-      days.push({
+    const startDateOnly = start.isDateOnly ? start : parseDateOnlyValue(start.dateKey);
+    const endDateOnly = end?.isDateOnly ? end : parseDateOnlyValue(end?.dateKey) || addDaysToDateOnly(startDateOnly, 1);
+    const expandedDates = expandDateOnlyRangeExclusive(startDateOnly, endDateOnly);
+    console.log("ALL DAY RANGE DEBUG", {
+      uid: sourceUid,
+      summary: event.summary,
+      rawDtStart: event.dtStart?.raw || event.dtStart?.value || "",
+      rawDtEnd: event.dtEnd?.raw || event.dtEnd?.value || "",
+      parsedStart: formatDateOnly(startDateOnly),
+      parsedEndExclusive: formatDateOnly(endDateOnly),
+      expandedDates
+    });
+    return expandedDates.map(date => ({
         ...base,
         id: `${sourceUid}__${occurrenceStartKey}__${date}`,
         externalId: `${sourceUid}__${occurrenceStartKey}__${date}`,
@@ -544,9 +628,7 @@ function expandMultiDayEventForDisplay(item) {
         endTime: null,
         allDay: true,
         displayDate: date
-      });
-    }
-    return days;
+      }));
   }
 
   if (start.dateKey === end.dateKey) {
@@ -672,6 +754,10 @@ export {
   unfoldIcsLines,
   parseIcsProperty,
   parseIcsDateValue,
+  parseDateOnlyValue,
+  formatDateOnly,
+  addDaysToDateOnly,
+  expandDateOnlyRangeExclusive,
   parseRRule,
   parseIcsEvents,
   expandRecurringEvent,
