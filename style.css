@@ -1411,7 +1411,8 @@
       box-sizing: border-box;
     }
     .event:hover { outline: 2px solid rgba(255,255,255,0.82); z-index: 9; }
-    .event-title-row {
+    .event-title-row,
+    .event-main-row {
       position: absolute;
       top: 0;
       left: 5px;
@@ -1422,8 +1423,12 @@
       align-items: center;
       min-width: 0;
       line-height: var(--cell-h);
+      z-index: 8;
+      pointer-events: auto;
     }
     .event-check {
+      position: relative;
+      z-index: 9;
       width: 15px;
       height: 15px;
       flex: 0 0 auto;
@@ -1444,6 +1449,8 @@
   top: calc(var(--cell-h) + 2px);
   left: 5px;
   right: 5px;
+  z-index: 7;
+  pointer-events: none;
   font-size: 10px;
   opacity: 0.9;
   margin-top: 0;
@@ -1551,6 +1558,11 @@
 
 .event-embedded-child.done {
   opacity: 0.62;
+}
+
+.event-missed-btn {
+  position: relative;
+  z-index: 9;
 }
 
 .event-embedded-missed {

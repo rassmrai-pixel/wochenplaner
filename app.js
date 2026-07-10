@@ -1837,11 +1837,13 @@
     const fulfillmentBadge = fulfillment.containedTotal ? `<div class="event-fulfillment-badge">${fulfillment.done}/${fulfillment.total}</div>` : '';
     const integratedBadge = integratedCount ? `<div class="event-integrated-badge">+${integratedCount} im Block</div>` : '';
     const scheduledChildren = layoutEmbeddedChildren(scheduledIntegratedEventsForEvent(ev));
+    const embeddedTopOffset = Math.max(24, cellHeight() * 2 + 4);
     const embeddedChildren = scheduledChildren.length ? `
       <div class="event-embedded-children">
         ${scheduledChildren.map(child => {
           const slotHeight = cellHeight();
-          const top = Math.max(0, Number(child.start) - Number(ev.start)) * slotHeight;
+          const rawTop = Math.max(0, Number(child.start) - Number(ev.start)) * slotHeight;
+          const top = Math.max(embeddedTopOffset, rawTop);
           const height = Math.max(18, (Number(child.end) - Number(child.start)) * slotHeight - 2);
           const laneCount = Math.max(1, Number(child._embeddedLaneCount) || 1);
           const lane = Math.max(0, Number(child._embeddedLane) || 0);
@@ -1866,7 +1868,7 @@
 
     const trackable = isWeekMode() && Boolean(cat.habit);
     div.innerHTML = `
-  <div class="event-title-row">
+  <div class="event-main-row event-title-row">
     ${trackable ? `<input class="event-check" type="checkbox" ${isEventDone(ev) ? 'checked' : ''} ${eventAutoCompleteEnabled(ev) && (Array.isArray(ev.subtasks) && ev.subtasks.length || integratedCount) ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : 'title="Erledigt"'} />` : ''}
     ${trackable ? `<button class="event-missed-btn ${ev.missed ? 'active' : ''}" type="button" title="Nicht eingehalten">!</button>` : ''}
     <span class="event-title">${escapeHtml(ev.label)}</span>
