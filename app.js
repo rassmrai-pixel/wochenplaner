@@ -458,8 +458,33 @@
     return s;
   }
 
+  function isStorageQuotaError(error) {
+    return error?.name === 'QuotaExceededError' ||
+      error?.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+      error?.code === 22 ||
+      error?.code === 1014;
+  }
+
+  function serializedSizeInfo(value) {
+    const json = JSON.stringify(value);
+    const bytes = typeof Blob !== 'undefined' ? new Blob([json]).size : json.length;
+    return { json, bytes, chars: json.length };
+  }
+
   function saveState(next = state) {
-    localStorage.setItem(storageKeyV2, JSON.stringify(next));
+    const { json, bytes, chars } = serializedSizeInfo(next);
+    try {
+      localStorage.setItem(storageKeyV2, json);
+    } catch (error) {
+      if (isStorageQuotaError(error)) {
+        const mb = (bytes / (1024 * 1024)).toFixed(2);
+        throw new Error(`Der ICS-Import ist zu groß für den lokalen Browser-Speicher. Aktueller Planner-State: ca. ${mb} MB.`);
+      }
+      throw error;
+    }
+    if (bytes > 3.5 * 1024 * 1024) {
+      console.warn('[Storage] Planner-State wird groß', { bytes, chars });
+    }
     scheduleCloudSave(next);
   }
 
@@ -575,7 +600,7 @@
 
       if (data && data.data) {
         state = normalizeState(data.data);
-        localStorage.setItem(storageKeyV2, JSON.stringify(state));
+        saveState(state);
         renderAll();
         setCloudStatus(`Eingeloggt als ${cloudUser.email || 'Nutzer'} · Cloud-Daten geladen.`, 'signed-in');
       } else {
@@ -3993,6 +4018,61 @@ function summarizeIcsSkipReasons(skippedEvents) {
   }, {});
 }
 
+function cleanIcsStoredText(value, maxLength = 240) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+}
+
+function compactIcsPlannerEvent(plannerEvent, existing = null) {
+  const keepExisting = (field, fallback) => existing && existing[field] !== undefined ? existing[field] : fallback;
+  return {
+    id: plannerEvent.id,
+    day: plannerEvent.day,
+    start: plannerEvent.start,
+    end: plannerEvent.end,
+    date: plannerEvent.date,
+    allDay: plannerEvent.allDay,
+    label: plannerEvent.label,
+    title: plannerEvent.title,
+    categoryId: keepExisting('categoryId', plannerEvent.categoryId),
+    location: cleanIcsStoredText(plannerEvent.location, 160),
+    description: null,
+    duration: plannerEvent.duration,
+    completed: keepExisting('completed', false),
+    done: keepExisting('done', false),
+    missed: keepExisting('missed', false),
+    source: 'extra',
+    templateEventId: null,
+    importSource: 'ics',
+    provider: plannerEvent.provider || 'ics',
+    externalId: plannerEvent.externalId,
+    externalCalendarId: plannerEvent.externalCalendarId,
+    sourceId: plannerEvent.sourceId,
+    sourceUid: plannerEvent.sourceUid,
+    sourceKey: plannerEvent.sourceKey,
+    recurrenceId: plannerEvent.recurrenceId,
+    occurrenceStart: plannerEvent.occurrenceStart,
+    originalStart: plannerEvent.originalStart,
+    originalEnd: plannerEvent.originalEnd,
+    displayDate: plannerEvent.displayDate,
+    splitFromMultiDay: plannerEvent.splitFromMultiDay,
+    importedFromIcs: true,
+    isExternal: true,
+    missingFromLastSync: false,
+    syncStatus: plannerEvent.syncStatus || 'synced',
+    readOnly: plannerEvent.readOnly,
+    editable: keepExisting('editable', plannerEvent.editable),
+    parentId: keepExisting('parentId', null),
+    stackedIntoId: keepExisting('stackedIntoId', null),
+    category: keepExisting('category', null),
+    subtasks: Array.isArray(existing?.subtasks) ? existing.subtasks : [],
+    autoComplete: keepExisting('autoComplete', false),
+    autoCompleteFromSubtasks: keepExisting('autoCompleteFromSubtasks', false),
+    createdAt: keepExisting('createdAt', plannerEvent.createdAt || new Date().toISOString())
+  };
+}
+
   function plannerEventFromIcsEvent(icsEvent, index) {
     const eventDateKey = icsEvent.date || dateKey(new Date());
     const weekKey = weekStartKey(dateKeyToLocalDate(eventDateKey));
@@ -4018,8 +4098,8 @@ function summarizeIcsSkipReasons(skippedEvents) {
   label: icsEvent.title || 'Kalendertermin',
   title: icsEvent.title || 'Kalendertermin',
   categoryId: 'external',
-  location: icsEvent.location || null,
-  description: icsEvent.description || null,
+  location: cleanIcsStoredText(icsEvent.location, 160),
+  description: null,
   duration,
 
   // wichtig: ICS-Termine sollen wie Planner-Events trackbar sein
@@ -4044,13 +4124,6 @@ function summarizeIcsSkipReasons(skippedEvents) {
   displayDate: icsEvent.displayDate || eventDateKey,
   splitFromMultiDay: Boolean(icsEvent.splitFromMultiDay),
   importedFromIcs: true,
-  status: icsEvent.status || null,
-  sequence: icsEvent.sequence || null,
-  dtstamp: icsEvent.dtstamp || null,
-  lastModified: icsEvent.lastModified || null,
-  className: icsEvent.className || null,
-  transp: icsEvent.transp || null,
-  microsoftInstanceType: icsEvent.microsoftInstanceType || null,
   isExternal: true,
   missingFromLastSync: false,
   syncStatus: 'synced',
@@ -4072,6 +4145,8 @@ function summarizeIcsSkipReasons(skippedEvents) {
 
   const existingByExternalKey = new Map();
   const existingIcsEvents = [];
+  const previousWeekEventsByWeek = clone(state.weekEventsByWeek || {});
+  const beforeSize = serializedSizeInfo(state);
 
   if (!state.weekEventsByWeek) state.weekEventsByWeek = {};
 
@@ -4142,55 +4217,7 @@ function summarizeIcsSkipReasons(skippedEvents) {
 
   if (existingEntry) {
     const existing = existingEntry.ev;
-    const updatedEvent = {
-      ...existing,
-      title: plannerEvent.title,
-      label: plannerEvent.label,
-      date: plannerEvent.date,
-      day: plannerEvent.day,
-      start: plannerEvent.start,
-      end: plannerEvent.end,
-      allDay: plannerEvent.allDay,
-      duration: plannerEvent.duration,
-      location: plannerEvent.location,
-      description: plannerEvent.description,
-      importSource: plannerEvent.importSource,
-      provider: plannerEvent.provider,
-      externalId: plannerEvent.externalId,
-      externalCalendarId: plannerEvent.externalCalendarId,
-      sourceId: plannerEvent.sourceId,
-      sourceUid: plannerEvent.sourceUid,
-      sourceKey: plannerEvent.sourceKey,
-      recurrenceId: plannerEvent.recurrenceId,
-      occurrenceStart: plannerEvent.occurrenceStart,
-      originalStart: plannerEvent.originalStart,
-      originalEnd: plannerEvent.originalEnd,
-      displayDate: plannerEvent.displayDate,
-      splitFromMultiDay: plannerEvent.splitFromMultiDay,
-      importedFromIcs: true,
-      status: plannerEvent.status,
-      sequence: plannerEvent.sequence,
-      dtstamp: plannerEvent.dtstamp,
-      lastModified: plannerEvent.lastModified,
-      className: plannerEvent.className,
-      transp: plannerEvent.transp,
-      microsoftInstanceType: plannerEvent.microsoftInstanceType,
-      isExternal: true,
-      readOnly: plannerEvent.readOnly,
-      editable: existing.editable ?? plannerEvent.editable,
-      missingFromLastSync: false,
-      syncStatus: 'updated',
-      parentId: existing.parentId ?? null,
-      stackedIntoId: existing.stackedIntoId ?? null,
-      completed: existing.completed ?? false,
-      done: existing.done ?? false,
-      missed: existing.missed ?? false,
-      categoryId: existing.categoryId || plannerEvent.categoryId,
-      category: existing.category ?? plannerEvent.category,
-      subtasks: Array.isArray(existing.subtasks) ? existing.subtasks : plannerEvent.subtasks,
-      autoComplete: existing.autoComplete ?? plannerEvent.autoComplete,
-      autoCompleteFromSubtasks: existing.autoCompleteFromSubtasks ?? plannerEvent.autoCompleteFromSubtasks ?? false
-    };
+    const updatedEvent = compactIcsPlannerEvent({ ...plannerEvent, syncStatus: 'updated' }, existing);
 
     if (existingEntry.weekKey === weekKey) {
       const existingIndex = state.weekEventsByWeek[weekKey].findIndex(ev => ev.id === existing.id);
@@ -4204,7 +4231,7 @@ function summarizeIcsSkipReasons(skippedEvents) {
     updatedCount++;
   } else {
     plannerEvent.syncStatus = 'new';
-    state.weekEventsByWeek[weekKey].push(plannerEvent);
+    state.weekEventsByWeek[weekKey].push(compactIcsPlannerEvent(plannerEvent));
     createdCount++;
   }
 });
@@ -4223,8 +4250,26 @@ function summarizeIcsSkipReasons(skippedEvents) {
   });
 
   currentWeekEvents();
+  const afterSize = serializedSizeInfo(state);
+  console.log('[ICS] State size before import', {
+    bytes: beforeSize.bytes,
+    mb: (beforeSize.bytes / (1024 * 1024)).toFixed(2)
+  });
+  console.log('[ICS] State size after import', {
+    bytes: afterSize.bytes,
+    mb: (afterSize.bytes / (1024 * 1024)).toFixed(2),
+    importedEvents: processedCount,
+    averageBytesPerImportedEvent: processedCount ? Math.round((afterSize.bytes - beforeSize.bytes) / processedCount) : 0
+  });
   console.log('[ICS] Saving state');
-  saveState();
+  try {
+    saveState();
+  } catch (error) {
+    state.weekEventsByWeek = previousWeekEventsByWeek;
+    currentWeekEvents();
+    console.error('[ICS] Saving state failed; import rolled back', error);
+    throw error;
+  }
   console.log('[ICS] State saved locally; cloud save queued if enabled');
   renderAll();
   const allImportedStateEvents = Object.entries(state.weekEventsByWeek || {})
@@ -4367,7 +4412,12 @@ function summarizeIcsSkipReasons(skippedEvents) {
       setIcsSyncProgress(80, 'Bestehende ICS-Termine werden aktualisiert...');
       const importDiagnostics = importIcsEventsIntoPlanner(events);
       setIcsSyncProgress(90, 'Daten werden gespeichert...');
-      localStorage.setItem('perfekte-woche-ics-url', icsUrl);
+      try {
+        localStorage.setItem('perfekte-woche-ics-url', icsUrl);
+      } catch (error) {
+        if (isStorageQuotaError(error)) console.warn('[ICS] ICS-URL konnte nicht lokal gespeichert werden, Importdaten sind aber gespeichert.');
+        else throw error;
+      }
       const clientSkippedEvents = importDiagnostics.skippedEvents || [];
       const totalSkipped = serverSkippedEvents.length + clientSkippedEvents.length;
       const detailParts = [];
@@ -4397,7 +4447,7 @@ function summarizeIcsSkipReasons(skippedEvents) {
       const message = error.name === 'AbortError'
         ? 'ICS Sync Timeout: Kalender antwortet nicht rechtzeitig. Bitte später erneut versuchen.'
         : (error.message || 'ICS Sync fehlgeschlagen: Kalender konnte nicht geladen werden.');
-      setIcsSyncProgress(icsSyncProgress || 0, message);
+      setIcsSyncProgress(100, `Fehler: ${message}`);
     } finally {
       window.clearTimeout(timeout);
       setIcsSyncing(false);

@@ -591,7 +591,7 @@ function expandMultiDayEventForDisplay(item) {
     type: "external_event",
     title: event.summary,
     location: event.location,
-    description: event.description,
+    description: null,
     status: event.status || null,
     sequence: event.sequence || null,
     dtstamp: event.dtstamp || null,
