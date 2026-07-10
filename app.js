@@ -2801,9 +2801,17 @@ return div;
     document.body.classList.toggle('planner-week', state.plannerMode === 'week');
     document.body.classList.toggle('planner-tracking', isTracking);
 
-    templateModeBtn.classList.toggle('active', state.plannerMode === 'template');
-    weekModeBtn.classList.toggle('active', state.plannerMode === 'week');
-    trackingModeBtn.classList.toggle('active', isTracking);
+    const activeMainTab = isTracking ? 'tracking' : (state.plannerMode === 'template' ? 'template' : 'week');
+    [
+      [weekModeBtn, 'week'],
+      [trackingModeBtn, 'tracking'],
+      [templateModeBtn, 'template']
+    ].forEach(([button, tab]) => {
+      const isActive = activeMainTab === tab;
+      button.classList.toggle('active', isActive);
+      button.classList.toggle('is-active', isActive);
+      button.setAttribute('aria-pressed', String(isActive));
+    });
 
     const clearBtn = document.getElementById('clearBtn');
     if (clearBtn) {
