@@ -1881,7 +1881,7 @@
 
     const trackable = isWeekMode() && Boolean(cat.habit);
     div.innerHTML = `
-  <div class="event-main-row event-title-row">
+  <div class="event-main-row event-title-row ${hasStartAlignedChild ? 'event-main-overlay-bar' : ''}">
     ${trackable ? `<input class="event-check" type="checkbox" ${isEventDone(ev) ? 'checked' : ''} ${eventAutoCompleteEnabled(ev) && (Array.isArray(ev.subtasks) && ev.subtasks.length || integratedCount) ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : 'title="Erledigt"'} />` : ''}
     ${trackable ? `<button class="event-missed-btn ${ev.missed ? 'active' : ''}" type="button" title="Nicht eingehalten">!</button>` : ''}
     <span class="event-title">${escapeHtml(ev.label)}</span>
