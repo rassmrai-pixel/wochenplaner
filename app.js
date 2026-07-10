@@ -1832,6 +1832,7 @@
     div.style.left = `calc(${leftPercent}% + ${leftPxAdjustment}px)`;
     div.style.width = `calc(${widthPercent}% - ${widthPxAdjustment}px)`;
     div.style.background = cat.color;
+    div.style.setProperty('--event-color', cat.color);
     div.title = `${days[ev.day]} ${isTemplateMode() ? '' : formatShortDate(getDayDate(ev.day)) + ' '}${eventTime(ev)} · ${ev.label}`;
     const integratedCount = integratedEventsForEvent(ev.id).length;
     const fulfillment = blockFulfillmentStats(ev);

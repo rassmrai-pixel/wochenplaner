@@ -1485,7 +1485,7 @@
   height: 24px;
   padding: 0 4px;
   border-radius: 6px;
-  background: rgba(15, 23, 42, 0.92);
+  background: color-mix(in srgb, var(--event-color, #334155) 78%, #020617 22%);
   border: 1px solid rgba(255,255,255,0.28);
   box-shadow: 0 5px 14px rgba(0,0,0,0.34);
   z-index: 12;
