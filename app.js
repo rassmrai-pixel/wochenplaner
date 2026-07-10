@@ -89,6 +89,7 @@
   let dayTodoDraftSubtasks = [];
   let eventDraftSubtasks = [];
   let modalBlockTasksExpanded = false;
+  const openCompactEventIds = new Set();
 
   // ==================================================
   // DOM REFERENCES
@@ -1837,8 +1838,13 @@
     const fulfillmentBadge = fulfillment.containedTotal ? `<div class="event-fulfillment-badge">${fulfillment.done}/${fulfillment.total}</div>` : '';
     const integratedBadge = integratedCount ? `<div class="event-integrated-badge">+${integratedCount} im Block</div>` : '';
     const scheduledChildren = layoutEmbeddedChildren(scheduledIntegratedEventsForEvent(ev));
+    const hasStartAlignedChild = scheduledChildren.some(child => Number(child.start) === Number(ev.start));
+    const compactDetailsOpen = hasStartAlignedChild && openCompactEventIds.has(ev.id);
+    if (hasStartAlignedChild) {
+      div.classList.add('event-start-child-compact', compactDetailsOpen ? 'details-open' : 'details-collapsed');
+    }
     const embeddedTopOffset = Math.max(24, cellHeight() * 2 + 4);
-    const embeddedChildren = scheduledChildren.length ? `
+    const embeddedChildren = scheduledChildren.length && (!hasStartAlignedChild || compactDetailsOpen) ? `
       <div class="event-embedded-children">
         ${scheduledChildren.map(child => {
           const slotHeight = cellHeight();
@@ -1865,6 +1871,14 @@
             </div>`;
         }).join('')}
       </div>` : '';
+    const compactToggle = hasStartAlignedChild ? `
+      <button
+        class="event-compact-toggle"
+        type="button"
+        title="${compactDetailsOpen ? 'Details einklappen' : 'Details ausklappen'}"
+        aria-expanded="${compactDetailsOpen ? 'true' : 'false'}"
+      >&rsaquo;</button>` : '';
+    const compactMeta = hasStartAlignedChild ? `<span class="event-compact-meta">${eventTime(ev)}${fulfillment.containedTotal ? ` · ${fulfillment.done}/${fulfillment.total}` : ''}</span>` : '';
 
     const trackable = isWeekMode() && Boolean(cat.habit);
     div.innerHTML = `
@@ -1872,6 +1886,8 @@
     ${trackable ? `<input class="event-check" type="checkbox" ${isEventDone(ev) ? 'checked' : ''} ${eventAutoCompleteEnabled(ev) && (Array.isArray(ev.subtasks) && ev.subtasks.length || integratedCount) ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : 'title="Erledigt"'} />` : ''}
     ${trackable ? `<button class="event-missed-btn ${ev.missed ? 'active' : ''}" type="button" title="Nicht eingehalten">!</button>` : ''}
     <span class="event-title">${escapeHtml(ev.label)}</span>
+    ${compactMeta}
+    ${compactToggle}
   </div>
   <div class="event-time">${eventTime(ev)}</div>
   ${embeddedChildren}
@@ -1918,6 +1934,17 @@ if (missedBtn) {
     e.preventDefault();
     e.stopPropagation();
     toggleMissed(ev.id);
+  });
+}
+
+const compactToggleBtn = div.querySelector('.event-compact-toggle');
+if (compactToggleBtn) {
+  compactToggleBtn.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (openCompactEventIds.has(ev.id)) openCompactEventIds.delete(ev.id);
+    else openCompactEventIds.add(ev.id);
+    renderAll();
   });
 }
 
