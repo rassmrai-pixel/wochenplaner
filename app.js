@@ -3250,22 +3250,35 @@ return div;
     }
     const existing = currentWeekEvents();
     const weekInfo = getISOWeekInfo(getSelectedWeekStartDate());
-    if (existing.length && !confirm(`Kalenderwoche KW ${weekInfo.week}/${weekInfo.year} überschreiben und die Routine-Vorlage neu übernehmen?`)) return;
+    const isAppliedTemplateRoutine = ev => ev?.source === 'routine' && Boolean(ev.templateEventId);
+    const existingTemplateRoutineCount = existing.filter(isAppliedTemplateRoutine).length;
+    if (existingTemplateRoutineCount && !confirm(`Routine-Blöcke aus der Vorlage für KW ${weekInfo.week}/${weekInfo.year} ersetzen? ICS-Termine, manuelle Termine und Ganztagstermine bleiben erhalten.`)) return;
 
-    setCurrentWeekEvents(state.templateEvents.map(templateEv => ({
+    const preservedEvents = existing.filter(ev => !isAppliedTemplateRoutine(ev));
+    const appliedTemplateEvents = state.templateEvents.map(templateEv => ({
       id: id(),
       day: templateEv.day,
       start: templateEv.start,
       end: templateEv.end,
+      allDay: Boolean(templateEv.allDay),
+      date: templateEv.date || null,
       label: templateEv.label,
+      title: templateEv.title || templateEv.label,
       categoryId: templateEv.categoryId,
       done: false,
+      completed: false,
+      missed: false,
       source: 'routine',
       templateEventId: templateEv.id,
+      stackedIntoId: null,
+      parentId: null,
       autoComplete: Boolean(templateEv.autoComplete),
+      autoCompleteFromSubtasks: Boolean(templateEv.autoCompleteFromSubtasks || templateEv.autoComplete),
       subtasks: cloneEventSubtasks(templateEv).map(sub => ({ ...sub, done: false })),
       createdAt: new Date().toISOString()
-    })));
+    }));
+
+    setCurrentWeekEvents([...preservedEvents, ...appliedTemplateEvents]);
     state.plannerMode = 'week';
     state.viewMode = 'calendar';
     saveState();
