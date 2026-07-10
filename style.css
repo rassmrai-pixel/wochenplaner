@@ -1462,18 +1462,25 @@
   line-height: 1;
 }
 
-.event-start-child-compact.details-collapsed .event-time,
-.event-start-child-compact.details-collapsed .event-fulfillment-badge,
-.event-start-child-compact.details-collapsed .event-integrated-badge {
+.event-has-embedded-children.details-collapsed .event-time,
+.event-has-embedded-children.details-collapsed .event-fulfillment-badge,
+.event-has-embedded-children.details-collapsed .event-integrated-badge,
+.event-has-embedded-children.details-collapsed .event-check,
+.event-has-embedded-children.details-collapsed .event-missed-btn,
+.event-has-embedded-children.details-collapsed .event-title,
+.event-has-embedded-children.details-collapsed .event-compact-meta {
   display: none;
 }
 
-.event-start-child-compact.details-open .event-compact-meta {
+.event-has-embedded-children.details-open .event-compact-meta {
   display: none;
 }
 
-.event-start-child-compact .event-main-row {
+.event-has-embedded-children.details-collapsed .event-main-row {
+  left: auto;
   right: 4px;
+  width: 20px;
+  justify-content: flex-end;
 }
 
 .event-compact-meta {
@@ -1510,7 +1517,7 @@
   transform: rotate(0deg);
 }
 
-.event-start-child-compact.details-open .event-compact-toggle {
+.event-has-embedded-children.details-open .event-compact-toggle {
   transform: rotate(90deg);
 }
 

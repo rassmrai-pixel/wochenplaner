@@ -1838,21 +1838,16 @@
     const fulfillmentBadge = fulfillment.containedTotal ? `<div class="event-fulfillment-badge">${fulfillment.done}/${fulfillment.total}</div>` : '';
     const integratedBadge = integratedCount ? `<div class="event-integrated-badge">+${integratedCount} im Block</div>` : '';
     const scheduledChildren = layoutEmbeddedChildren(scheduledIntegratedEventsForEvent(ev));
-    const sameStartChildren = scheduledChildren.filter(child => Number(child.start) === Number(ev.start));
-    const positionedChildren = scheduledChildren.filter(child => Number(child.start) !== Number(ev.start));
-    const hasStartAlignedChild = sameStartChildren.length > 0;
-    const compactDetailsOpen = hasStartAlignedChild && openCompactEventIds.has(ev.id);
-    if (hasStartAlignedChild) {
-      div.classList.add('event-start-child-compact', compactDetailsOpen ? 'details-open' : 'details-collapsed');
+    const hasEmbeddedChildren = scheduledChildren.length > 0;
+    const compactDetailsOpen = hasEmbeddedChildren && openCompactEventIds.has(ev.id);
+    if (hasEmbeddedChildren) {
+      div.classList.add('event-has-embedded-children', compactDetailsOpen ? 'details-open' : 'details-collapsed');
     }
-    const embeddedTopOffset = Math.max(24, cellHeight() * 2 + 4);
-    const visibleEmbeddedChildren = hasStartAlignedChild && !compactDetailsOpen ? positionedChildren : scheduledChildren;
-    const embeddedChildren = visibleEmbeddedChildren.length ? `
+    const embeddedChildren = scheduledChildren.length ? `
       <div class="event-embedded-children">
-        ${visibleEmbeddedChildren.map(child => {
+        ${scheduledChildren.map(child => {
           const slotHeight = cellHeight();
-          const rawTop = Math.max(0, Number(child.start) - Number(ev.start)) * slotHeight;
-          const top = Math.max(embeddedTopOffset, rawTop);
+          const top = Math.max(0, Number(child.start) - Number(ev.start)) * slotHeight;
           const height = Math.max(18, (Number(child.end) - Number(child.start)) * slotHeight - 2);
           const laneCount = Math.max(1, Number(child._embeddedLaneCount) || 1);
           const lane = Math.max(0, Number(child._embeddedLane) || 0);
@@ -1874,14 +1869,14 @@
             </div>`;
         }).join('')}
       </div>` : '';
-    const compactToggle = hasStartAlignedChild ? `
+    const compactToggle = hasEmbeddedChildren ? `
       <button
         class="event-compact-toggle"
         type="button"
         title="${compactDetailsOpen ? 'Details einklappen' : 'Details ausklappen'}"
         aria-expanded="${compactDetailsOpen ? 'true' : 'false'}"
       >&rsaquo;</button>` : '';
-    const compactMeta = hasStartAlignedChild ? `<span class="event-compact-meta">${eventTime(ev)} · ${sameStartChildren.length} am Start${fulfillment.containedTotal ? ` · ${fulfillment.done}/${fulfillment.total}` : ''}</span>` : '';
+    const compactMeta = hasEmbeddedChildren ? `<span class="event-compact-meta">${eventTime(ev)}${fulfillment.containedTotal ? ` · ${fulfillment.done}/${fulfillment.total}` : ''}</span>` : '';
 
     const trackable = isWeekMode() && Boolean(cat.habit);
     div.innerHTML = `
