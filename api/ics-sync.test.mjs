@@ -35,6 +35,20 @@ assert.ok(!weekly.some(event => event.date === "2025-07-14"));
 assert.ok(!weekly.some(event => event.date === "2025-07-15"));
 assert.ok(!weekly.some(event => [0, 6].includes(new Date(`${event.date}T00:00:00Z`).getUTCDay())));
 
+const shortSeries = eventsFor(`BEGIN:VEVENT
+UID:short-series
+SUMMARY:Short Series
+DTSTART;TZID=W. Europe Standard Time:20250710T130000
+DTEND;TZID=W. Europe Standard Time:20250710T131500
+RRULE:FREQ=DAILY;COUNT=3
+END:VEVENT`);
+
+assert.deepEqual(
+  shortSeries.map(event => [event.date, event.startTime, event.endTime]),
+  [["2025-07-10", "13:00", "13:15"], ["2025-07-11", "13:00", "13:15"], ["2025-07-12", "13:00", "13:15"]]
+);
+assert.ok(!shortSeries.some(event => event.endTime === "15:15"));
+
 const birthday = eventsFor(`BEGIN:VEVENT
 UID:birthday
 SUMMARY:Geburtstag

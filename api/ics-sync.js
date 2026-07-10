@@ -340,23 +340,30 @@ function parseIcsDuration(value) {
   return (((((Number(weeks) * 7 + Number(days)) * 24 + Number(hours)) * 60 + Number(minutes)) * 60) + Number(seconds)) * 1000;
 }
 
-function addDurationToDateTime(parsed, durationMs) {
-  const timezone = parsed.timezone === "UTC" ? "Europe/Berlin" : parsed.timezone;
-  if (!timezone) {
-    const date = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day, parsed.hour || 0, parsed.minute || 0, parsed.second || 0) + durationMs);
-    const parts = {
-      year: date.getUTCFullYear(),
-      month: date.getUTCMonth() + 1,
-      day: date.getUTCDate(),
-      hour: date.getUTCHours(),
-      minute: date.getUTCMinutes(),
-      second: date.getUTCSeconds()
-    };
-    return { ...parts, isDate: false, timezone, raw: "", dateKey: dateKeyFromParts(parts), time: timeFromParts(parts), key: dateTimeKey(parts) };
+function localDateTimeMs(parts) {
+  return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour || 0, parts.minute || 0, parts.second || 0);
+}
+
+function eventDurationMs(start, end, explicitDurationMs = 0) {
+  if (explicitDurationMs) return explicitDurationMs;
+  if (!start || !end) return 0;
+  if (start.isDateOnly && end.isDateOnly) {
+    return (localDateTimeMs(end) - localDateTimeMs(start));
   }
-  const utcMs = partsToUtcMs(parsed, timezone) + durationMs;
-  const parts = utcDateToBerlinParts(new Date(utcMs));
-  return { ...parts, isDate: false, timezone, raw: "", dateKey: dateKeyFromParts(parts), time: timeFromParts(parts), key: dateTimeKey(parts) };
+  return Math.max(0, localDateTimeMs(end) - localDateTimeMs(start));
+}
+
+function addDurationToDateTime(parsed, durationMs) {
+  const date = new Date(localDateTimeMs(parsed) + durationMs);
+  const parts = {
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+    hour: date.getUTCHours(),
+    minute: date.getUTCMinutes(),
+    second: date.getUTCSeconds()
+  };
+  return { ...parts, isDate: false, timezone: parsed.timezone, raw: "", dateKey: dateKeyFromParts(parts), time: timeFromParts(parts), key: dateTimeKey(parts) };
 }
 
 function parseRRule(value) {
@@ -392,7 +399,7 @@ function eventDateBounds(event) {
   if (!end && durationMs && !start.isDate) end = addDurationToDateTime(start, durationMs);
   if (!end && start.isDateOnly) end = addDaysToDateOnly(start, 1);
   if (!end && !start.isDate) end = addDurationToDateTime(start, 60 * 60 * 1000);
-  return { start, end, durationMs: durationMs || null };
+  return { start, end, durationMs: eventDurationMs(start, end, durationMs) };
 }
 
 function isAllDayEvent(event, start) {
@@ -497,13 +504,14 @@ function expandRecurringEvent(event, window) {
   let generated = 0;
   let loopGuard = 0;
   const timezone = start.timezone === "UTC" ? "Europe/Berlin" : start.timezone;
+  const durationMs = bounds.durationMs || eventDurationMs(start, bounds.end);
 
   function addCandidate(candidate) {
     if (generated >= countLimit || occurrences.length >= ICS_MAX_OCCURRENCES_PER_SERIES) return;
     if (isAfterUntil(candidate, until, timezone)) return;
     generated++;
     if (isInWindow(candidate, window)) {
-      occurrences.push({ event, start: candidate, originalStart: candidate, end: addDurationToDateTime(candidate, partsToUtcMs(bounds.end, timezone) - partsToUtcMs(start, timezone)) });
+      occurrences.push({ event, start: candidate, originalStart: candidate, end: addDurationToDateTime(candidate, durationMs) });
     }
   }
 
@@ -544,7 +552,7 @@ function expandRecurringEvent(event, window) {
   rdates.forEach(rdate => {
     if (occurrences.length >= ICS_MAX_OCCURRENCES_PER_SERIES) return;
     const candidate = withDerivedDateFields({ ...start, year: rdate.year, month: rdate.month, day: rdate.day, hour: rdate.hour || start.hour, minute: rdate.minute || start.minute, second: rdate.second || start.second });
-    if (isInWindow(candidate, window)) occurrences.push({ event, start: candidate, originalStart: candidate, end: addDurationToDateTime(candidate, partsToUtcMs(bounds.end, timezone) - partsToUtcMs(start, timezone)) });
+    if (isInWindow(candidate, window)) occurrences.push({ event, start: candidate, originalStart: candidate, end: addDurationToDateTime(candidate, durationMs) });
   });
 
   return occurrences;
