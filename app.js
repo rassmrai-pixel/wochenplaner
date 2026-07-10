@@ -1838,15 +1838,18 @@
     const fulfillmentBadge = fulfillment.containedTotal ? `<div class="event-fulfillment-badge">${fulfillment.done}/${fulfillment.total}</div>` : '';
     const integratedBadge = integratedCount ? `<div class="event-integrated-badge">+${integratedCount} im Block</div>` : '';
     const scheduledChildren = layoutEmbeddedChildren(scheduledIntegratedEventsForEvent(ev));
-    const hasStartAlignedChild = scheduledChildren.some(child => Number(child.start) === Number(ev.start));
+    const sameStartChildren = scheduledChildren.filter(child => Number(child.start) === Number(ev.start));
+    const positionedChildren = scheduledChildren.filter(child => Number(child.start) !== Number(ev.start));
+    const hasStartAlignedChild = sameStartChildren.length > 0;
     const compactDetailsOpen = hasStartAlignedChild && openCompactEventIds.has(ev.id);
     if (hasStartAlignedChild) {
       div.classList.add('event-start-child-compact', compactDetailsOpen ? 'details-open' : 'details-collapsed');
     }
     const embeddedTopOffset = Math.max(24, cellHeight() * 2 + 4);
-    const embeddedChildren = scheduledChildren.length && (!hasStartAlignedChild || compactDetailsOpen) ? `
+    const visibleEmbeddedChildren = hasStartAlignedChild && !compactDetailsOpen ? positionedChildren : scheduledChildren;
+    const embeddedChildren = visibleEmbeddedChildren.length ? `
       <div class="event-embedded-children">
-        ${scheduledChildren.map(child => {
+        ${visibleEmbeddedChildren.map(child => {
           const slotHeight = cellHeight();
           const rawTop = Math.max(0, Number(child.start) - Number(ev.start)) * slotHeight;
           const top = Math.max(embeddedTopOffset, rawTop);
@@ -1878,7 +1881,7 @@
         title="${compactDetailsOpen ? 'Details einklappen' : 'Details ausklappen'}"
         aria-expanded="${compactDetailsOpen ? 'true' : 'false'}"
       >&rsaquo;</button>` : '';
-    const compactMeta = hasStartAlignedChild ? `<span class="event-compact-meta">${eventTime(ev)}${fulfillment.containedTotal ? ` · ${fulfillment.done}/${fulfillment.total}` : ''}</span>` : '';
+    const compactMeta = hasStartAlignedChild ? `<span class="event-compact-meta">${eventTime(ev)} · ${sameStartChildren.length} am Start${fulfillment.containedTotal ? ` · ${fulfillment.done}/${fulfillment.total}` : ''}</span>` : '';
 
     const trackable = isWeekMode() && Boolean(cat.habit);
     div.innerHTML = `
