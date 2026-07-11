@@ -1975,46 +1975,117 @@
     .cloud-panel.signed-in { border-color: rgba(34, 197, 94, 0.45); }
     .cloud-panel.error { border-color: rgba(239, 68, 68, 0.55); }
     .calendar-feed-panel {
-      border: 1px solid var(--line-soft);
+      border: 1px solid rgba(148, 163, 184, 0.18);
       border-radius: 14px;
-      background: rgba(17, 24, 39, 0.48);
+      background: rgba(2, 6, 23, 0.28);
       padding: 12px;
-      margin: 0 0 14px;
       display: grid;
-      gap: 10px;
+      gap: 12px;
     }
-    .calendar-feed-head {
+    .compact-feed-modal { max-width: 560px; }
+    .modal-subtitle {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 2px;
+    }
+    .calendar-feed-intro {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .calendar-share-card-head {
       display: flex;
+      align-items: center;
       justify-content: space-between;
       gap: 12px;
-      align-items: flex-start;
-      flex-wrap: wrap;
     }
-    .calendar-feed-title { font-weight: 950; }
-    .calendar-feed-sub,
-    .calendar-feed-note { color: var(--muted); font-size: 13px; line-height: 1.4; }
-    .calendar-feed-toggle,
-    .calendar-feed-options label {
+    .calendar-share-title {
+      font-size: 14px;
+      font-weight: 950;
+    }
+    .calendar-share-status {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 3px;
+    }
+    .switch-control {
+      position: relative;
       display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      color: var(--text);
-      font-size: 13px;
-      font-weight: 800;
+      width: 46px;
+      height: 26px;
+      flex: 0 0 auto;
+      cursor: pointer;
     }
-    .calendar-feed-toggle input,
-    .calendar-feed-options input { min-height: 0; width: auto; }
-    .calendar-feed-link-row {
+    .switch-control input {
+      position: absolute;
+      opacity: 0;
+      width: 1px;
+      height: 1px;
+      min-height: 0;
+    }
+    .switch-control span {
+      width: 100%;
+      height: 100%;
+      border-radius: 999px;
+      background: rgba(51, 65, 85, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.34);
+      transition: 0.16s ease;
+      position: relative;
+    }
+    .switch-control span::after {
+      content: '';
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      left: 2px;
+      top: 2px;
+      background: #e2e8f0;
+      transition: 0.16s ease;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.28);
+    }
+    .switch-control input:checked + span {
+      background: #0284c7;
+      border-color: #38bdf8;
+    }
+    .switch-control input:checked + span::after { transform: translateX(20px); }
+    .calendar-share-disabled p,
+    .calendar-share-security,
+    .calendar-feed-helpbox p,
+    .calendar-feed-helpbox span {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .calendar-share-disabled p { margin: 0 0 10px; }
+    .calendar-share-enabled { display: grid; gap: 8px; }
+    .calendar-share-link-row {
       display: grid;
-      grid-template-columns: minmax(220px, 1fr) auto auto;
+      grid-template-columns: minmax(0, 1fr) auto auto;
       gap: 8px;
       align-items: center;
     }
-    .calendar-feed-link-row input { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; }
-    .calendar-feed-options { display: flex; flex-wrap: wrap; gap: 10px 14px; }
-    @media (max-width: 760px) {
-      .calendar-feed-link-row { grid-template-columns: 1fr; }
-      .calendar-feed-link-row button { width: 100%; }
+    .calendar-share-link-row input {
+      width: 100%;
+      min-width: 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      background: rgba(15, 23, 42, 0.72);
+    }
+    .calendar-feed-helpbox {
+      margin-top: 12px;
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      border-radius: 12px;
+      background: rgba(56, 189, 248, 0.08);
+      padding: 12px;
+    }
+    .calendar-feed-helpbox strong { display: block; font-size: 13px; margin-bottom: 4px; }
+    .calendar-feed-helpbox p { margin: 0 0 4px; }
+    @media (max-width: 700px) {
+      .calendar-share-link-row { grid-template-columns: 1fr; }
+      .calendar-share-link-row button,
+      .calendar-share-disabled button { width: 100%; }
     }
     .cloud-badge {
       display: inline-flex;

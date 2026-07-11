@@ -30,7 +30,7 @@
       </div>
           <div class="profile-actions">
   <button class="ghost" id="profileAccountBtn" type="button">Konto</button>
-  <button class="ghost" id="openCalendarFeedModalBtn" type="button">Kalender abonnieren</button>
+  <button class="ghost" id="openCalendarFeedModalBtn" type="button">Kalenderfreigaben</button>
   <button class="ghost" id="openIcsModalBtn" type="button">ICS-Kalender importieren</button>
   <button class="ghost" id="profileHelpBtn" type="button">Hilfe</button>
   <button class="danger" id="profileLogoutBtn" type="button">Ausloggen</button>
@@ -420,35 +420,49 @@
   </div>
 
   <div class="modal-backdrop" id="calendarFeedModalBackdrop">
-    <div class="modal calendar-feed-modal">
+    <div class="modal calendar-feed-modal compact-feed-modal">
       <div class="modal-title-row">
-        <h2>Kalender abonnieren</h2>
+        <div>
+          <h2>Kalenderfreigaben</h2>
+          <div class="modal-subtitle">Kalender extern anzeigen</div>
+        </div>
         <button class="modal-close-btn" id="closeCalendarFeedModalBtn" type="button" aria-label="Schließen">×</button>
       </div>
-      <section class="calendar-feed-panel" id="calendarFeedPanel">
-      <div class="calendar-feed-head">
-        <div>
-          <div class="calendar-feed-title">Kalender extern anzeigen</div>
-          <div class="calendar-feed-sub">Diesen persönlichen Kalenderlink kannst du in Outlook oder einer anderen Kalender-App als Internetkalender abonnieren. Änderungen aus der App werden beim nächsten Abruf des Kalenders übernommen.</div>
+      <p class="calendar-feed-intro">Erstelle einen persönlichen Kalenderlink, um deine Termine in Outlook oder einer anderen Kalender-App anzuzeigen. Änderungen aus deiner App werden beim nächsten Abruf übernommen.</p>
+
+      <section class="calendar-share-card" id="calendarFeedPanel">
+        <div class="calendar-share-card-head">
+          <div>
+            <div class="calendar-share-title">Persönlicher Kalenderlink</div>
+            <div class="calendar-share-status" id="calendarFeedStatus">Freigabe deaktiviert</div>
+          </div>
+          <label class="switch-control" title="Kalenderfreigabe aktivieren">
+            <input id="calendarFeedEnabled" type="checkbox" />
+            <span></span>
+          </label>
         </div>
-        <label class="calendar-feed-toggle">
-          <input id="calendarFeedEnabled" type="checkbox" />
-          <span>Kalenderfeed aktivieren</span>
-        </label>
-      </div>
-      <div class="calendar-feed-link-row">
-        <input id="calendarFeedUrl" type="text" readonly placeholder="Feed aktivieren, um den persönlichen Link zu erzeugen" />
-        <button class="ghost" id="copyCalendarFeedBtn" type="button">Link kopieren</button>
-        <button class="ghost" id="regenerateCalendarFeedTokenBtn" type="button">Neuen Token erstellen</button>
-      </div>
-      <div class="calendar-feed-options">
-        <label><input id="calendarFeedExportRoutines" type="checkbox" /> Routinen exportieren</label>
-        <label><input id="calendarFeedExportTimedTodos" type="checkbox" /> To-dos mit Uhrzeit exportieren</label>
-        <label><input id="calendarFeedExportAllDayTodos" type="checkbox" /> Ganztägige To-dos exportieren</label>
-        <label><input id="calendarFeedIncludeCompleted" type="checkbox" /> Erledigte Termine exportieren</label>
-      </div>
-      <div class="calendar-feed-note" id="calendarFeedStatus">Ein neuer Token macht den alten Kalenderlink sofort ungültig.</div>
+
+        <div class="calendar-share-disabled" id="calendarFeedDisabledState">
+          <p>Aktiviere die Freigabe, um einen persönlichen Kalenderlink zu erstellen.</p>
+          <button class="primary" id="enableCalendarFeedBtn" type="button">Kalenderfreigabe aktivieren</button>
+        </div>
+
+        <div class="calendar-share-enabled" id="calendarFeedEnabledState">
+          <div class="calendar-share-link-row">
+            <input id="calendarFeedUrl" type="text" readonly placeholder="Persönlicher Kalenderlink" />
+            <button class="primary" id="copyCalendarFeedBtn" type="button">Link kopieren</button>
+            <button class="ghost" id="regenerateCalendarFeedTokenBtn" type="button">Neuen Link erstellen</button>
+          </div>
+          <div class="calendar-share-security">Ein neu erstellter Link macht den bisherigen Link ungültig.</div>
+        </div>
       </section>
+
+      <div class="calendar-feed-helpbox">
+        <strong>So verwendest du den Link</strong>
+        <p>Füge den Link in Outlook über „Kalender hinzufügen → Aus dem Internet abonnieren“ ein.</p>
+        <span>Der Kalender ist in Outlook nur lesbar. Änderungen werden weiterhin in deiner App vorgenommen.</span>
+      </div>
+
       <div class="modal-actions">
         <button class="ghost" id="closeCalendarFeedModalFooterBtn" type="button">Schließen</button>
       </div>

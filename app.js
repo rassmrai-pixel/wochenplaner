@@ -249,10 +249,9 @@
   const calendarFeedUrl = document.getElementById('calendarFeedUrl');
   const copyCalendarFeedBtn = document.getElementById('copyCalendarFeedBtn');
   const regenerateCalendarFeedTokenBtn = document.getElementById('regenerateCalendarFeedTokenBtn');
-  const calendarFeedExportRoutines = document.getElementById('calendarFeedExportRoutines');
-  const calendarFeedExportTimedTodos = document.getElementById('calendarFeedExportTimedTodos');
-  const calendarFeedExportAllDayTodos = document.getElementById('calendarFeedExportAllDayTodos');
-  const calendarFeedIncludeCompleted = document.getElementById('calendarFeedIncludeCompleted');
+  const enableCalendarFeedBtn = document.getElementById('enableCalendarFeedBtn');
+  const calendarFeedDisabledState = document.getElementById('calendarFeedDisabledState');
+  const calendarFeedEnabledState = document.getElementById('calendarFeedEnabledState');
   const calendarFeedStatus = document.getElementById('calendarFeedStatus');
   const authEmail = document.getElementById('authEmail');
   const authPassword = document.getElementById('authPassword');
@@ -662,21 +661,14 @@
   function renderCalendarFeedSettings() {
     if (!calendarFeedPanel) return;
     const feed = ensureCalendarFeedSettings();
-    const signedIn = Boolean(cloudUser);
     const link = feed.enabled ? calendarFeedLink() : '';
     calendarFeedEnabled.checked = Boolean(feed.enabled);
-    calendarFeedUrl.value = link;
-    calendarFeedExportRoutines.checked = feed.exportRoutines !== false;
-    calendarFeedExportTimedTodos.checked = feed.exportTimedTodos !== false;
-    calendarFeedExportAllDayTodos.checked = Boolean(feed.exportAllDayTodos);
-    calendarFeedIncludeCompleted.checked = feed.includeCompleted !== false;
-    copyCalendarFeedBtn.disabled = !link;
-    regenerateCalendarFeedTokenBtn.disabled = !feed.enabled;
-    calendarFeedUrl.disabled = !feed.enabled;
-    const cloudHint = signedIn ? '' : ' Melde dich für Cloud Sync an, damit der Server deine Kalenderdaten laden kann.';
-    calendarFeedStatus.textContent = feed.enabled
-      ? `Feed aktiv. Ein neuer Token macht den alten Kalenderlink sofort ungültig.${cloudHint}`
-      : `Feed deaktiviert. Der Server liefert keine Kalenderdaten aus.${cloudHint}`;
+    if (calendarFeedUrl) calendarFeedUrl.value = link;
+    if (copyCalendarFeedBtn) copyCalendarFeedBtn.disabled = !link;
+    if (regenerateCalendarFeedTokenBtn) regenerateCalendarFeedTokenBtn.disabled = !feed.enabled;
+    if (calendarFeedDisabledState) calendarFeedDisabledState.style.display = feed.enabled ? 'none' : '';
+    if (calendarFeedEnabledState) calendarFeedEnabledState.style.display = feed.enabled ? '' : 'none';
+    if (calendarFeedStatus) calendarFeedStatus.textContent = feed.enabled ? 'Freigabe aktiv' : 'Freigabe deaktiviert';
   }
 
   function updateCalendarFeedOption(key, value) {
@@ -3758,10 +3750,14 @@ function toggleMissed(eventId) {
       renderCalendarFeedSettings();
     });
   }
-  if (calendarFeedExportRoutines) calendarFeedExportRoutines.addEventListener('change', () => updateCalendarFeedOption('exportRoutines', calendarFeedExportRoutines.checked));
-  if (calendarFeedExportTimedTodos) calendarFeedExportTimedTodos.addEventListener('change', () => updateCalendarFeedOption('exportTimedTodos', calendarFeedExportTimedTodos.checked));
-  if (calendarFeedExportAllDayTodos) calendarFeedExportAllDayTodos.addEventListener('change', () => updateCalendarFeedOption('exportAllDayTodos', calendarFeedExportAllDayTodos.checked));
-  if (calendarFeedIncludeCompleted) calendarFeedIncludeCompleted.addEventListener('change', () => updateCalendarFeedOption('includeCompleted', calendarFeedIncludeCompleted.checked));
+  if (enableCalendarFeedBtn) {
+    enableCalendarFeedBtn.addEventListener('click', () => {
+      const feed = ensureCalendarFeedSettings({ ensureToken: true });
+      feed.enabled = true;
+      saveState();
+      renderCalendarFeedSettings();
+    });
+  }
   if (regenerateCalendarFeedTokenBtn) {
     regenerateCalendarFeedTokenBtn.addEventListener('click', () => {
       if (!confirm('Neuen Kalenderfeed-Token erstellen? Der bisherige Link funktioniert danach nicht mehr.')) return;
