@@ -15,12 +15,12 @@
       <div class="subtitle">Wochenansicht · 24 Stunden · 15-Minuten-Schritte · Kalender + Habit Tracker + To-do Planner + Tages-Taskansicht</div>
     </div>
     <div class="toolbar">
-  <button id="quickIcsSyncBtn" type="button">ICS Sync</button>
-  <button id="specialEventsBtn" class="special-events-trigger" type="button" title="Besondere Ereignisse" aria-label="Besondere Ereignisse">
-    <span class="special-events-emoji">☝🏼</span>
+  <button id="quickIcsSyncBtn" class="topbar-icon-btn" type="button" title="ICS Sync" aria-label="ICS Sync" data-tooltip="ICS Sync">🔄</button>
+  <button id="specialEventsBtn" class="topbar-icon-btn special-events-trigger" type="button" title="Besondere Ereignisse" aria-label="Besondere Ereignisse" data-tooltip="Besondere Ereignisse">
+    <span class="special-events-emoji">📆</span>
     <span id="specialEventsBadge" class="special-events-badge" aria-hidden="true"></span>
   </button>
-  <button id="todoDrawerToggleBtn" class="todo-drawer-trigger">To-do Planner</button>
+  <button id="todoDrawerToggleBtn" class="topbar-icon-btn todo-drawer-trigger" type="button" title="To-do Planner" aria-label="To-do Planner" data-tooltip="To-do Planner">☑️</button>
 
   <div class="profile-menu" id="profileMenu">
     <button class="profile-button" id="profileButton" title="Profil">?</button>
@@ -493,11 +493,11 @@
         <div class="special-events-toolbar">
           <select id="specialEventTypeFilter" title="Besondere Ereignisse filtern">
             <option value="all">Alle</option>
-            <option value="birthday">Geburtstage</option>
-            <option value="anniversary">Jahrestage</option>
-            <option value="jubilee">Jubiläen</option>
-            <option value="reminder">Erinnerungen</option>
-            <option value="other">Sonstige</option>
+            <option value="birthday">🎉 Geburtstage</option>
+            <option value="anniversary">🗓️ Jahrestage</option>
+            <option value="jubilee">⚜️ Jubiläen</option>
+            <option value="reminder">❗️ Erinnerungen</option>
+            <option value="other">❓ Sonstige</option>
           </select>
           <select id="specialEventRangeFilter" title="Zeitraum filtern">
             <option value="all">Alle Zeiträume</option>
@@ -530,11 +530,11 @@
         <div class="form-grid">
           <label>Typ
             <select id="specialEventType">
-              <option value="birthday">Geburtstag</option>
-              <option value="anniversary">Jahrestag</option>
-              <option value="jubilee">Jubiläum</option>
-              <option value="reminder">Erinnerung</option>
-              <option value="other">Sonstiges</option>
+              <option value="birthday">🎉 Geburtstag</option>
+              <option value="anniversary">🗓️ Jahrestag</option>
+              <option value="jubilee">⚜️ Jubiläum</option>
+              <option value="reminder">❗️ Erinnerung</option>
+              <option value="other">❓ Sonstiges</option>
             </select>
           </label>
           <label>Titel oder Name

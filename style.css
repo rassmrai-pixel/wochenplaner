@@ -54,6 +54,76 @@
     button.danger { background: #7f1d1d; border-color: #dc2626; }
     button.ghost { background: transparent; }
     button.small { padding: 7px 10px; min-height: 34px; font-size: 13px; }
+
+/* Header icon buttons */
+.toolbar .topbar-icon-btn {
+  position: relative;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 44px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.78);
+  border-color: rgba(148, 163, 184, 0.35);
+  color: var(--text);
+  font-size: 21px;
+  line-height: 1;
+}
+
+.toolbar .topbar-icon-btn:hover,
+.toolbar .topbar-icon-btn:focus-visible {
+  border-color: rgba(56, 189, 248, 0.72);
+  background: rgba(14, 116, 144, 0.24);
+}
+
+.toolbar .topbar-icon-btn:focus-visible {
+  outline: 2px solid rgba(56, 189, 248, 0.55);
+  outline-offset: 2px;
+}
+
+.toolbar .topbar-icon-btn.active {
+  background: #0284c7;
+  border-color: #38bdf8;
+  color: #fff;
+}
+
+.toolbar .topbar-icon-btn::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 9px);
+  left: 50%;
+  transform: translate(-50%, -4px);
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+  padding: 6px 9px;
+  border-radius: 9px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(2, 6, 23, 0.96);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.2;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.38);
+  z-index: 6500;
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+
+.toolbar .topbar-icon-btn:hover::after,
+.toolbar .topbar-icon-btn:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.toolbar .topbar-icon-btn.todo-drawer-trigger {
+  margin-left: 0;
+}
+
     @media (max-width: 700px) {
       .toolbar { width: 100%; margin-left: 0; padding-top: 0; justify-content: space-between; }
     }
@@ -4004,4 +4074,25 @@ body:not(.special-events-drawer-open) .special-events-drawer-backdrop {
   .special-events-drawer .special-event-suggestions-list {
     max-height: 28vh;
   }
+}
+
+
+.toolbar .topbar-icon-btn.special-events-trigger {
+  opacity: 1;
+}
+
+.special-event-title-icon {
+  display: inline-block;
+  margin-right: 6px;
+}
+
+
+.toolbar #quickIcsSyncBtn.topbar-icon-btn,
+.toolbar #todoDrawerToggleBtn.topbar-icon-btn,
+.toolbar #specialEventsBtn.topbar-icon-btn {
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+  flex: 0 0 44px;
+  padding: 0;
 }

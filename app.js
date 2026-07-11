@@ -1212,6 +1212,22 @@
     other: 'Sonstiges'
   };
 
+  const specialEventTypeIcons = {
+    birthday: '🎉',
+    anniversary: '🗓️',
+    jubilee: '⚜️',
+    reminder: '❗️',
+    other: '❓'
+  };
+
+  function specialEventTypeIcon(type) {
+    return specialEventTypeIcons[type] || specialEventTypeIcons.other;
+  }
+
+  function specialEventTypeOptionLabel(type) {
+    return `${specialEventTypeIcon(type)} ${specialEventTypeLabels[type] || 'Sonstiges'}`;
+  }
+
   function parseDateParts(value) {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
     if (!match) return null;
@@ -1373,7 +1389,7 @@
       row.className = `special-event-card type-${event.type}`;
       const title = event.type === 'birthday' && event.personName ? event.personName : event.title;
       row.innerHTML = `
-        <div class="special-event-card-icon">☝🏼</div>
+        <div class="special-event-card-icon" aria-hidden="true">${escapeHtml(specialEventTypeIcon(event.type))}</div>
         <div>
           <div class="special-event-card-title">${escapeHtml(title)}</div>
           <div class="special-event-card-meta">${escapeHtml(specialEventMetaText(event, date, daysLeft))}</div>
@@ -1525,12 +1541,12 @@
       card.dataset.suggestionId = suggestion.id;
       card.innerHTML = `
         <div class="special-suggestion-main">
-          <div class="special-event-card-title">${escapeHtml(suggestion.title)}</div>
+          <div class="special-event-card-title"><span class="special-event-title-icon" aria-hidden="true">${escapeHtml(specialEventTypeIcon(suggestion.suggestedType || 'other'))}</span>${escapeHtml(suggestion.title)}</div>
           <div class="special-event-card-meta">${escapeHtml(suggestion.recurrenceFrequency || 'Serie')} · ${formatShortDate(toLocalDate(suggestion.date))} · ${escapeHtml(suggestion.sourceId || 'Externer Kalender')}</div>
           <div class="special-suggestion-note">Dieses wiederkehrende Ereignis wurde im externen Kalender erkannt.</div>
         </div>
         <select class="special-suggestion-type" title="Typ wählen">
-          ${Object.entries(specialEventTypeLabels).map(([value, label]) => `<option value="${value}" ${suggestion.suggestedType === value ? 'selected' : ''}>${label}</option>`).join('')}
+          ${Object.keys(specialEventTypeLabels).map(value => `<option value="${value}" ${suggestion.suggestedType === value ? 'selected' : ''}>${specialEventTypeOptionLabel(value)}</option>`).join('')}
         </select>
         <div class="special-suggestion-actions">
           <button class="primary accept-special-suggestion" type="button">Übernehmen</button>
@@ -1545,6 +1561,8 @@
       card.querySelector('.special-suggestion-type')?.addEventListener('change', e => {
         suggestion.suggestedType = e.target.value;
         suggestion.updatedAt = new Date().toISOString();
+        const titleIcon = card.querySelector('.special-event-title-icon');
+        if (titleIcon) titleIcon.textContent = specialEventTypeIcon(suggestion.suggestedType);
         saveState();
       });
       card.querySelector('.accept-special-suggestion')?.addEventListener('click', () => acceptSpecialSuggestion(suggestion.id));
