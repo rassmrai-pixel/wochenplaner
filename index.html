@@ -474,14 +474,19 @@
   </div>
 
 
-  <div class="modal-backdrop" id="specialEventsModalBackdrop">
-    <div class="modal special-events-modal">
-      <div class="modal-title-row">
+  <div class="todo-drawer-backdrop special-events-drawer-backdrop" id="specialEventsModalBackdrop"></div>
+  <aside class="todo-drawer special-events-drawer" id="specialEventsDrawer" aria-label="Besondere Ereignisse">
+    <div class="todo-drawer-shell special-events-drawer-shell">
+      <div class="todo-head">
         <div>
           <h2>Besondere Ereignisse</h2>
-          <div class="modal-subtitle">Geburtstage, Jahrestage und Erinnerungen</div>
+          <div class="todo-summary" id="specialEventsSummary">Geburtstage, Jahrestage und Erinnerungen</div>
         </div>
-        <button class="modal-close-btn" id="closeSpecialEventsModalBtn" type="button" aria-label="Schließen">×</button>
+        <button class="small ghost" id="closeSpecialEventsModalBtn" type="button">Einklappen</button>
+      </div>
+
+      <div class="special-events-drawer-actions">
+        <button class="drawer-quick-add-btn primary" id="showSpecialEventFormBtn" type="button" title="Besonderes Ereignis hinzufügen" aria-label="Besonderes Ereignis hinzufügen">+</button>
       </div>
 
       <div class="special-events-overview" id="specialEventsOverview">
@@ -508,8 +513,18 @@
         <h3>Aus externen Kalendern erkannt</h3>
         <div id="specialEventSuggestionsList" class="special-event-suggestions-list"></div>
       </section>
+    </div>
+  </aside>
 
-      <button class="primary special-events-add-toggle" id="showSpecialEventFormBtn" type="button">Besonderes Ereignis hinzufügen</button>
+  <div class="modal-backdrop" id="specialEventFormBackdrop">
+    <div class="modal special-events-modal special-event-form-modal">
+      <div class="modal-title-row">
+        <div>
+          <h2 id="specialEventFormTitle">Besonderes Ereignis</h2>
+          <div class="modal-subtitle">Geburtstage, Jahrestage und Erinnerungen</div>
+        </div>
+        <button class="modal-close-btn" id="closeSpecialEventFormBtn" type="button" aria-label="Schließen">×</button>
+      </div>
 
       <form id="specialEventForm" class="special-event-form special-event-form-view" style="display:none;">
         <div class="form-grid">

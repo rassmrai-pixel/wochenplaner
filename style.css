@@ -3887,3 +3887,121 @@ body:not(.todo-drawer-open) .todo-drawer-backdrop {
   .week-picker-week { min-height: 42px; }
   .special-events-toolbar { grid-template-columns: 1fr; }
 }
+
+
+/* Special events drawer */
+.special-events-trigger.active {
+  background: #0284c7;
+  border-color: #38bdf8;
+  color: #fff;
+}
+
+body.special-events-drawer-open .special-events-drawer-backdrop {
+  opacity: 1;
+  pointer-events: auto !important;
+  z-index: 5300;
+}
+
+body.special-events-drawer-open .special-events-drawer {
+  transform: translateX(0);
+  pointer-events: auto;
+  z-index: 5400;
+}
+
+body.special-events-drawer-open header,
+body.special-events-drawer-open .toolbar,
+body.special-events-drawer-open .week-nav,
+body.special-events-drawer-open .week-settings,
+body.special-events-drawer-open .profile-menu {
+  z-index: 500;
+}
+
+body.special-events-drawer-open .week-settings.open .week-settings-menu,
+body.special-events-drawer-open .profile-menu.open .profile-dropdown {
+  display: none;
+}
+
+body:not(.special-events-drawer-open) .special-events-drawer-backdrop {
+  pointer-events: none !important;
+}
+
+.special-events-drawer-shell {
+  gap: 0;
+}
+
+.special-events-drawer .todo-head {
+  align-items: flex-start;
+}
+
+.special-events-drawer-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 16px 0;
+  flex: 0 0 auto;
+}
+
+.special-events-drawer .special-events-overview {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  padding: 12px 16px 0;
+}
+
+.special-events-toolbar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex: 0 0 auto;
+}
+
+.special-events-toolbar select {
+  width: 100%;
+  min-width: 0;
+}
+
+.special-events-drawer .special-events-list {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 3px;
+  padding-bottom: 14px;
+  min-height: 0;
+}
+
+.special-events-drawer .special-event-suggestions-section {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 12px 16px 16px;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.18);
+}
+
+.special-events-drawer .special-event-suggestions-list {
+  max-height: min(220px, 30vh);
+}
+
+.special-event-form-modal {
+  width: min(560px, calc(100vw - 28px));
+  max-height: min(760px, calc(100dvh - 28px));
+  overflow-y: auto;
+}
+
+.special-event-form-modal .special-event-form {
+  display: grid;
+}
+
+@media (max-width: 700px) {
+  .special-events-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .special-events-drawer {
+    width: min(440px, 96vw);
+    padding: 12px 10px 12px 0;
+  }
+
+  .special-events-drawer .special-event-suggestions-list {
+    max-height: 28vh;
+  }
+}

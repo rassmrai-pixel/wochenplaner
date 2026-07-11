@@ -38,6 +38,7 @@
     plannerMode: 'week',
     uiHomeVersion: 'calendar-main-v1',
     todoDrawerOpen: false,
+    specialEventsDrawerOpen: false,
     drawerView: 'habit',
     openHeaderTodoDay: null,
     currentWeekStart: null,
@@ -197,7 +198,12 @@
   const todoDrawerToggleBtn = document.getElementById('todoDrawerToggleBtn');
   const specialEventsBtn = document.getElementById('specialEventsBtn');
   const specialEventsBadge = document.getElementById('specialEventsBadge');
+  const specialEventsDrawer = document.getElementById('specialEventsDrawer');
+  const specialEventsSummary = document.getElementById('specialEventsSummary');
   const specialEventsModalBackdrop = document.getElementById('specialEventsModalBackdrop');
+  const specialEventFormBackdrop = document.getElementById('specialEventFormBackdrop');
+  const specialEventFormTitle = document.getElementById('specialEventFormTitle');
+  const closeSpecialEventFormBtn = document.getElementById('closeSpecialEventFormBtn');
   const closeSpecialEventsModalBtn = document.getElementById('closeSpecialEventsModalBtn');
   const specialEventsList = document.getElementById('specialEventsList');
   const specialEventsOverview = document.getElementById('specialEventsOverview');
@@ -520,6 +526,8 @@
     if (!s.trackingDate) s.trackingDate = dateKey(new Date());
     if (s.plannerMode !== 'week' && s.viewMode === 'tasks') s.viewMode = 'calendar';
     s.todoDrawerOpen = Boolean(s.todoDrawerOpen);
+    s.specialEventsDrawerOpen = Boolean(s.specialEventsDrawerOpen);
+    if (s.todoDrawerOpen) s.specialEventsDrawerOpen = false;
     if (!['habit', 'todo'].includes(s.drawerView)) s.drawerView = 'habit';
     const todayInfo = getTodayInfo();
     const isCurrentWeek = s.currentWeekStart === todayInfo.weekKey;
@@ -1557,14 +1565,20 @@
   }
 
   function showSpecialEventOverview() {
-    if (specialEventsOverview) specialEventsOverview.style.display = '';
-    if (specialEventForm) specialEventForm.style.display = 'none';
     closeSpecialDatePicker();
+    if (specialEventFormBackdrop) specialEventFormBackdrop.style.display = 'none';
+    if (specialEventForm) specialEventForm.style.display = 'none';
   }
 
   function showSpecialEventForm() {
-    if (specialEventsOverview) specialEventsOverview.style.display = 'none';
+    if (specialEventFormTitle) {
+      const isSuggestion = String(editingSpecialEventId || '').startsWith('suggestion:');
+      specialEventFormTitle.textContent = editingSpecialEventId
+        ? (isSuggestion ? 'Ereignis übernehmen' : 'Besonderes Ereignis bearbeiten')
+        : 'Besonderes Ereignis hinzufügen';
+    }
     if (specialEventForm) specialEventForm.style.display = '';
+    if (specialEventFormBackdrop) specialEventFormBackdrop.style.display = 'flex';
     updateSpecialEventZodiacPreview();
     setTimeout(() => specialEventTitle?.focus(), 50);
   }
@@ -1609,20 +1623,53 @@
     renderSpecialEventsButton();
   }
 
+  function renderSpecialEventsDrawer() {
+    const isOpen = Boolean(state.specialEventsDrawerOpen);
+    document.body.classList.toggle('special-events-drawer-open', isOpen);
+    if (specialEventsBtn) {
+      specialEventsBtn.classList.toggle('active', isOpen);
+      specialEventsBtn.setAttribute('aria-expanded', String(isOpen));
+    }
+    if (specialEventsDrawer) specialEventsDrawer.setAttribute('aria-hidden', String(!isOpen));
+    if (isOpen) {
+      if (weekSettings) weekSettings.classList.remove('open');
+      if (profileMenu) profileMenu.classList.remove('open');
+      if (drawerHabitPanel) drawerHabitPanel.classList.remove('filter-open');
+      state.todoDrawerOpen = false;
+      document.body.classList.remove('todo-drawer-open');
+      todoDrawerToggleBtn?.classList.remove('active');
+      todoDrawerToggleBtn?.setAttribute('aria-expanded', 'false');
+    }
+    if (specialEventsSummary) {
+      const todayCount = specialEventsForDate(getTodayInfo().dateKey).length;
+      const upcoming = specialEventListItems(30);
+      const next = upcoming[0];
+      specialEventsSummary.textContent = todayCount
+        ? `${todayCount} heute · ${upcoming.length} in den nächsten 30 Tagen`
+        : (next ? `Nächstes Ereignis in ${Math.max(0, next.daysLeft)} Tagen` : 'Geburtstage, Jahrestage und Erinnerungen');
+    }
+  }
+
   function openSpecialEventsModal() {
     specialEventFocusDate = null;
     closeAllPopovers();
     showSpecialEventOverview();
+    state.todoDrawerOpen = false;
+    state.specialEventsDrawerOpen = true;
+    renderTodoDrawer();
     renderSpecialEventsModal();
-    if (specialEventsModalBackdrop) specialEventsModalBackdrop.style.display = 'flex';
+    renderSpecialEventsDrawer();
     markSpecialNoticesSeen();
+    saveState();
     renderSpecialEventsButton();
   }
 
   function closeSpecialEventsModal() {
     closeSpecialDatePicker();
-    if (specialEventsModalBackdrop) specialEventsModalBackdrop.style.display = 'none';
-    if (specialEventForm) specialEventForm.style.display = 'none';
+    showSpecialEventOverview();
+    state.specialEventsDrawerOpen = false;
+    saveState();
+    renderSpecialEventsDrawer();
   }
 
   function resetSpecialEventForm() {
@@ -1710,6 +1757,7 @@
     editingSpecialEventId = null;
     showSpecialEventOverview();
     renderSpecialEventsModal();
+    renderSpecialEventsDrawer();
     renderCalendar();
   }
 
@@ -2436,9 +2484,13 @@
         state.specialEventTypeFilter = 'all';
         closeAllPopovers();
         showSpecialEventOverview();
+        state.todoDrawerOpen = false;
+        state.specialEventsDrawerOpen = true;
+        renderTodoDrawer();
         renderSpecialEventsModal();
-        if (specialEventsModalBackdrop) specialEventsModalBackdrop.style.display = 'flex';
+        renderSpecialEventsDrawer();
         markSpecialNoticesSeen();
+        saveState();
         renderSpecialEventsButton();
       });
     }
@@ -4165,6 +4217,11 @@ return div;
     const isOpen = Boolean(state.todoDrawerOpen);
     const view = state.drawerView === 'todo' ? 'todo' : 'habit';
     if (isOpen) {
+      state.specialEventsDrawerOpen = false;
+      document.body.classList.remove('special-events-drawer-open');
+      specialEventsBtn?.classList.remove('active');
+      specialEventsBtn?.setAttribute('aria-expanded', 'false');
+      showSpecialEventOverview();
       if (weekSettings) weekSettings.classList.remove('open');
       if (profileMenu) profileMenu.classList.remove('open');
       if (drawerHabitPanel) drawerHabitPanel.classList.remove('filter-open');
@@ -4541,11 +4598,21 @@ function toggleMissed(eventId) {
       }
     });
   }
-  if (specialEventsBtn) specialEventsBtn.addEventListener('click', openSpecialEventsModal);
+  if (specialEventsBtn) {
+    specialEventsBtn.addEventListener('click', () => {
+      if (state.specialEventsDrawerOpen) closeSpecialEventsModal();
+      else openSpecialEventsModal();
+    });
+  }
   if (closeSpecialEventsModalBtn) closeSpecialEventsModalBtn.addEventListener('click', closeSpecialEventsModal);
   if (specialEventsModalBackdrop) {
     specialEventsModalBackdrop.addEventListener('click', e => {
       if (e.target === specialEventsModalBackdrop) closeSpecialEventsModal();
+    });
+  }
+  if (specialEventFormBackdrop) {
+    specialEventFormBackdrop.addEventListener('click', e => {
+      if (e.target === specialEventFormBackdrop) { showSpecialEventOverview(); renderSpecialEventsModal(); }
     });
   }
   if (showSpecialEventFormBtn) {
@@ -4554,6 +4621,7 @@ function toggleMissed(eventId) {
       showSpecialEventForm();
     });
   }
+  if (closeSpecialEventFormBtn) closeSpecialEventFormBtn.addEventListener('click', () => { showSpecialEventOverview(); renderSpecialEventsModal(); });
   if (cancelSpecialEventBtn) cancelSpecialEventBtn.addEventListener('click', () => { showSpecialEventOverview(); renderSpecialEventsModal(); });
   if (specialEventTypeFilter) specialEventTypeFilter.addEventListener('change', () => { state.specialEventTypeFilter = specialEventTypeFilter.value; saveState(); renderSpecialEventsModal(); });
   if (specialEventRangeFilter) specialEventRangeFilter.addEventListener('change', () => { state.specialEventRangeFilter = specialEventRangeFilter.value; saveState(); renderSpecialEventsModal(); });
@@ -4707,9 +4775,14 @@ function toggleMissed(eventId) {
     closeAllPopovers();
     const willOpen = !state.todoDrawerOpen;
     state.todoDrawerOpen = willOpen;
-    if (willOpen) state.drawerView = 'habit';
+    if (willOpen) {
+      state.drawerView = 'habit';
+      state.specialEventsDrawerOpen = false;
+      showSpecialEventOverview();
+    }
     saveState();
     renderTodoDrawer();
+    renderSpecialEventsDrawer();
   };
   closeTodoDrawerBtn.onclick = () => {
     state.todoDrawerOpen = false;
@@ -4726,6 +4799,13 @@ function toggleMissed(eventId) {
       if (weekSettings) weekSettings.classList.remove('open');
       if (profileMenu) profileMenu.classList.remove('open');
       if (drawerHabitPanel) drawerHabitPanel.classList.remove('filter-open');
+    }, { passive: true });
+  }
+  if (specialEventsDrawer) {
+    specialEventsDrawer.addEventListener('scroll', () => {
+      if (weekSettings) weekSettings.classList.remove('open');
+      if (profileMenu) profileMenu.classList.remove('open');
+      closeSpecialDatePicker();
     }, { passive: true });
   }
   document.getElementById('addCategoryBtn').onclick = () => openCategoryEditor(null);
@@ -4917,10 +4997,12 @@ function toggleMissed(eventId) {
     if (e.key === 'Escape') {
       const icsModal = document.getElementById('icsModal');
       if (icsModal && !icsModal.classList.contains('hidden')) icsModal.classList.add('hidden');
+      else if (specialEventFormBackdrop?.style.display === 'flex') { showSpecialEventOverview(); renderSpecialEventsModal(); }
       else if (calendarFeedModalBackdrop?.style.display === 'flex') closeCalendarFeedModal();
       else if (accountModalBackdrop?.style.display === 'flex') closeAccountModal();
       else if (helpModalBackdrop?.style.display === 'flex') closeHelpModal();
       else if (modalBackdrop.style.display === 'flex') closeModal();
+      else if (state.specialEventsDrawerOpen) closeSpecialEventsModal();
       else if (state.todoDrawerOpen) {
         state.todoDrawerOpen = false;
         saveState();
@@ -5735,7 +5817,7 @@ if (removeBtn) {
   // INIT
   // ==================================================
 
-function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); renderCalendarFeedSettings(); renderSpecialEventsButton(); updateIcsAutoSyncMeta(); }
+function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); renderCalendarFeedSettings(); renderSpecialEventsButton(); renderSpecialEventsModal(); renderSpecialEventsDrawer(); updateIcsAutoSyncMeta(); }
   fillTaskDaySelect();
   renderAll();
   renderAll();
