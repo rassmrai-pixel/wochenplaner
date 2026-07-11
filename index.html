@@ -29,8 +29,9 @@
         </div>
       </div>
           <div class="profile-actions">
-  <button class="ghost" id="profileAccountBtn" type="button">Kontoinformationen</button>
-  <button class="ghost" id="openIcsModalBtn" type="button">ICS-Kalender verbinden</button>
+  <button class="ghost" id="profileAccountBtn" type="button">Konto</button>
+  <button class="ghost" id="openCalendarFeedModalBtn" type="button">Kalender abonnieren</button>
+  <button class="ghost" id="openIcsModalBtn" type="button">ICS-Kalender importieren</button>
   <button class="ghost" id="profileHelpBtn" type="button">Hilfe</button>
   <button class="danger" id="profileLogoutBtn" type="button">Ausloggen</button>
 </div>
@@ -55,30 +56,6 @@
         <button class="ghost" id="skipLoginBtn">Ohne Login lokal nutzen</button>
         <button class="ghost" id="logoutBtn" style="display:none;">Ausloggen</button>
       </div>
-    </section>
-    <section class="calendar-feed-panel" id="calendarFeedPanel">
-      <div class="calendar-feed-head">
-        <div>
-          <div class="calendar-feed-title">Kalender extern anzeigen</div>
-          <div class="calendar-feed-sub">Diesen persönlichen Kalenderlink kannst du in Outlook oder einer anderen Kalender-App als Internetkalender abonnieren. Änderungen aus der App werden beim nächsten Abruf des Kalenders übernommen.</div>
-        </div>
-        <label class="calendar-feed-toggle">
-          <input id="calendarFeedEnabled" type="checkbox" />
-          <span>Kalenderfeed aktivieren</span>
-        </label>
-      </div>
-      <div class="calendar-feed-link-row">
-        <input id="calendarFeedUrl" type="text" readonly placeholder="Feed aktivieren, um den persönlichen Link zu erzeugen" />
-        <button class="ghost" id="copyCalendarFeedBtn" type="button">Link kopieren</button>
-        <button class="ghost" id="regenerateCalendarFeedTokenBtn" type="button">Neuen Token erstellen</button>
-      </div>
-      <div class="calendar-feed-options">
-        <label><input id="calendarFeedExportRoutines" type="checkbox" /> Routinen exportieren</label>
-        <label><input id="calendarFeedExportTimedTodos" type="checkbox" /> To-dos mit Uhrzeit exportieren</label>
-        <label><input id="calendarFeedExportAllDayTodos" type="checkbox" /> Ganztägige To-dos exportieren</label>
-        <label><input id="calendarFeedIncludeCompleted" type="checkbox" /> Erledigte Termine exportieren</label>
-      </div>
-      <div class="calendar-feed-note" id="calendarFeedStatus">Ein neuer Token macht den alten Kalenderlink sofort ungültig.</div>
     </section>
     <div class="category-toggle-row">
       <button class="small ghost" id="categoryToggleBtn" type="button">Kategorien anzeigen ▾</button>
@@ -417,6 +394,67 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="accountModalBackdrop">
+    <div class="modal account-modal">
+      <div class="modal-title-row">
+        <h2>Konto</h2>
+        <button class="modal-close-btn" id="closeAccountModalBtn" type="button" aria-label="Schließen">×</button>
+      </div>
+      <div class="account-hero">
+        <div class="account-avatar" id="accountAvatar">?</div>
+        <div>
+          <div class="account-email" id="accountEmail">Lokaler Modus</div>
+          <div class="account-status"><span class="account-status-badge" id="accountStatusBadge">Lokal</span><span id="accountStatusText">Nur lokale Speicherung</span></div>
+        </div>
+      </div>
+      <div class="account-info-grid">
+        <div class="account-info-card"><span>Konto</span><strong id="accountModeInfo">Lokal</strong></div>
+        <div class="account-info-card"><span>Synchronisation</span><strong id="accountSyncInfo">Inaktiv</strong></div>
+        <div class="account-info-card"><span>Kalenderfeed</span><strong id="accountFeedInfo">Inaktiv</strong></div>
+      </div>
+      <div class="account-detail" id="accountDetailText">Melde dich an, um Cloud Sync und den Kalenderfeed serverseitig zu nutzen.</div>
+      <div class="modal-actions">
+        <button class="ghost" id="closeAccountModalFooterBtn" type="button">Schließen</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="calendarFeedModalBackdrop">
+    <div class="modal calendar-feed-modal">
+      <div class="modal-title-row">
+        <h2>Kalender abonnieren</h2>
+        <button class="modal-close-btn" id="closeCalendarFeedModalBtn" type="button" aria-label="Schließen">×</button>
+      </div>
+      <section class="calendar-feed-panel" id="calendarFeedPanel">
+      <div class="calendar-feed-head">
+        <div>
+          <div class="calendar-feed-title">Kalender extern anzeigen</div>
+          <div class="calendar-feed-sub">Diesen persönlichen Kalenderlink kannst du in Outlook oder einer anderen Kalender-App als Internetkalender abonnieren. Änderungen aus der App werden beim nächsten Abruf des Kalenders übernommen.</div>
+        </div>
+        <label class="calendar-feed-toggle">
+          <input id="calendarFeedEnabled" type="checkbox" />
+          <span>Kalenderfeed aktivieren</span>
+        </label>
+      </div>
+      <div class="calendar-feed-link-row">
+        <input id="calendarFeedUrl" type="text" readonly placeholder="Feed aktivieren, um den persönlichen Link zu erzeugen" />
+        <button class="ghost" id="copyCalendarFeedBtn" type="button">Link kopieren</button>
+        <button class="ghost" id="regenerateCalendarFeedTokenBtn" type="button">Neuen Token erstellen</button>
+      </div>
+      <div class="calendar-feed-options">
+        <label><input id="calendarFeedExportRoutines" type="checkbox" /> Routinen exportieren</label>
+        <label><input id="calendarFeedExportTimedTodos" type="checkbox" /> To-dos mit Uhrzeit exportieren</label>
+        <label><input id="calendarFeedExportAllDayTodos" type="checkbox" /> Ganztägige To-dos exportieren</label>
+        <label><input id="calendarFeedIncludeCompleted" type="checkbox" /> Erledigte Termine exportieren</label>
+      </div>
+      <div class="calendar-feed-note" id="calendarFeedStatus">Ein neuer Token macht den alten Kalenderlink sofort ungültig.</div>
+      </section>
+      <div class="modal-actions">
+        <button class="ghost" id="closeCalendarFeedModalFooterBtn" type="button">Schließen</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-backdrop" id="helpModalBackdrop">
     <div class="modal help-modal">
       <div class="modal-title-row">
@@ -436,10 +474,10 @@
   <div id="icsModal" class="ics-modal hidden">
     <div class="ics-modal-card">
       <div class="ics-modal-header">
-        <h2>ICS-Kalender verbinden</h2>
+        <h2>ICS-Kalender importieren</h2>
         <button id="closeIcsModalXBtn" class="ics-modal-close" type="button" aria-label="Schließen">×</button>
       </div>
-      <p>Füge deinen Outlook-ICS-Link ein. Die Termine werden nur gelesen und in deinem Planner angezeigt.</p>
+      <p>Füge einen Outlook- oder anderen ICS-Link ein. Diese externen Termine werden nur gelesen und in deinem Planner angezeigt.</p>
 
       <input
         id="icsUrlInput"

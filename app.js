@@ -229,6 +229,21 @@
   const trackingInsights = document.getElementById('trackingInsights');
   const cloudPanel = document.getElementById('cloudPanel');
   const cloudStatus = document.getElementById('cloudStatus');
+  const accountModalBackdrop = document.getElementById('accountModalBackdrop');
+  const closeAccountModalBtn = document.getElementById('closeAccountModalBtn');
+  const closeAccountModalFooterBtn = document.getElementById('closeAccountModalFooterBtn');
+  const accountAvatar = document.getElementById('accountAvatar');
+  const accountEmail = document.getElementById('accountEmail');
+  const accountStatusBadge = document.getElementById('accountStatusBadge');
+  const accountStatusText = document.getElementById('accountStatusText');
+  const accountModeInfo = document.getElementById('accountModeInfo');
+  const accountSyncInfo = document.getElementById('accountSyncInfo');
+  const accountFeedInfo = document.getElementById('accountFeedInfo');
+  const accountDetailText = document.getElementById('accountDetailText');
+  const calendarFeedModalBackdrop = document.getElementById('calendarFeedModalBackdrop');
+  const openCalendarFeedModalBtn = document.getElementById('openCalendarFeedModalBtn');
+  const closeCalendarFeedModalBtn = document.getElementById('closeCalendarFeedModalBtn');
+  const closeCalendarFeedModalFooterBtn = document.getElementById('closeCalendarFeedModalFooterBtn');
   const calendarFeedPanel = document.getElementById('calendarFeedPanel');
   const calendarFeedEnabled = document.getElementById('calendarFeedEnabled');
   const calendarFeedUrl = document.getElementById('calendarFeedUrl');
@@ -603,6 +618,45 @@
     if (!feed.token) return '';
     const origin = window.location?.origin && window.location.origin !== 'null' ? window.location.origin : '';
     return `${origin}/api/calendar-feed?token=${encodeURIComponent(feed.token)}`;
+  }
+
+  function renderAccountModal() {
+    if (!accountModalBackdrop) return;
+    const signedIn = Boolean(cloudUser);
+    const feed = ensureCalendarFeedSettings();
+    const label = signedIn ? (cloudUser.email || 'Nutzer') : 'Lokaler Modus';
+    if (accountAvatar) accountAvatar.textContent = signedIn ? profileInitials(label) : 'LO';
+    if (accountEmail) accountEmail.textContent = label;
+    if (accountStatusBadge) accountStatusBadge.textContent = signedIn ? 'Eingeloggt' : 'Lokal';
+    if (accountStatusText) accountStatusText.textContent = signedIn ? 'Cloud Sync aktiv' : 'Nur lokale Speicherung';
+    if (accountModeInfo) accountModeInfo.textContent = signedIn ? 'Aktiviert' : 'Lokaler Modus';
+    if (accountSyncInfo) accountSyncInfo.textContent = signedIn ? 'Aktiv' : 'Inaktiv';
+    if (accountFeedInfo) accountFeedInfo.textContent = feed.enabled ? 'Aktiv' : 'Inaktiv';
+    if (accountDetailText) {
+      accountDetailText.textContent = signedIn
+        ? `Deine Planung wird mit Supabase synchronisiert.${feed.enabled ? ' Dein persönlicher Kalenderfeed ist aktiv.' : ' Der Kalenderfeed ist aktuell deaktiviert.'}`
+        : 'Du nutzt die App lokal in diesem Browser. Für Cloud Sync und den serverseitigen Kalenderfeed musst du eingeloggt sein.';
+    }
+  }
+
+  function openAccountModal() {
+    profileMenu?.classList.remove('open');
+    renderAccountModal();
+    if (accountModalBackdrop) accountModalBackdrop.style.display = 'flex';
+  }
+
+  function closeAccountModal() {
+    if (accountModalBackdrop) accountModalBackdrop.style.display = 'none';
+  }
+
+  function openCalendarFeedModal() {
+    profileMenu?.classList.remove('open');
+    renderCalendarFeedSettings();
+    if (calendarFeedModalBackdrop) calendarFeedModalBackdrop.style.display = 'flex';
+  }
+
+  function closeCalendarFeedModal() {
+    if (calendarFeedModalBackdrop) calendarFeedModalBackdrop.style.display = 'none';
   }
 
   function renderCalendarFeedSettings() {
@@ -3778,12 +3832,14 @@ function toggleMissed(eventId) {
     profileMenu.classList.toggle('open');
   };
   if (profileLogoutBtn) profileLogoutBtn.onclick = signOut;
-  if (profileAccountBtn) profileAccountBtn.onclick = () => {
-    const signedIn = Boolean(cloudUser);
-    alert(signedIn
-      ? `Eingeloggt als ${cloudUser.email || 'Nutzer'}\nCloud Sync ist aktiv.`
-      : 'Lokaler Modus aktiv. Deine Daten werden nur in diesem Browser gespeichert.');
-  };
+  if (profileAccountBtn) profileAccountBtn.onclick = openAccountModal;
+  if (openCalendarFeedModalBtn) openCalendarFeedModalBtn.onclick = openCalendarFeedModal;
+  if (closeAccountModalBtn) closeAccountModalBtn.onclick = closeAccountModal;
+  if (closeAccountModalFooterBtn) closeAccountModalFooterBtn.onclick = closeAccountModal;
+  if (accountModalBackdrop) accountModalBackdrop.addEventListener('click', e => { if (e.target === accountModalBackdrop) closeAccountModal(); });
+  if (closeCalendarFeedModalBtn) closeCalendarFeedModalBtn.onclick = closeCalendarFeedModal;
+  if (closeCalendarFeedModalFooterBtn) closeCalendarFeedModalFooterBtn.onclick = closeCalendarFeedModal;
+  if (calendarFeedModalBackdrop) calendarFeedModalBackdrop.addEventListener('click', e => { if (e.target === calendarFeedModalBackdrop) closeCalendarFeedModal(); });
   if (profileHelpBtn) profileHelpBtn.onclick = openHelpModal;
   if (closeHelpModalBtn) closeHelpModalBtn.onclick = closeHelpModal;
   if (helpModalBackdrop) helpModalBackdrop.addEventListener('click', e => {
@@ -4081,6 +4137,8 @@ function toggleMissed(eventId) {
     if (e.key === 'Escape') {
       const icsModal = document.getElementById('icsModal');
       if (icsModal && !icsModal.classList.contains('hidden')) icsModal.classList.add('hidden');
+      else if (calendarFeedModalBackdrop?.style.display === 'flex') closeCalendarFeedModal();
+      else if (accountModalBackdrop?.style.display === 'flex') closeAccountModal();
       else if (helpModalBackdrop?.style.display === 'flex') closeHelpModal();
       else if (modalBackdrop.style.display === 'flex') closeModal();
       else if (state.todoDrawerOpen) {
