@@ -5,7 +5,7 @@ const DEFAULT_FEED_SETTINGS = {
   token: null,
   exportRoutines: true,
   exportTimedTodos: true,
-  exportAllDayTodos: false,
+  exportAllDayTodos: true,
   includeCompleted: true
 };
 
@@ -73,7 +73,7 @@ function normalizeFeedSettings(input) {
   feed.token = normalizeToken(feed.token) || null;
   feed.exportRoutines = feed.exportRoutines !== false;
   feed.exportTimedTodos = feed.exportTimedTodos !== false;
-  feed.exportAllDayTodos = Boolean(feed.exportAllDayTodos);
+  feed.exportAllDayTodos = true;
   feed.includeCompleted = feed.includeCompleted !== false;
   return feed;
 }
@@ -272,7 +272,7 @@ function buildIcs(state, feed, req) {
     'PRODID:-//Perfekte Woche Planer//Calendar Feed//DE',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
-    'X-WR-CALNAME:Perfekte Woche Planer',
+    'X-WR-CALNAME:Wochenplaner',
     `X-WR-TIMEZONE:${DEFAULT_TIMEZONE}`,
     'BEGIN:VTIMEZONE',
     `TZID:${DEFAULT_TIMEZONE}`,
@@ -312,8 +312,9 @@ async function calendarFeedHandler(req, res) {
     const ics = buildIcs(state, feed, req);
     res.statusCode = 200;
     res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
-    res.setHeader('Content-Disposition', 'inline; filename="planner-calendar.ics"');
-    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Disposition', 'inline; filename="wochenplaner.ics"');
+    res.setHeader('Cache-Control', 'no-store, no-cache, max-age=0, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
     if (req.method === 'HEAD') return res.end();
     return res.end(ics);
   } catch (error) {

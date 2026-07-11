@@ -48,7 +48,7 @@
       token: null,
       exportRoutines: true,
       exportTimedTodos: true,
-      exportAllDayTodos: false,
+      exportAllDayTodos: true,
       includeCompleted: true
     },
     categories: {
@@ -311,7 +311,7 @@
     s.calendarFeed.token = typeof s.calendarFeed.token === 'string' && s.calendarFeed.token.length >= 32 ? s.calendarFeed.token : null;
     s.calendarFeed.exportRoutines = s.calendarFeed.exportRoutines !== false;
     s.calendarFeed.exportTimedTodos = s.calendarFeed.exportTimedTodos !== false;
-    s.calendarFeed.exportAllDayTodos = Boolean(s.calendarFeed.exportAllDayTodos);
+    s.calendarFeed.exportAllDayTodos = true;
     s.calendarFeed.includeCompleted = s.calendarFeed.includeCompleted !== false;
     if (s.categories.neutral) {
       s.categories.orga = s.categories.orga || { label: 'Orga / To-dos', color: s.categories.neutral.color || '#94a3b8', habit: true };
@@ -615,7 +615,8 @@
   function calendarFeedLink() {
     const feed = ensureCalendarFeedSettings();
     if (!feed.token) return '';
-    const origin = window.location?.origin && window.location.origin !== 'null' ? window.location.origin : '';
+    const configuredBaseUrl = String(window.WOCHENPLANER_APP_BASE_URL || '').replace(/\/$/, '');
+    const origin = configuredBaseUrl || (window.location?.origin && window.location.origin !== 'null' ? window.location.origin : '');
     return `${origin}/api/calendar-feed?token=${encodeURIComponent(feed.token)}`;
   }
 
@@ -3722,12 +3723,16 @@ function toggleMissed(eventId) {
   // ==================================================
 
   templateModeBtn.onclick = () => {
+    closeAllPopovers();
+    state.todoDrawerOpen = false;
     state.plannerMode = 'template';
     state.viewMode = 'calendar';
     saveState();
     renderAll();
   };
   weekModeBtn.onclick = () => {
+    closeAllPopovers();
+    state.todoDrawerOpen = false;
     state.plannerMode = 'week';
     state.viewMode = 'calendar';
     const today = getTodayInfo();
@@ -3736,6 +3741,8 @@ function toggleMissed(eventId) {
     renderAll();
   };
   trackingModeBtn.onclick = () => {
+    closeAllPopovers();
+    state.todoDrawerOpen = false;
     state.plannerMode = 'tracking';
     state.viewMode = 'calendar';
     saveState();

@@ -3238,3 +3238,117 @@ body.todo-drawer-open .profile-menu.open .profile-dropdown {
 }
 
  
+
+/* Mobile modal hardening */
+.modal-backdrop,
+.ics-modal {
+  box-sizing: border-box;
+}
+
+.modal-backdrop[style*="display: none"],
+.ics-modal.hidden,
+body:not(.todo-drawer-open) .todo-drawer-backdrop {
+  pointer-events: none !important;
+}
+
+.modal,
+.ics-modal-card {
+  box-sizing: border-box;
+  max-width: calc(100vw - 24px);
+}
+
+.ics-modal-card {
+  color: var(--text);
+  background: #111827;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.ics-modal-card p,
+.ics-modal-status {
+  color: var(--muted) !important;
+}
+
+.ics-modal-input {
+  color: var(--text);
+  background: rgba(15, 23, 42, 0.72);
+  border-color: rgba(148, 163, 184, 0.36);
+}
+
+@media (max-width: 768px) {
+  html,
+  body {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .modal-backdrop,
+  .ics-modal {
+    align-items: flex-start;
+    justify-content: center;
+    padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .modal,
+  .ics-modal-card {
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-radius: 16px;
+    padding: 16px;
+  }
+
+  .ics-modal-actions,
+  .modal-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .ics-modal-actions button,
+  .modal-actions button,
+  .calendar-share-link-row button,
+  .calendar-share-disabled button {
+    width: 100%;
+    min-height: 44px;
+    white-space: normal;
+  }
+
+  .ics-modal-header,
+  .modal-title-row {
+    align-items: flex-start;
+  }
+
+  .ics-modal-header h2,
+  .modal-title-row h2 {
+    font-size: 18px;
+    line-height: 1.2;
+  }
+
+  .ics-modal-close,
+  .modal-close-btn {
+    flex: 0 0 38px;
+    width: 38px;
+    height: 38px;
+    min-height: 38px;
+  }
+
+  .calendar-share-card-head {
+    align-items: flex-start;
+  }
+
+  .calendar-share-link-row {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-share-link-row input,
+  .ics-modal-input,
+  .modal input,
+  .modal select {
+    min-width: 0;
+    width: 100%;
+  }
+}
