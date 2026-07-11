@@ -21,6 +21,7 @@
     <span id="specialEventsBadge" class="special-events-badge" aria-hidden="true"></span>
   </button>
   <button id="todoDrawerToggleBtn" class="topbar-icon-btn todo-drawer-trigger" type="button" title="To-do Planner" aria-label="To-do Planner" data-tooltip="To-do Planner">☑️</button>
+  <button id="mobileWeekSummaryBtn" class="mobile-week-summary-btn" type="button" title="Kalenderwoche auswählen" aria-label="Kalenderwoche auswählen">Jul · KW 29</button>
 
   <div class="profile-menu" id="profileMenu">
     <button class="profile-button" id="profileButton" title="Profil">?</button>
@@ -61,6 +62,14 @@
         <button class="ghost" id="logoutBtn" style="display:none;">Ausloggen</button>
       </div>
     </section>
+    <button class="mobile-controls-toggle" id="mobileControlsToggleBtn" type="button" aria-expanded="false">
+      <span>
+        <strong>Kalendersteuerung</strong>
+        <small id="mobileControlsStatus">Kalender · Woche</small>
+      </span>
+      <span id="mobileControlsChevron" aria-hidden="true">⌄</span>
+    </button>
+
     <div class="category-toggle-row">
       <button class="small ghost" id="categoryToggleBtn" type="button">Kategorien anzeigen ▾</button>
     </div>

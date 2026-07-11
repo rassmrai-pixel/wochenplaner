@@ -39,6 +39,8 @@
     uiHomeVersion: 'calendar-main-v1',
     todoDrawerOpen: false,
     specialEventsDrawerOpen: false,
+    mobileControlsOpen: false,
+    mobileCalendarStartDay: null,
     drawerView: 'habit',
     openHeaderTodoDay: null,
     currentWeekStart: null,
@@ -119,6 +121,9 @@
   const calendarWrap = document.getElementById('calendarWrap');
   const legend = document.getElementById('legend');
   const categoryToggleBtn = document.getElementById('categoryToggleBtn');
+  const mobileControlsToggleBtn = document.getElementById('mobileControlsToggleBtn');
+  const mobileControlsStatus = document.getElementById('mobileControlsStatus');
+  const mobileControlsChevron = document.getElementById('mobileControlsChevron');
   const modalBackdrop = document.getElementById('modalBackdrop');
   const modalTitle = document.getElementById('modalTitle');
   const modalLabel = document.getElementById('modalLabel');
@@ -234,6 +239,7 @@
   const nextWeekBtn = document.getElementById('nextWeekBtn');
   const weekDateInput = document.getElementById('weekDateInput');
   const weekLabel = document.getElementById('weekLabel');
+  const mobileWeekSummaryBtn = document.getElementById('mobileWeekSummaryBtn');
   const weekRange = document.getElementById('weekRange');
   const weekSettings = document.getElementById('weekSettings');
   const weekSettingsBtn = document.getElementById('weekSettingsBtn');
@@ -527,6 +533,8 @@
     if (s.plannerMode !== 'week' && s.viewMode === 'tasks') s.viewMode = 'calendar';
     s.todoDrawerOpen = Boolean(s.todoDrawerOpen);
     s.specialEventsDrawerOpen = Boolean(s.specialEventsDrawerOpen);
+    s.mobileControlsOpen = Boolean(s.mobileControlsOpen);
+    s.mobileCalendarStartDay = Number.isInteger(Number(input.mobileCalendarStartDay)) ? clamp(Number(input.mobileCalendarStartDay), 0, 5) : null;
     if (s.todoDrawerOpen) s.specialEventsDrawerOpen = false;
     if (!['habit', 'todo'].includes(s.drawerView)) s.drawerView = 'habit';
     const todayInfo = getTodayInfo();
@@ -1181,9 +1189,10 @@
     }));
   }
 
-  function positionWeekPicker() {
+  function positionWeekPicker(anchor = null) {
     const picker = weekPickerElement();
-    const rect = weekLabel.getBoundingClientRect();
+    const source = anchor || (isMobileViewport() && mobileWeekSummaryBtn ? mobileWeekSummaryBtn : weekLabel);
+    const rect = source.getBoundingClientRect();
     picker.style.position = 'fixed';
     picker.style.width = 'min(360px, calc(100vw - 24px))';
     const left = Math.min(Math.max(12, rect.left), window.innerWidth - 372);
@@ -1196,7 +1205,7 @@
     if (event) { event.preventDefault(); event.stopPropagation(); }
     weekPickerYear = getISOWeekInfo(getSelectedWeekStartDate()).year;
     renderWeekPicker();
-    positionWeekPicker();
+    positionWeekPicker(event?.currentTarget || null);
     weekPickerElement().classList.add('open');
   }
 
@@ -1782,6 +1791,7 @@
   function changeWeek(offset) {
     const next = addDays(getSelectedWeekStartDate(), offset * 7);
     state.currentWeekStart = clampWeekKey(next);
+    state.mobileCalendarStartDay = null;
     currentWeekEvents();
     const today = getTodayInfo();
     if (state.currentWeekStart === today.weekKey) state.activeHabitDay = today.dayIndex;
@@ -2235,11 +2245,84 @@
     currentTimeTimer = window.setInterval(updateCurrentTimeLine, 60000);
   }
 
+
+  function isMobileViewport() {
+    return window.matchMedia('(max-width: 768px)').matches;
+  }
+
+  function mobileVisibleDayCount() {
+    return window.matchMedia('(max-width: 349px)').matches ? 2 : 3;
+  }
+
+  function mobileCalendarStartDay() {
+    const count = mobileVisibleDayCount();
+    const maxStart = 7 - count;
+    const today = getTodayInfo();
+    let start = Number.isInteger(Number(state.mobileCalendarStartDay)) ? Number(state.mobileCalendarStartDay) : null;
+    if (start === null) {
+      start = state.currentWeekStart === today.weekKey ? today.dayIndex - Math.floor(count / 2) : 0;
+    }
+    start = clamp(start, 0, maxStart);
+    state.mobileCalendarStartDay = start;
+    return start;
+  }
+
+  function visibleCalendarDayIndexes() {
+    if (!isMobileViewport() || !isWeekMode() || state.viewMode === 'tasks') return days.map((_, index) => index);
+    const count = mobileVisibleDayCount();
+    const start = mobileCalendarStartDay();
+    return Array.from({ length: count }, (_, index) => start + index);
+  }
+
+  function shiftMobileCalendarDays(delta) {
+    if (!isMobileViewport() || !isWeekMode() || state.viewMode === 'tasks' || isDragging) return;
+    const count = mobileVisibleDayCount();
+    const maxStart = 7 - count;
+    let next = mobileCalendarStartDay() + delta;
+    if (next < 0) {
+      const previousWeek = addDays(getSelectedWeekStartDate(), -7);
+      state.currentWeekStart = clampWeekKey(previousWeek);
+      state.mobileCalendarStartDay = maxStart;
+    } else if (next > maxStart) {
+      const nextWeek = addDays(getSelectedWeekStartDate(), 7);
+      state.currentWeekStart = clampWeekKey(nextWeek);
+      state.mobileCalendarStartDay = 0;
+    } else {
+      state.mobileCalendarStartDay = next;
+    }
+    currentWeekEvents();
+    saveState();
+    renderAll();
+  }
+
+  function formatMobileWeekSummary() {
+    const start = getSelectedWeekStartDate();
+    const visible = visibleCalendarDayIndexes();
+    const firstVisibleDate = getDayDate(visible[0] || 0);
+    const info = getISOWeekInfo(start);
+    const month = firstVisibleDate.toLocaleDateString('de-DE', { month: 'short' }).replace('.', '');
+    return `${month} · KW ${info.week}`;
+  }
+
+  function renderMobileControls() {
+    document.body.classList.toggle('mobile-controls-open', Boolean(state.mobileControlsOpen));
+    if (mobileControlsToggleBtn) mobileControlsToggleBtn.setAttribute('aria-expanded', String(Boolean(state.mobileControlsOpen)));
+    if (mobileControlsChevron) mobileControlsChevron.textContent = state.mobileControlsOpen ? '⌃' : '⌄';
+    if (mobileWeekSummaryBtn) mobileWeekSummaryBtn.textContent = formatMobileWeekSummary();
+    if (mobileControlsStatus) {
+      const view = state.plannerMode === 'tracking' ? 'Tracking' : (state.plannerMode === 'template' ? 'Routine' : 'Kalender');
+      mobileControlsStatus.textContent = `${view} · ${formatMobileWeekSummary()}`;
+    }
+  }
+
   function renderCalendar() {
     calendar.innerHTML = '';
     const today = getTodayInfo();
+    const visibleDays = visibleCalendarDayIndexes();
+    calendar.classList.toggle('mobile-calendar-grid', isMobileViewport() && isWeekMode() && state.viewMode !== 'tasks');
+    calendar.style.setProperty('--visible-days', String(visibleDays.length));
     calendar.appendChild(headerCell('', 1));
-    days.forEach((day, i) => calendar.appendChild(headerCell(day, i + 2, i)));
+    visibleDays.forEach((dayIndex, visibleIndex) => calendar.appendChild(headerCell(days[dayIndex], visibleIndex + 2, dayIndex)));
 
     const allDayLabel = document.createElement('div');
     allDayLabel.className = 'all-day-cell all-day-label';
@@ -2257,11 +2340,12 @@
     }
     calendar.appendChild(timeGrid);
 
-    for (let d = 0; d < 7; d++) {
+    visibleDays.forEach((d, visibleIndex) => {
+      const gridColumn = String(visibleIndex + 2);
       const allDayCell = document.createElement('div');
       allDayCell.className = 'all-day-cell all-day-day';
       allDayCell.classList.toggle('expanded', state.openHeaderTodoDay === d);
-      allDayCell.style.gridColumn = String(d + 2);
+      allDayCell.style.gridColumn = gridColumn;
       allDayCell.dataset.day = d;
       allDayCell.title = `${days[d]} ${formatShortDate(getDayDate(d))} · Tages-To-do ohne Uhrzeit erstellen`;
       allDayCell.addEventListener('click', () => openDayTodoModalForDay(d));
@@ -2271,7 +2355,7 @@
       const col = document.createElement('div');
       const dayDateKey = dateKey(getDayDate(d));
       col.className = `day-column ${isWeekMode() && dayDateKey === today.dateKey ? 'today' : ''}`;
-      col.style.gridColumn = String(d + 2);
+      col.style.gridColumn = gridColumn;
       col.dataset.day = d;
       setupEventDayDropTarget(col, d);
 
@@ -2292,7 +2376,7 @@
       layoutDayEvents(events).forEach(ev => col.appendChild(eventEl(ev)));
       renderCurrentTimeLine(col, d, today);
       calendar.appendChild(col);
-    }
+    });
     autoScrollCalendarToMorning();
   }
 
@@ -4224,6 +4308,7 @@ return div;
     weekLabel.setAttribute('role', 'button');
     weekLabel.tabIndex = 0;
     weekRange.textContent = `${formatLongDate(start)} – ${formatLongDate(end)}`;
+    renderMobileControls();
     fillTaskDaySelect();
     todayWeekBtn.classList.toggle('active', state.currentWeekStart === today.weekKey);
     const minWeek = weekStartDate('2026-01-01');
@@ -4654,6 +4739,7 @@ function toggleMissed(eventId) {
   todayWeekBtn.onclick = () => {
     const today = getTodayInfo();
     state.currentWeekStart = today.weekKey;
+    state.mobileCalendarStartDay = null;
     state.activeHabitDay = today.dayIndex;
     state.plannerMode = state.plannerMode === 'template' ? 'week' : state.plannerMode;
     currentWeekEvents();
@@ -4664,10 +4750,22 @@ function toggleMissed(eventId) {
     weekLabel.addEventListener('click', openWeekPicker);
     weekLabel.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') openWeekPicker(e); });
   }
+  if (mobileWeekSummaryBtn) {
+    mobileWeekSummaryBtn.addEventListener('click', openWeekPicker);
+    mobileWeekSummaryBtn.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') openWeekPicker(e); });
+  }
+  if (mobileControlsToggleBtn) {
+    mobileControlsToggleBtn.addEventListener('click', () => {
+      state.mobileControlsOpen = !state.mobileControlsOpen;
+      saveState();
+      renderMobileControls();
+    });
+  }
 
   weekDateInput.onchange = () => {
     if (!weekDateInput.value) return;
     state.currentWeekStart = clampWeekKey(weekDateInput.value);
+    state.mobileCalendarStartDay = null;
     const today = getTodayInfo();
     if (state.currentWeekStart === today.weekKey) state.activeHabitDay = today.dayIndex;
     currentWeekEvents();
@@ -5030,9 +5128,56 @@ function toggleMissed(eventId) {
   });
   window.addEventListener('resize', () => {
     renderCalendar();
+    renderMobileControls();
     if (document.getElementById('specialDatePicker')?.classList.contains('open')) positionSpecialDatePicker();
     if (document.getElementById('weekPickerPopover')?.classList.contains('open')) positionWeekPicker();
   });
+
+
+  let mobileSwipeStart = null;
+  function isBlockingMobileCalendarSwipe(target) {
+    if (!isMobileViewport() || isDragging) return true;
+    if (state.todoDrawerOpen || state.specialEventsDrawerOpen) return true;
+    if (target?.closest?.('.event, .modal, .ics-modal-card, .todo-drawer, .special-events-drawer, .profile-menu, button, input, select, textarea')) return true;
+    const icsModal = document.getElementById('icsModal');
+    return Boolean(
+      (icsModal && !icsModal.classList.contains('hidden')) ||
+      modalBackdrop?.style.display === 'flex' ||
+      calendarFeedModalBackdrop?.style.display === 'flex' ||
+      accountModalBackdrop?.style.display === 'flex' ||
+      helpModalBackdrop?.style.display === 'flex' ||
+      specialEventFormBackdrop?.style.display === 'flex'
+    );
+  }
+
+  if (calendarWrap) {
+    calendarWrap.addEventListener('touchstart', e => {
+      const touch = e.touches?.[0];
+      if (!touch || isBlockingMobileCalendarSwipe(e.target) || touch.clientX < 22) {
+        mobileSwipeStart = null;
+        return;
+      }
+      mobileSwipeStart = {
+        x: touch.clientX,
+        y: touch.clientY,
+        time: Date.now()
+      };
+    }, { passive: true });
+
+    calendarWrap.addEventListener('touchend', e => {
+      if (!mobileSwipeStart) return;
+      const touch = e.changedTouches?.[0];
+      if (!touch || isBlockingMobileCalendarSwipe(e.target)) {
+        mobileSwipeStart = null;
+        return;
+      }
+      const dx = touch.clientX - mobileSwipeStart.x;
+      const dy = touch.clientY - mobileSwipeStart.y;
+      mobileSwipeStart = null;
+      if (Math.abs(dx) < 52 || Math.abs(dx) < Math.abs(dy) * 1.35) return;
+      shiftMobileCalendarDays(dx < 0 ? 1 : -1);
+    }, { passive: true });
+  }
   document.addEventListener('click', e => {
     const picker = document.getElementById('specialDatePicker');
     if (!picker?.classList.contains('open')) return;
@@ -5042,7 +5187,7 @@ function toggleMissed(eventId) {
   document.addEventListener('click', e => {
     const picker = document.getElementById('weekPickerPopover');
     if (!picker?.classList.contains('open')) return;
-    if (picker.contains(e.target) || weekLabel?.contains(e.target)) return;
+    if (picker.contains(e.target) || weekLabel?.contains(e.target) || mobileWeekSummaryBtn?.contains(e.target)) return;
     closeWeekPicker();
   });
 
@@ -5835,7 +5980,7 @@ if (removeBtn) {
   // INIT
   // ==================================================
 
-function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); renderCalendarFeedSettings(); renderSpecialEventsButton(); renderSpecialEventsModal(); renderSpecialEventsDrawer(); updateIcsAutoSyncMeta(); }
+function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); renderCalendarFeedSettings(); renderSpecialEventsButton(); renderSpecialEventsModal(); renderSpecialEventsDrawer(); renderMobileControls(); updateIcsAutoSyncMeta(); }
   fillTaskDaySelect();
   renderAll();
   renderAll();
