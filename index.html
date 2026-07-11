@@ -484,15 +484,24 @@
         <button class="modal-close-btn" id="closeSpecialEventsModalBtn" type="button" aria-label="Schließen">×</button>
       </div>
 
-      <div class="special-events-sections">
-        <section>
-          <h3>Heute</h3>
-          <div id="specialEventsTodayList" class="special-events-list"></div>
-        </section>
-        <section>
-          <h3>Demnächst</h3>
-          <div id="specialEventsUpcomingList" class="special-events-list"></div>
-        </section>
+      <div class="special-events-overview" id="specialEventsOverview">
+        <div class="special-events-toolbar">
+          <select id="specialEventTypeFilter" title="Besondere Ereignisse filtern">
+            <option value="all">Alle</option>
+            <option value="birthday">Geburtstage</option>
+            <option value="anniversary">Jahrestage</option>
+            <option value="jubilee">Jubiläen</option>
+            <option value="reminder">Erinnerungen</option>
+            <option value="other">Sonstige</option>
+          </select>
+          <select id="specialEventRangeFilter" title="Zeitraum filtern">
+            <option value="all">Alle Zeiträume</option>
+            <option value="today">Heute</option>
+            <option value="7">Nächste 7 Tage</option>
+            <option value="30">Nächste 30 Tage</option>
+          </select>
+        </div>
+        <div id="specialEventsList" class="special-events-list"></div>
       </div>
 
       <section class="special-event-suggestions-section">
@@ -502,7 +511,7 @@
 
       <button class="primary special-events-add-toggle" id="showSpecialEventFormBtn" type="button">Besonderes Ereignis hinzufügen</button>
 
-      <form id="specialEventForm" class="special-event-form" style="display:none;">
+      <form id="specialEventForm" class="special-event-form special-event-form-view" style="display:none;">
         <div class="form-grid">
           <label>Typ
             <select id="specialEventType">
@@ -521,6 +530,7 @@
               <input id="specialEventDate" type="text" inputmode="none" readonly placeholder="JJJJ-MM-TT" />
               <button id="specialEventDatePickerBtn" class="special-date-picker-btn" type="button" aria-label="Datum auswählen">📅</button>
             </div>
+            <span id="specialEventZodiacPreview" class="special-event-zodiac-preview"></span>
           </label>
           <label>Ursprüngliches Jahr optional
             <input id="specialEventYear" type="number" min="1900" max="2200" placeholder="z. B. 1994" />

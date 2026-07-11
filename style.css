@@ -3772,3 +3772,118 @@ body:not(.todo-drawer-open) .todo-drawer-backdrop {
     font-size: 14px;
   }
 }
+
+.week-label-clickable {
+  cursor: pointer;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  padding: 6px 10px;
+  transition: 0.15s ease;
+}
+
+.week-label-clickable:hover,
+.week-label-clickable:focus-visible {
+  border-color: rgba(56, 189, 248, 0.75);
+  background: rgba(56, 189, 248, 0.12);
+  outline: none;
+}
+
+.week-picker-popover {
+  display: none;
+  z-index: 8000;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.98);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.46);
+  backdrop-filter: blur(14px);
+}
+
+.week-picker-popover.open { display: block; }
+
+.week-picker-head {
+  display: grid;
+  grid-template-columns: 42px 1fr 42px;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.week-picker-head strong { text-align: center; }
+
+.week-picker-head button {
+  width: 42px;
+  min-width: 42px;
+  min-height: 38px;
+  padding: 0;
+  border-radius: 12px;
+  font-size: 22px;
+}
+
+.week-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  max-height: 330px;
+  overflow-y: auto;
+}
+
+.week-picker-week {
+  min-width: 0;
+  min-height: 38px;
+  padding: 0;
+  border-radius: 10px;
+  background: rgba(30, 41, 59, 0.72);
+  border-color: rgba(148, 163, 184, 0.2);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.week-picker-week.current { border-color: rgba(56, 189, 248, 0.75); }
+.week-picker-week.selected { background: #0284c7; border-color: #38bdf8; color: #fff; }
+
+.special-events-toolbar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.special-events-toolbar select { width: 100%; min-width: 0; }
+
+.special-event-card-date {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.special-event-zodiac-preview {
+  display: inline-flex;
+  margin-top: 2px;
+  color: #bae6fd;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.day-head-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+
+.day-special-indicator {
+  min-height: 22px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1;
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.36);
+}
+
+@media (max-width: 700px) {
+  .week-picker-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .week-picker-week { min-height: 42px; }
+  .special-events-toolbar { grid-template-columns: 1fr; }
+}

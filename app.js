@@ -71,7 +71,10 @@
     weekEventsByWeek: {},
     todos: [],
     specialEvents: [],
-    specialEventSuggestions: []
+    specialEventSuggestions: [],
+    specialEventTypeFilter: 'all',
+    specialEventRangeFilter: 'all',
+    specialEventsSeenKeys: []
   };
 
   // ==================================================
@@ -98,6 +101,7 @@
   let editingDayTodoId = null;
   let editingSpecialEventId = null;
   let specialDatePickerMonth = null;
+  let specialEventFocusDate = null;
   let drawerControlsCollapsed = true;
   let drawerTouchStartX = null;
   let drawerTouchStartY = null;
@@ -195,8 +199,10 @@
   const specialEventsBadge = document.getElementById('specialEventsBadge');
   const specialEventsModalBackdrop = document.getElementById('specialEventsModalBackdrop');
   const closeSpecialEventsModalBtn = document.getElementById('closeSpecialEventsModalBtn');
-  const specialEventsTodayList = document.getElementById('specialEventsTodayList');
-  const specialEventsUpcomingList = document.getElementById('specialEventsUpcomingList');
+  const specialEventsList = document.getElementById('specialEventsList');
+  const specialEventsOverview = document.getElementById('specialEventsOverview');
+  const specialEventTypeFilter = document.getElementById('specialEventTypeFilter');
+  const specialEventRangeFilter = document.getElementById('specialEventRangeFilter');
   const specialEventSuggestionsList = document.getElementById('specialEventSuggestionsList');
   const showSpecialEventFormBtn = document.getElementById('showSpecialEventFormBtn');
   const specialEventForm = document.getElementById('specialEventForm');
@@ -204,6 +210,7 @@
   const specialEventTitle = document.getElementById('specialEventTitle');
   const specialEventDate = document.getElementById('specialEventDate');
   const specialEventDatePickerBtn = document.getElementById('specialEventDatePickerBtn');
+  const specialEventZodiacPreview = document.getElementById('specialEventZodiacPreview');
   const specialEventYear = document.getElementById('specialEventYear');
   const specialEventRepeats = document.getElementById('specialEventRepeats');
   const specialEventReminderDays = document.getElementById('specialEventReminderDays');
@@ -483,6 +490,9 @@
     })).map(todo => syncTodoAutoComplete(todo)) : [];
 
     s.specialEvents = Array.isArray(input.specialEvents) ? input.specialEvents.map(normalizeSpecialEvent) : [];
+    s.specialEventTypeFilter = ['all', 'birthday', 'anniversary', 'jubilee', 'reminder', 'other'].includes(input.specialEventTypeFilter) ? input.specialEventTypeFilter : 'all';
+    s.specialEventRangeFilter = ['all', 'today', '7', '30'].includes(String(input.specialEventRangeFilter || '')) ? String(input.specialEventRangeFilter) : 'all';
+    s.specialEventsSeenKeys = Array.isArray(input.specialEventsSeenKeys) ? input.specialEventsSeenKeys.map(String).slice(-300) : [];
     s.specialEventSuggestions = Array.isArray(input.specialEventSuggestions) ? input.specialEventSuggestions.map(item => ({
       id: item.id || `special-suggestion-${id()}`,
       key: item.key || item.sourceKey || item.externalUid || id(),
@@ -1108,6 +1118,84 @@
   function getSelectedWeekStartDate() { return toLocalDate(clampWeekKey(state.currentWeekStart || new Date())); }
   function getDayDate(dayIndex) { return addDays(getSelectedWeekStartDate(), dayIndex); }
 
+  function isoWeeksInYear(year) {
+    return getISOWeekInfo(new Date(Number(year), 11, 28)).week;
+  }
+
+  function isoWeekStartDate(year, week) {
+    const jan4 = new Date(Number(year), 0, 4);
+    const monday = weekStartDate(jan4);
+    return addDays(monday, (Number(week) - 1) * 7);
+  }
+
+  function weekPickerElement() {
+    let picker = document.getElementById('weekPickerPopover');
+    if (!picker) {
+      picker = document.createElement('div');
+      picker.id = 'weekPickerPopover';
+      picker.className = 'week-picker-popover';
+      picker.addEventListener('click', e => e.stopPropagation());
+      document.body.appendChild(picker);
+    }
+    return picker;
+  }
+
+  let weekPickerYear = null;
+
+  function renderWeekPicker() {
+    const picker = weekPickerElement();
+    const selectedInfo = getISOWeekInfo(getSelectedWeekStartDate());
+    const todayInfo = getISOWeekInfo(new Date());
+    const year = weekPickerYear || selectedInfo.year;
+    weekPickerYear = year;
+    const total = isoWeeksInYear(year);
+    const weekButtons = Array.from({ length: total }, (_, i) => {
+      const week = i + 1;
+      const isSelected = year === selectedInfo.year && week === selectedInfo.week;
+      const isToday = year === todayInfo.year && week === todayInfo.week;
+      return `<button type="button" class="week-picker-week ${isSelected ? 'selected' : ''} ${isToday ? 'current' : ''}" data-year="${year}" data-week="${week}">KW ${week}</button>`;
+    }).join('');
+    picker.innerHTML = `
+      <div class="week-picker-head">
+        <button type="button" class="week-picker-prev" aria-label="Vorheriges Jahr">‹</button>
+        <strong>${year}</strong>
+        <button type="button" class="week-picker-next" aria-label="Nächstes Jahr">›</button>
+      </div>
+      <div class="week-picker-grid">${weekButtons}</div>`;
+    picker.querySelector('.week-picker-prev')?.addEventListener('click', () => { weekPickerYear = year - 1; renderWeekPicker(); });
+    picker.querySelector('.week-picker-next')?.addEventListener('click', () => { weekPickerYear = year + 1; renderWeekPicker(); });
+    picker.querySelectorAll('.week-picker-week').forEach(btn => btn.addEventListener('click', () => {
+      state.currentWeekStart = dateKey(isoWeekStartDate(Number(btn.dataset.year), Number(btn.dataset.week)));
+      currentWeekEvents();
+      closeWeekPicker();
+      saveState();
+      renderAll();
+    }));
+  }
+
+  function positionWeekPicker() {
+    const picker = weekPickerElement();
+    const rect = weekLabel.getBoundingClientRect();
+    picker.style.position = 'fixed';
+    picker.style.width = 'min(360px, calc(100vw - 24px))';
+    const left = Math.min(Math.max(12, rect.left), window.innerWidth - 372);
+    const top = Math.min(rect.bottom + 8, window.innerHeight - 430);
+    picker.style.left = `${Math.max(12, left)}px`;
+    picker.style.top = `${Math.max(12, top)}px`;
+  }
+
+  function openWeekPicker(event = null) {
+    if (event) { event.preventDefault(); event.stopPropagation(); }
+    weekPickerYear = getISOWeekInfo(getSelectedWeekStartDate()).year;
+    renderWeekPicker();
+    positionWeekPicker();
+    weekPickerElement().classList.add('open');
+  }
+
+  function closeWeekPicker() {
+    document.getElementById('weekPickerPopover')?.classList.remove('open');
+  }
+
   const specialEventTypeLabels = {
     birthday: 'Geburtstag',
     anniversary: 'Jahrestag',
@@ -1159,17 +1247,107 @@
   }
 
   function specialEventsForDate(targetDateKey) {
-    return specialEventOccurrences(370).filter(item => item.date === targetDateKey);
+    const target = parseDateParts(targetDateKey);
+    if (!target) return [];
+    return (state.specialEvents || [])
+      .map(event => {
+        const occurrence = event.repeatsYearly ? specialEventOccurrenceDate(event, target.year) : event.date;
+        return { event, date: occurrence };
+      })
+      .filter(item => item.date === targetDateKey)
+      .sort((a, b) => String(a.event.title).localeCompare(String(b.event.title)));
+  }
+
+  function zodiacForDate(dateValue) {
+    const parts = parseDateParts(dateValue);
+    if (!parts) return null;
+    const md = (parts.month * 100) + parts.day;
+    const signs = [
+      { name: 'Steinbock', symbol: '♑', from: 1222, to: 119, wraps: true },
+      { name: 'Wassermann', symbol: '♒', from: 120, to: 218 },
+      { name: 'Fische', symbol: '♓', from: 219, to: 320 },
+      { name: 'Widder', symbol: '♈', from: 321, to: 419 },
+      { name: 'Stier', symbol: '♉', from: 420, to: 520 },
+      { name: 'Zwillinge', symbol: '♊', from: 521, to: 620 },
+      { name: 'Krebs', symbol: '♋', from: 621, to: 722 },
+      { name: 'Löwe', symbol: '♌', from: 723, to: 822 },
+      { name: 'Jungfrau', symbol: '♍', from: 823, to: 922 },
+      { name: 'Waage', symbol: '♎', from: 923, to: 1022 },
+      { name: 'Skorpion', symbol: '♏', from: 1023, to: 1121 },
+      { name: 'Schütze', symbol: '♐', from: 1122, to: 1221 }
+    ];
+    const found = signs.find(sign => sign.wraps ? (md >= sign.from || md <= sign.to) : (md >= sign.from && md <= sign.to));
+    return found ? `${found.name} ${found.symbol}` : null;
+  }
+
+  function daysUntilDate(targetKey) {
+    const today = toLocalDate(new Date());
+    const target = toLocalDate(targetKey);
+    return Math.round((target - today) / (24 * 60 * 60 * 1000));
+  }
+
+  function specialEventNextOccurrence(event, fromDate = new Date()) {
+    const from = toLocalDate(fromDate);
+    const fromKey = dateKey(from);
+    const parts = parseDateParts(event.date);
+    if (!parts) return null;
+    if (!event.repeatsYearly) return event.date >= fromKey ? event.date : null;
+    const thisYear = specialEventOccurrenceDate(event, from.getFullYear());
+    if (thisYear && thisYear >= fromKey) return thisYear;
+    return specialEventOccurrenceDate(event, from.getFullYear() + 1);
+  }
+
+  function specialEventListItems(daysAhead = 370) {
+    const maxDate = dateKey(addDays(new Date(), daysAhead));
+    return (state.specialEvents || [])
+      .map(event => ({ event, date: specialEventNextOccurrence(event) }))
+      .filter(item => item.date && item.date <= maxDate)
+      .map(item => ({ ...item, daysLeft: daysUntilDate(item.date) }))
+      .sort((a, b) => a.daysLeft - b.daysLeft || String(a.event.title).localeCompare(String(b.event.title)));
+  }
+
+  function specialEventNoticeItems() {
+    const todayKey = getTodayInfo().dateKey;
+    const seen = new Set((state.specialEventsSeenKeys || []).map(String));
+    const notices = [];
+    specialEventListItems(370).forEach(({ event, date, daysLeft }) => {
+      const reminder = Number(event.reminderDaysBefore);
+      if (date === todayKey) notices.push({ key: `event-day:${event.id}:${date}`, event });
+      if (Number.isFinite(reminder) && reminder > 0 && daysLeft === reminder) notices.push({ key: `reminder:${event.id}:${date}:${reminder}`, event });
+    });
+    pendingSpecialSuggestions().forEach(suggestion => notices.push({ key: `suggestion:${suggestion.key}`, suggestion }));
+    return notices.filter(item => !seen.has(item.key));
+  }
+
+  function markSpecialNoticesSeen() {
+    const keys = specialEventNoticeItems().map(item => item.key);
+    if (!keys.length) return;
+    state.specialEventsSeenKeys = [...new Set([...(state.specialEventsSeenKeys || []), ...keys])].slice(-300);
+    saveState();
   }
 
   function renderSpecialEventsButton() {
     if (!specialEventsBtn) return;
-    const todayCount = specialEventsForDate(getTodayInfo().dateKey).length;
-    specialEventsBtn.classList.toggle('has-events', todayCount > 0);
+    const count = specialEventNoticeItems().length;
+    specialEventsBtn.classList.toggle('has-events', count > 0);
     if (specialEventsBadge) {
-      specialEventsBadge.textContent = todayCount > 1 ? String(todayCount) : '';
-      specialEventsBadge.style.display = todayCount > 1 ? '' : 'none';
+      specialEventsBadge.textContent = count ? String(count) : '';
+      specialEventsBadge.style.display = count ? '' : 'none';
     }
+  }
+
+  function specialEventMetaText(event, date, daysLeft) {
+    const years = specialEventYears(event, date);
+    const parts = [];
+    if (event.type === 'birthday') {
+      if (years) parts.push(`wird ${years}`);
+      const zodiac = zodiacForDate(event.date);
+      if (zodiac) parts.push(zodiac);
+    } else if (years) {
+      parts.push(`${years} Jahre`);
+    }
+    const when = daysLeft === 0 ? 'heute' : (daysLeft === 1 ? 'morgen' : `in ${daysLeft} Tagen`);
+    return `${specialEventTypeLabels[event.type] || 'Ereignis'} ${when}${parts.length ? ` · ${parts.join(' · ')}` : ''}`;
   }
 
   function renderSpecialEventList(container, items, emptyText) {
@@ -1182,14 +1360,16 @@
       container.appendChild(empty);
       return;
     }
-    items.forEach(({ event, date }) => {
+    items.forEach(({ event, date, daysLeft }) => {
       const row = document.createElement('div');
       row.className = `special-event-card type-${event.type}`;
+      const title = event.type === 'birthday' && event.personName ? event.personName : event.title;
       row.innerHTML = `
         <div class="special-event-card-icon">☝🏼</div>
         <div>
-          <div class="special-event-card-title">${escapeHtml(specialEventDisplayTitle(event, date))}</div>
-          <div class="special-event-card-meta">${escapeHtml(specialEventTypeLabels[event.type] || 'Ereignis')} · ${formatShortDate(toLocalDate(date))}</div>
+          <div class="special-event-card-title">${escapeHtml(title)}</div>
+          <div class="special-event-card-meta">${escapeHtml(specialEventMetaText(event, date, daysLeft))}</div>
+          <div class="special-event-card-date">${escapeHtml(formatLongDate(toLocalDate(date)))}</div>
           ${event.note ? `<div class="special-event-card-note">${escapeHtml(event.note)}</div>` : ''}
           <div class="special-event-card-actions">
             <button class="ghost edit-special-event" type="button" data-event-id="${event.id}">Bearbeiten</button>
@@ -1263,11 +1443,13 @@
     });
     picker.querySelector('.special-date-today')?.addEventListener('click', () => {
       if (specialEventDate) specialEventDate.value = dateKey(new Date());
+      updateSpecialEventZodiacPreview();
       closeSpecialDatePicker();
     });
     picker.querySelectorAll('.special-date-day').forEach(button => {
       button.addEventListener('click', () => {
         if (specialEventDate) specialEventDate.value = button.dataset.date || '';
+        updateSpecialEventZodiacPreview();
         closeSpecialDatePicker();
       });
     });
@@ -1336,7 +1518,7 @@
       card.innerHTML = `
         <div class="special-suggestion-main">
           <div class="special-event-card-title">${escapeHtml(suggestion.title)}</div>
-          <div class="special-event-card-meta">${escapeHtml(suggestion.recurrenceFrequency || 'Serie')} · ${formatShortDate(toLocalDate(suggestion.date))}</div>
+          <div class="special-event-card-meta">${escapeHtml(suggestion.recurrenceFrequency || 'Serie')} · ${formatShortDate(toLocalDate(suggestion.date))} · ${escapeHtml(suggestion.sourceId || 'Externer Kalender')}</div>
           <div class="special-suggestion-note">Dieses wiederkehrende Ereignis wurde im externen Kalender erkannt.</div>
         </div>
         <select class="special-suggestion-type" title="Typ wählen">
@@ -1374,48 +1556,67 @@
     renderSpecialEventsModal();
   }
 
+  function showSpecialEventOverview() {
+    if (specialEventsOverview) specialEventsOverview.style.display = '';
+    if (specialEventForm) specialEventForm.style.display = 'none';
+    closeSpecialDatePicker();
+  }
+
+  function showSpecialEventForm() {
+    if (specialEventsOverview) specialEventsOverview.style.display = 'none';
+    if (specialEventForm) specialEventForm.style.display = '';
+    updateSpecialEventZodiacPreview();
+    setTimeout(() => specialEventTitle?.focus(), 50);
+  }
+
   function acceptSpecialSuggestion(suggestionId) {
     const suggestion = (state.specialEventSuggestions || []).find(item => item.id === suggestionId);
     if (!suggestion) return;
-    const type = suggestion.suggestedType || 'other';
-    const now = new Date().toISOString();
-    const title = type === 'birthday' && !/^geburtstag/i.test(suggestion.title) ? `Geburtstag von ${suggestion.title}` : suggestion.title;
-    state.specialEvents = [...(state.specialEvents || []), {
-      id: `special-event-${id()}`,
-      title,
-      type,
-      date: suggestion.date,
-      year: parseDateParts(suggestion.date)?.year || null,
-      repeatsYearly: type !== 'reminder' || suggestion.recurrenceFrequency !== 'MONTHLY',
-      personName: type === 'birthday' ? suggestion.title.replace(/^Geburtstag von\s+/i, '') : '',
-      note: `Aus externem Kalender übernommen.`,
-      reminderDaysBefore: null,
-      externalSourceKey: suggestion.sourceKey || suggestion.key,
-      externalUid: suggestion.externalUid || null,
-      createdAt: now,
-      updatedAt: now
-    }];
-    suggestion.status = 'accepted';
-    suggestion.updatedAt = now;
-    removeImportedSeriesBySourceKey(suggestion.sourceKey, suggestion.externalUid);
-    saveState();
-    renderAll();
-    renderSpecialEventsModal();
+    resetSpecialEventForm();
+    editingSpecialEventId = `suggestion:${suggestion.id}`;
+    if (specialEventType) specialEventType.value = suggestion.suggestedType || 'other';
+    if (specialEventTitle) specialEventTitle.value = suggestion.title || '';
+    if (specialEventDate) specialEventDate.value = suggestion.date || getTodayInfo().dateKey;
+    if (specialEventYear) specialEventYear.value = parseDateParts(suggestion.date)?.year || '';
+    if (specialEventRepeats) specialEventRepeats.checked = true;
+    if (specialEventNote) specialEventNote.value = 'Aus externem Kalender übernommen.';
+    showSpecialEventForm();
+  }
+
+  function filteredSpecialEventItems() {
+    const typeFilter = state.specialEventTypeFilter || 'all';
+    const rangeFilter = state.specialEventRangeFilter || 'all';
+    if (specialEventFocusDate) {
+      return specialEventsForDate(specialEventFocusDate)
+        .map(item => ({ ...item, daysLeft: daysUntilDate(item.date) }))
+        .filter(item => typeFilter === 'all' || item.event.type === typeFilter);
+    }
+    return specialEventListItems(370)
+      .filter(item => typeFilter === 'all' || item.event.type === typeFilter)
+      .filter(item => {
+        if (rangeFilter === 'all') return true;
+        if (rangeFilter === 'today') return item.daysLeft === 0;
+        return item.daysLeft >= 0 && item.daysLeft <= Number(rangeFilter);
+      });
   }
 
   function renderSpecialEventsModal() {
-    const todayKey = getTodayInfo().dateKey;
-    const occurrences = specialEventOccurrences(45);
-    renderSpecialEventList(specialEventsTodayList, occurrences.filter(item => item.date === todayKey), 'Heute ist kein besonderes Ereignis eingetragen.');
-    renderSpecialEventList(specialEventsUpcomingList, occurrences.filter(item => item.date !== todayKey).slice(0, 12), 'In den nächsten Tagen steht nichts an.');
+    if (specialEventRangeFilter) specialEventRangeFilter.disabled = Boolean(specialEventFocusDate);
+    if (specialEventTypeFilter) specialEventTypeFilter.value = state.specialEventTypeFilter || 'all';
+    if (specialEventRangeFilter) specialEventRangeFilter.value = state.specialEventRangeFilter || 'all';
+    renderSpecialEventList(specialEventsList, filteredSpecialEventItems(), 'Keine besonderen Ereignisse im gewählten Filter.');
     renderSpecialEventSuggestions();
     renderSpecialEventsButton();
   }
 
   function openSpecialEventsModal() {
+    specialEventFocusDate = null;
     closeAllPopovers();
+    showSpecialEventOverview();
     renderSpecialEventsModal();
     if (specialEventsModalBackdrop) specialEventsModalBackdrop.style.display = 'flex';
+    markSpecialNoticesSeen();
+    renderSpecialEventsButton();
   }
 
   function closeSpecialEventsModal() {
@@ -1433,6 +1634,16 @@
     if (specialEventRepeats) specialEventRepeats.checked = true;
     if (specialEventReminderDays) specialEventReminderDays.value = '';
     if (specialEventNote) specialEventNote.value = '';
+    updateSpecialEventZodiacPreview();
+  }
+
+
+  function updateSpecialEventZodiacPreview() {
+    if (!specialEventZodiacPreview) return;
+    const show = specialEventType?.value === 'birthday';
+    const zodiac = show ? zodiacForDate(specialEventDate?.value || '') : null;
+    specialEventZodiacPreview.textContent = zodiac ? zodiac : '';
+    specialEventZodiacPreview.style.display = zodiac ? '' : 'none';
   }
 
   function editSpecialEvent(eventId) {
@@ -1446,8 +1657,7 @@
     if (specialEventRepeats) specialEventRepeats.checked = item.repeatsYearly !== false;
     if (specialEventReminderDays) specialEventReminderDays.value = item.reminderDaysBefore ?? '';
     if (specialEventNote) specialEventNote.value = item.note || '';
-    if (specialEventForm) specialEventForm.style.display = '';
-    setTimeout(() => specialEventTitle?.focus(), 50);
+    showSpecialEventForm();
   }
 
   function deleteSpecialEvent(eventId) {
@@ -1468,7 +1678,9 @@
     if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
     const yearValue = Number(specialEventYear?.value);
     const now = new Date().toISOString();
-    const existing = editingSpecialEventId ? (state.specialEvents || []).find(item => item.id === editingSpecialEventId) : null;
+    const suggestionId = String(editingSpecialEventId || '').startsWith('suggestion:') ? String(editingSpecialEventId).slice('suggestion:'.length) : null;
+    const sourceSuggestion = suggestionId ? (state.specialEventSuggestions || []).find(item => item.id === suggestionId) : null;
+    const existing = editingSpecialEventId && !suggestionId ? (state.specialEvents || []).find(item => item.id === editingSpecialEventId) : null;
     const nextEvent = {
       ...(existing || {}),
       id: existing?.id || `special-event-${id()}`,
@@ -1480,19 +1692,23 @@
       personName: type === 'birthday' ? title : '',
       note: specialEventNote?.value || '',
       reminderDaysBefore: specialEventReminderDays?.value === '' ? null : clamp(Number(specialEventReminderDays?.value), 0, 365),
-      externalSourceKey: existing?.externalSourceKey || null,
-      externalUid: existing?.externalUid || null,
+      externalSourceKey: existing?.externalSourceKey || sourceSuggestion?.sourceKey || sourceSuggestion?.key || null,
+      externalUid: existing?.externalUid || sourceSuggestion?.externalUid || null,
       createdAt: existing?.createdAt || now,
       updatedAt: now
     };
     state.specialEvents = existing
       ? (state.specialEvents || []).map(item => item.id === existing.id ? nextEvent : item)
       : [...(state.specialEvents || []), nextEvent];
+    if (sourceSuggestion) {
+      sourceSuggestion.status = 'accepted';
+      sourceSuggestion.updatedAt = now;
+      removeImportedSeriesBySourceKey(sourceSuggestion.sourceKey, sourceSuggestion.externalUid);
+    }
     saveState();
     resetSpecialEventForm();
     editingSpecialEventId = null;
-    closeSpecialDatePicker();
-    if (specialEventForm) specialEventForm.style.display = 'none';
+    showSpecialEventOverview();
     renderSpecialEventsModal();
     renderCalendar();
   }
@@ -2204,12 +2420,27 @@
       const stats = dayCompletionStats(dayIndex);
       const colorClass = progressColorClass(stats.percent, stats.total);
       const progressLabel = stats.total ? `${stats.percent}% · ${stats.done}/${stats.total}` : '0 Aufgaben';
+      const specialCount = specialEventsForDate(dateKey(getDayDate(dayIndex))).length;
+      const specialIcon = specialCount ? `<button type="button" class="day-special-indicator" data-day="${dayIndex}" title="Besondere Ereignisse an diesem Tag">☝🏼${specialCount > 1 ? ` ${specialCount}` : ''}</button>` : '';
       div.innerHTML = `
-        <div>${text}<span class="day-date">${formatShortDate(getDayDate(dayIndex))}${isToday ? ' · Heute' : ''}</span></div>
+        <div class="day-head-main"><span>${text}</span><span class="day-date">${formatShortDate(getDayDate(dayIndex))}${isToday ? ' · Heute' : ''}</span>${specialIcon}</div>
         <div class="day-progress-wrap" title="${stats.done}/${stats.total} erledigt">
           <div class="day-progress-track"><div class="day-progress-fill ${colorClass}" style="width:${stats.percent}%"></div></div>
           <div class="day-progress-meta">${progressLabel}</div>
         </div>`;
+      div.querySelector('.day-special-indicator')?.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        specialEventFocusDate = dateKey(getDayDate(dayIndex));
+        state.specialEventRangeFilter = 'all';
+        state.specialEventTypeFilter = 'all';
+        closeAllPopovers();
+        showSpecialEventOverview();
+        renderSpecialEventsModal();
+        if (specialEventsModalBackdrop) specialEventsModalBackdrop.style.display = 'flex';
+        markSpecialNoticesSeen();
+        renderSpecialEventsButton();
+      });
     }
     return div;
   }
@@ -3918,6 +4149,10 @@ return div;
     weekDateInput.min = '2026-01-01';
     weekDateInput.value = dateKey(start);
     weekLabel.textContent = `KW ${info.week}/${info.year}`;
+    weekLabel.classList.add('week-label-clickable');
+    weekLabel.title = 'Kalenderwoche auswählen';
+    weekLabel.setAttribute('role', 'button');
+    weekLabel.tabIndex = 0;
     weekRange.textContent = `${formatLongDate(start)} – ${formatLongDate(end)}`;
     fillTaskDaySelect();
     todayWeekBtn.classList.toggle('active', state.currentWeekStart === today.weekKey);
@@ -4316,12 +4551,14 @@ function toggleMissed(eventId) {
   if (showSpecialEventFormBtn) {
     showSpecialEventFormBtn.addEventListener('click', () => {
       resetSpecialEventForm();
-      if (specialEventForm) specialEventForm.style.display = '';
-      setTimeout(() => specialEventTitle?.focus(), 50);
+      showSpecialEventForm();
     });
   }
-  if (cancelSpecialEventBtn) cancelSpecialEventBtn.addEventListener('click', () => { closeSpecialDatePicker(); if (specialEventForm) specialEventForm.style.display = 'none'; });
+  if (cancelSpecialEventBtn) cancelSpecialEventBtn.addEventListener('click', () => { showSpecialEventOverview(); renderSpecialEventsModal(); });
+  if (specialEventTypeFilter) specialEventTypeFilter.addEventListener('change', () => { state.specialEventTypeFilter = specialEventTypeFilter.value; saveState(); renderSpecialEventsModal(); });
+  if (specialEventRangeFilter) specialEventRangeFilter.addEventListener('change', () => { state.specialEventRangeFilter = specialEventRangeFilter.value; saveState(); renderSpecialEventsModal(); });
   if (specialEventForm) specialEventForm.addEventListener('submit', saveSpecialEventFromForm);
+  if (specialEventType) specialEventType.addEventListener('change', updateSpecialEventZodiacPreview);
   if (specialEventDate) specialEventDate.addEventListener('click', openSpecialDatePicker);
   if (specialEventDatePickerBtn) specialEventDatePickerBtn.addEventListener('click', openSpecialDatePicker);
 
@@ -4337,6 +4574,11 @@ function toggleMissed(eventId) {
     saveState();
     renderAll();
   };
+  if (weekLabel) {
+    weekLabel.addEventListener('click', openWeekPicker);
+    weekLabel.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') openWeekPicker(e); });
+  }
+
   weekDateInput.onchange = () => {
     if (!weekDateInput.value) return;
     state.currentWeekStart = clampWeekKey(weekDateInput.value);
@@ -4689,12 +4931,19 @@ function toggleMissed(eventId) {
   window.addEventListener('resize', () => {
     renderCalendar();
     if (document.getElementById('specialDatePicker')?.classList.contains('open')) positionSpecialDatePicker();
+    if (document.getElementById('weekPickerPopover')?.classList.contains('open')) positionWeekPicker();
   });
   document.addEventListener('click', e => {
     const picker = document.getElementById('specialDatePicker');
     if (!picker?.classList.contains('open')) return;
     if (picker.contains(e.target) || specialEventDate?.contains(e.target) || specialEventDatePickerBtn?.contains(e.target)) return;
     closeSpecialDatePicker();
+  });
+  document.addEventListener('click', e => {
+    const picker = document.getElementById('weekPickerPopover');
+    if (!picker?.classList.contains('open')) return;
+    if (picker.contains(e.target) || weekLabel?.contains(e.target)) return;
+    closeWeekPicker();
   });
 
 
