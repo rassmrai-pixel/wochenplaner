@@ -678,11 +678,11 @@
       pointer-events: auto;
       backdrop-filter: blur(14px);
     }
-    body.todo-drawer-open .todo-drawer {
+    body.todo-drawer-open #todoDrawer {
       transform: translateX(0);
       pointer-events: auto;
     }
-    body.todo-drawer-open .todo-drawer-backdrop {
+    body.todo-drawer-open #todoDrawerBackdrop {
       opacity: 1;
       pointer-events: auto;
     }
@@ -3021,11 +3021,11 @@ header {
   z-index: 5200;
 }
 
-body.todo-drawer-open .todo-drawer-backdrop {
+body.todo-drawer-open #todoDrawerBackdrop {
   z-index: 5300;
 }
 
-body.todo-drawer-open .todo-drawer {
+body.todo-drawer-open #todoDrawer {
   z-index: 5400;
 }
 
@@ -3247,7 +3247,7 @@ body.todo-drawer-open .profile-menu.open .profile-dropdown {
 
 .modal-backdrop[style*="display: none"],
 .ics-modal.hidden,
-body:not(.todo-drawer-open) .todo-drawer-backdrop {
+body:not(.todo-drawer-open) #todoDrawerBackdrop {
   pointer-events: none !important;
 }
 
