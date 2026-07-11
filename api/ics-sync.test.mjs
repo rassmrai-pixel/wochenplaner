@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import { parseIcsEvents } from "./ics-sync.js";
 
+const RealDate = Date;
+globalThis.Date = class FixedDate extends RealDate {
+  constructor(...args) {
+    super(...(args.length ? args : ["2025-07-11T12:00:00Z"]));
+  }
+  static now() { return new RealDate("2025-07-11T12:00:00Z").getTime(); }
+  static UTC(...args) { return RealDate.UTC(...args); }
+  static parse(value) { return RealDate.parse(value); }
+};
+
 const calendar = body => `BEGIN:VCALENDAR\nVERSION:2.0\n${body}\nEND:VCALENDAR`;
 const eventsFor = body => parseIcsEvents(calendar(body)).events;
 
@@ -34,6 +44,15 @@ assert.ok(!weekly.some(event => event.date === "2025-07-11" && event.startTime =
 assert.ok(!weekly.some(event => event.date === "2025-07-14"));
 assert.ok(!weekly.some(event => event.date === "2025-07-15"));
 assert.ok(!weekly.some(event => [0, 6].includes(new Date(`${event.date}T00:00:00Z`).getUTCDay())));
+
+const pastSingle = eventsFor(`BEGIN:VEVENT
+UID:past-single
+SUMMARY:Alter Einzeltermin
+DTSTART;TZID=W. Europe Standard Time:20250709T080000
+DTEND;TZID=W. Europe Standard Time:20250709T090000
+END:VEVENT`);
+
+assert.equal(pastSingle.length, 0);
 
 const shortSeries = eventsFor(`BEGIN:VEVENT
 UID:short-series

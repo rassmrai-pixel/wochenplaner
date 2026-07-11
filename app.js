@@ -9,6 +9,8 @@
   const storageKeyV1 = 'perfekte-woche-planer-v1';
   const authModeKey = 'perfekte-woche-auth-mode';
   const ICS_SYNC_TIMEOUT_MS = 60000;
+  const ICS_AUTO_SYNC_INTERVAL_MS = 30 * 60 * 1000;
+  const ICS_LAST_SUCCESS_KEY = 'perfekte-woche-ics-last-success';
   const DEFAULT_ICS_SOURCE_ID = 'default-ics';
   const SUPABASE_URL = 'https://uwynzmdsveplxfqgwzqp.supabase.co';
   const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_zIKjzTf24k4BDsVrQAyeZQ_WALpNEkH';
@@ -20,6 +22,7 @@
   let icsSyncing = false;
   let icsSyncProgress = 0;
   let icsSyncStatus = '';
+  let icsAutoSyncTimer = null;
   let icsCalendarIntegrationInitialized = false;
   const cellHeight = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell-h')) || 18;
 
@@ -66,7 +69,9 @@
     templateEvents: [],
     weekEvents: [],
     weekEventsByWeek: {},
-    todos: []
+    todos: [],
+    specialEvents: [],
+    specialEventSuggestions: []
   };
 
   // ==================================================
@@ -91,6 +96,7 @@
   let currentTimeTimer = null;
   let currentTimeRenderDateKey = null;
   let editingDayTodoId = null;
+  let editingSpecialEventId = null;
   let drawerControlsCollapsed = true;
   let drawerTouchStartX = null;
   let drawerTouchStartY = null;
@@ -184,6 +190,23 @@
   const todoDrawer = document.getElementById('todoDrawer');
   const todoDrawerBackdrop = document.getElementById('todoDrawerBackdrop');
   const todoDrawerToggleBtn = document.getElementById('todoDrawerToggleBtn');
+  const specialEventsBtn = document.getElementById('specialEventsBtn');
+  const specialEventsBadge = document.getElementById('specialEventsBadge');
+  const specialEventsModalBackdrop = document.getElementById('specialEventsModalBackdrop');
+  const closeSpecialEventsModalBtn = document.getElementById('closeSpecialEventsModalBtn');
+  const specialEventsTodayList = document.getElementById('specialEventsTodayList');
+  const specialEventsUpcomingList = document.getElementById('specialEventsUpcomingList');
+  const specialEventSuggestionsList = document.getElementById('specialEventSuggestionsList');
+  const showSpecialEventFormBtn = document.getElementById('showSpecialEventFormBtn');
+  const specialEventForm = document.getElementById('specialEventForm');
+  const specialEventType = document.getElementById('specialEventType');
+  const specialEventTitle = document.getElementById('specialEventTitle');
+  const specialEventDate = document.getElementById('specialEventDate');
+  const specialEventYear = document.getElementById('specialEventYear');
+  const specialEventRepeats = document.getElementById('specialEventRepeats');
+  const specialEventReminderDays = document.getElementById('specialEventReminderDays');
+  const specialEventNote = document.getElementById('specialEventNote');
+  const cancelSpecialEventBtn = document.getElementById('cancelSpecialEventBtn');
   const closeTodoDrawerBtn = document.getElementById('closeTodoDrawerBtn');
   const templateModeBtn = document.getElementById('templateModeBtn');
   const weekModeBtn = document.getElementById('weekModeBtn');
@@ -414,6 +437,29 @@
     s.weekEvents = s.weekEventsByWeek[s.currentWeekStart];
     s.events = s.templateEvents;
 
+    function normalizeSpecialEvent(event) {
+      const allowedTypes = ['birthday', 'anniversary', 'jubilee', 'reminder', 'other'];
+      const rawDate = String(event?.date || '').slice(0, 10);
+      const validDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : dateKey(new Date());
+      const year = Number(event?.year);
+      const title = String(event?.title || event?.personName || 'Besonderes Ereignis').trim() || 'Besonderes Ereignis';
+      return {
+        id: event?.id || `special-event-${id()}`,
+        title,
+        type: allowedTypes.includes(event?.type) ? event.type : 'other',
+        date: validDate,
+        year: Number.isInteger(year) && year > 0 ? year : null,
+        repeatsYearly: event?.repeatsYearly !== false,
+        personName: event?.personName || '',
+        note: event?.note || '',
+        reminderDaysBefore: Number.isFinite(Number(event?.reminderDaysBefore)) ? clamp(Number(event.reminderDaysBefore), 0, 365) : null,
+        externalSourceKey: event?.externalSourceKey || null,
+        externalUid: event?.externalUid || null,
+        createdAt: event?.createdAt || new Date().toISOString(),
+        updatedAt: event?.updatedAt || event?.createdAt || new Date().toISOString()
+      };
+    }
+
     s.todos = Array.isArray(input.todos) ? input.todos.map(todo => ({
       id: todo.id || id(),
       text: todo.text || 'To-do',
@@ -433,6 +479,23 @@
       createdAt: todo.createdAt || new Date().toISOString(),
       updatedAt: todo.updatedAt || todo.createdAt || new Date().toISOString()
     })).map(todo => syncTodoAutoComplete(todo)) : [];
+
+    s.specialEvents = Array.isArray(input.specialEvents) ? input.specialEvents.map(normalizeSpecialEvent) : [];
+    s.specialEventSuggestions = Array.isArray(input.specialEventSuggestions) ? input.specialEventSuggestions.map(item => ({
+      id: item.id || `special-suggestion-${id()}`,
+      key: item.key || item.sourceKey || item.externalUid || id(),
+      title: item.title || 'Besonderes Ereignis',
+      date: /^\d{4}-\d{2}-\d{2}$/.test(String(item.date || '')) ? item.date : dateKey(new Date()),
+      recurrenceRule: item.recurrenceRule || '',
+      recurrenceFrequency: item.recurrenceFrequency || '',
+      externalUid: item.externalUid || null,
+      sourceId: item.sourceId || DEFAULT_ICS_SOURCE_ID,
+      sourceKey: item.sourceKey || null,
+      suggestedType: ['birthday', 'anniversary', 'jubilee', 'reminder', 'other'].includes(item.suggestedType) ? item.suggestedType : 'other',
+      status: ['pending', 'accepted', 'dismissed', 'ignored'].includes(item.status) ? item.status : 'pending',
+      createdAt: item.createdAt || new Date().toISOString(),
+      updatedAt: item.updatedAt || item.createdAt || new Date().toISOString()
+    })) : [];
 
     if (!s.categories[s.selectedCategory]) s.selectedCategory = 'gym';
     if (!['calendar', 'tasks'].includes(s.viewMode)) s.viewMode = 'calendar';
@@ -663,13 +726,20 @@
     if (!calendarFeedPanel) return;
     const feed = ensureCalendarFeedSettings();
     const link = feed.enabled ? calendarFeedLink() : '';
+    const signedIn = Boolean(cloudUser);
     calendarFeedEnabled.checked = Boolean(feed.enabled);
+    calendarFeedEnabled.disabled = !signedIn;
     if (calendarFeedUrl) calendarFeedUrl.value = link;
     if (copyCalendarFeedBtn) copyCalendarFeedBtn.disabled = !link;
-    if (regenerateCalendarFeedTokenBtn) regenerateCalendarFeedTokenBtn.disabled = !feed.enabled;
+    if (enableCalendarFeedBtn) enableCalendarFeedBtn.disabled = !signedIn;
+    if (regenerateCalendarFeedTokenBtn) regenerateCalendarFeedTokenBtn.disabled = !feed.enabled || !signedIn;
     if (calendarFeedDisabledState) calendarFeedDisabledState.style.display = feed.enabled ? 'none' : '';
     if (calendarFeedEnabledState) calendarFeedEnabledState.style.display = feed.enabled ? '' : 'none';
-    if (calendarFeedStatus) calendarFeedStatus.textContent = feed.enabled ? 'Freigabe aktiv' : 'Freigabe deaktiviert';
+    if (calendarFeedStatus) {
+      calendarFeedStatus.textContent = !signedIn
+        ? 'Bitte einloggen, damit der Kalenderlink serverseitig gespeichert werden kann.'
+        : (feed.enabled ? 'Freigabe aktiv' : 'Freigabe deaktiviert');
+    }
   }
 
   function updateCalendarFeedOption(key, value) {
@@ -687,8 +757,8 @@
     cloudSaveTimer = setTimeout(() => saveCloudState(snapshot), 650);
   }
 
-  async function saveCloudState(snapshot = state) {
-    if (!supabaseClient || !cloudUser || cloudLoading) return;
+  async function saveCloudState(snapshot = state, { throwOnError = false } = {}) {
+    if (!supabaseClient || !cloudUser || cloudLoading) return false;
     try {
       console.log('[ICS] saveCloudState started');
       setCloudStatus(`Eingeloggt als ${cloudUser.email || 'Nutzer'} · Speichere in Supabase...`, 'signed-in');
@@ -708,9 +778,12 @@
       if (error) throw error;
       console.log('[ICS] saveCloudState finished');
       setCloudStatus(`Eingeloggt als ${cloudUser.email || 'Nutzer'} · Cloud Sync aktiv.`, 'signed-in');
+      return true;
     } catch (err) {
       console.error('[ICS] saveCloudState failed', err);
       setCloudStatus(`Cloud-Fehler: ${err.message || err}`, 'error');
+      if (throwOnError) throw err;
+      return false;
     }
   }
 
@@ -731,9 +804,11 @@
         saveState(state);
         renderAll();
         setCloudStatus(`Eingeloggt als ${cloudUser.email || 'Nutzer'} · Cloud-Daten geladen.`, 'signed-in');
+        requestIcsAutoSync('login');
       } else {
         await saveCloudState(state);
         setCloudStatus(`Eingeloggt als ${cloudUser.email || 'Nutzer'} · Lokale Daten in Cloud gespeichert.`, 'signed-in');
+        requestIcsAutoSync('login');
       }
     } catch (err) {
       console.error(err);
@@ -1030,6 +1105,288 @@
   }
   function getSelectedWeekStartDate() { return toLocalDate(clampWeekKey(state.currentWeekStart || new Date())); }
   function getDayDate(dayIndex) { return addDays(getSelectedWeekStartDate(), dayIndex); }
+
+  const specialEventTypeLabels = {
+    birthday: 'Geburtstag',
+    anniversary: 'Jahrestag',
+    jubilee: 'Jubiläum',
+    reminder: 'Erinnerung',
+    other: 'Sonstiges'
+  };
+
+  function parseDateParts(value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
+    if (!match) return null;
+    return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
+  }
+
+  function specialEventOccurrenceDate(event, year) {
+    const parts = parseDateParts(event.date);
+    if (!parts) return null;
+    const occurrenceYear = event.repeatsYearly ? year : parts.year;
+    return `${occurrenceYear}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+  }
+
+  function specialEventYears(event, occurrenceDateKey) {
+    const originYear = Number(event.year || parseDateParts(event.date)?.year);
+    const occurrenceYear = Number(parseDateParts(occurrenceDateKey)?.year);
+    const diff = occurrenceYear - originYear;
+    return Number.isFinite(diff) && diff > 0 && diff < 150 ? diff : null;
+  }
+
+  function specialEventDisplayTitle(event, occurrenceDateKey) {
+    const years = specialEventYears(event, occurrenceDateKey);
+    const typeLabel = specialEventTypeLabels[event.type] || 'Ereignis';
+    const baseTitle = event.type === 'birthday' && event.personName
+      ? `Geburtstag von ${event.personName}`
+      : event.title;
+    const suffix = years ? ` – ${years} Jahre` : '';
+    return `${event.type === 'reminder' ? 'Erinnerung: ' : ''}${baseTitle || typeLabel}${suffix}`;
+  }
+
+  function specialEventOccurrences(daysAhead = 30) {
+    const today = toLocalDate(new Date());
+    const start = dateKey(today);
+    const end = dateKey(addDays(today, daysAhead));
+    const years = [today.getFullYear(), today.getFullYear() + 1];
+    return (state.specialEvents || [])
+      .flatMap(event => years.map(year => ({ event, date: specialEventOccurrenceDate(event, year) })))
+      .filter(item => item.date && item.date >= start && item.date <= end)
+      .filter((item, index, list) => list.findIndex(other => other.event.id === item.event.id && other.date === item.date) === index)
+      .sort((a, b) => a.date.localeCompare(b.date) || String(a.event.title).localeCompare(String(b.event.title)));
+  }
+
+  function specialEventsForDate(targetDateKey) {
+    return specialEventOccurrences(370).filter(item => item.date === targetDateKey);
+  }
+
+  function renderSpecialEventsButton() {
+    if (!specialEventsBtn) return;
+    const todayCount = specialEventsForDate(getTodayInfo().dateKey).length;
+    specialEventsBtn.classList.toggle('has-events', todayCount > 0);
+    if (specialEventsBadge) {
+      specialEventsBadge.textContent = todayCount > 1 ? String(todayCount) : '';
+      specialEventsBadge.style.display = todayCount > 1 ? '' : 'none';
+    }
+  }
+
+  function renderSpecialEventList(container, items, emptyText) {
+    if (!container) return;
+    container.innerHTML = '';
+    if (!items.length) {
+      const empty = document.createElement('div');
+      empty.className = 'special-events-empty';
+      empty.textContent = emptyText;
+      container.appendChild(empty);
+      return;
+    }
+    items.forEach(({ event, date }) => {
+      const row = document.createElement('div');
+      row.className = `special-event-card type-${event.type}`;
+      row.innerHTML = `
+        <div class="special-event-card-icon">☝🏼</div>
+        <div>
+          <div class="special-event-card-title">${escapeHtml(specialEventDisplayTitle(event, date))}</div>
+          <div class="special-event-card-meta">${escapeHtml(specialEventTypeLabels[event.type] || 'Ereignis')} · ${formatShortDate(toLocalDate(date))}</div>
+          ${event.note ? `<div class="special-event-card-note">${escapeHtml(event.note)}</div>` : ''}
+          <div class="special-event-card-actions">
+            <button class="ghost edit-special-event" type="button" data-event-id="${event.id}">Bearbeiten</button>
+            <button class="ghost delete-special-event" type="button" data-event-id="${event.id}">Löschen</button>
+          </div>
+        </div>`;
+      container.appendChild(row);
+    });
+    container.querySelectorAll('.edit-special-event').forEach(btn => btn.addEventListener('click', e => {
+      e.stopPropagation();
+      editSpecialEvent(btn.dataset.eventId);
+    }));
+    container.querySelectorAll('.delete-special-event').forEach(btn => btn.addEventListener('click', e => {
+      e.stopPropagation();
+      deleteSpecialEvent(btn.dataset.eventId);
+    }));
+  }
+
+  function pendingSpecialSuggestions() {
+    return (state.specialEventSuggestions || []).filter(item => item.status === 'pending');
+  }
+
+  function renderSpecialEventSuggestions() {
+    if (!specialEventSuggestionsList) return;
+    specialEventSuggestionsList.innerHTML = '';
+    const suggestions = pendingSpecialSuggestions();
+    if (!suggestions.length) {
+      const empty = document.createElement('div');
+      empty.className = 'special-events-empty';
+      empty.textContent = 'Keine neuen Vorschläge aus externen Kalendern.';
+      specialEventSuggestionsList.appendChild(empty);
+      return;
+    }
+    suggestions.forEach(suggestion => {
+      const card = document.createElement('div');
+      card.className = 'special-suggestion-card';
+      card.dataset.suggestionId = suggestion.id;
+      card.innerHTML = `
+        <div class="special-suggestion-main">
+          <div class="special-event-card-title">${escapeHtml(suggestion.title)}</div>
+          <div class="special-event-card-meta">${escapeHtml(suggestion.recurrenceFrequency || 'Serie')} · ${formatShortDate(toLocalDate(suggestion.date))}</div>
+          <div class="special-suggestion-note">Dieses wiederkehrende Ereignis wurde im externen Kalender erkannt.</div>
+        </div>
+        <select class="special-suggestion-type" title="Typ wählen">
+          ${Object.entries(specialEventTypeLabels).map(([value, label]) => `<option value="${value}" ${suggestion.suggestedType === value ? 'selected' : ''}>${label}</option>`).join('')}
+        </select>
+        <div class="special-suggestion-actions">
+          <button class="primary accept-special-suggestion" type="button">Übernehmen</button>
+          <button class="ghost later-special-suggestion" type="button">Später</button>
+          <button class="ghost ignore-special-suggestion" type="button">Nicht mehr vorschlagen</button>
+        </div>`;
+      specialEventSuggestionsList.appendChild(card);
+    });
+    specialEventSuggestionsList.querySelectorAll('.special-suggestion-card').forEach(card => {
+      const suggestion = state.specialEventSuggestions.find(item => item.id === card.dataset.suggestionId);
+      if (!suggestion) return;
+      card.querySelector('.special-suggestion-type')?.addEventListener('change', e => {
+        suggestion.suggestedType = e.target.value;
+        suggestion.updatedAt = new Date().toISOString();
+        saveState();
+      });
+      card.querySelector('.accept-special-suggestion')?.addEventListener('click', () => acceptSpecialSuggestion(suggestion.id));
+      card.querySelector('.later-special-suggestion')?.addEventListener('click', () => {
+        renderSpecialEventsModal();
+      });
+      card.querySelector('.ignore-special-suggestion')?.addEventListener('click', () => updateSpecialSuggestionStatus(suggestion.id, 'ignored'));
+    });
+  }
+
+  function updateSpecialSuggestionStatus(suggestionId, status) {
+    const suggestion = (state.specialEventSuggestions || []).find(item => item.id === suggestionId);
+    if (!suggestion) return;
+    suggestion.status = status;
+    suggestion.updatedAt = new Date().toISOString();
+    saveState();
+    renderSpecialEventsModal();
+  }
+
+  function acceptSpecialSuggestion(suggestionId) {
+    const suggestion = (state.specialEventSuggestions || []).find(item => item.id === suggestionId);
+    if (!suggestion) return;
+    const type = suggestion.suggestedType || 'other';
+    const now = new Date().toISOString();
+    const title = type === 'birthday' && !/^geburtstag/i.test(suggestion.title) ? `Geburtstag von ${suggestion.title}` : suggestion.title;
+    state.specialEvents = [...(state.specialEvents || []), {
+      id: `special-event-${id()}`,
+      title,
+      type,
+      date: suggestion.date,
+      year: parseDateParts(suggestion.date)?.year || null,
+      repeatsYearly: type !== 'reminder' || suggestion.recurrenceFrequency !== 'MONTHLY',
+      personName: type === 'birthday' ? suggestion.title.replace(/^Geburtstag von\s+/i, '') : '',
+      note: `Aus externem Kalender übernommen.`,
+      reminderDaysBefore: null,
+      externalSourceKey: suggestion.sourceKey || suggestion.key,
+      externalUid: suggestion.externalUid || null,
+      createdAt: now,
+      updatedAt: now
+    }];
+    suggestion.status = 'accepted';
+    suggestion.updatedAt = now;
+    removeImportedSeriesBySourceKey(suggestion.sourceKey, suggestion.externalUid);
+    saveState();
+    renderAll();
+    renderSpecialEventsModal();
+  }
+
+  function renderSpecialEventsModal() {
+    const todayKey = getTodayInfo().dateKey;
+    const occurrences = specialEventOccurrences(45);
+    renderSpecialEventList(specialEventsTodayList, occurrences.filter(item => item.date === todayKey), 'Heute ist kein besonderes Ereignis eingetragen.');
+    renderSpecialEventList(specialEventsUpcomingList, occurrences.filter(item => item.date !== todayKey).slice(0, 12), 'In den nächsten Tagen steht nichts an.');
+    renderSpecialEventSuggestions();
+    renderSpecialEventsButton();
+  }
+
+  function openSpecialEventsModal() {
+    closeAllPopovers();
+    renderSpecialEventsModal();
+    if (specialEventsModalBackdrop) specialEventsModalBackdrop.style.display = 'flex';
+  }
+
+  function closeSpecialEventsModal() {
+    if (specialEventsModalBackdrop) specialEventsModalBackdrop.style.display = 'none';
+    if (specialEventForm) specialEventForm.style.display = 'none';
+  }
+
+  function resetSpecialEventForm() {
+    editingSpecialEventId = null;
+    if (specialEventType) specialEventType.value = 'birthday';
+    if (specialEventTitle) specialEventTitle.value = '';
+    if (specialEventDate) specialEventDate.value = getTodayInfo().dateKey;
+    if (specialEventYear) specialEventYear.value = '';
+    if (specialEventRepeats) specialEventRepeats.checked = true;
+    if (specialEventReminderDays) specialEventReminderDays.value = '';
+    if (specialEventNote) specialEventNote.value = '';
+  }
+
+  function editSpecialEvent(eventId) {
+    const item = (state.specialEvents || []).find(event => event.id === eventId);
+    if (!item) return;
+    editingSpecialEventId = item.id;
+    if (specialEventType) specialEventType.value = item.type || 'other';
+    if (specialEventTitle) specialEventTitle.value = item.personName || item.title || '';
+    if (specialEventDate) specialEventDate.value = item.date || getTodayInfo().dateKey;
+    if (specialEventYear) specialEventYear.value = item.year || '';
+    if (specialEventRepeats) specialEventRepeats.checked = item.repeatsYearly !== false;
+    if (specialEventReminderDays) specialEventReminderDays.value = item.reminderDaysBefore ?? '';
+    if (specialEventNote) specialEventNote.value = item.note || '';
+    if (specialEventForm) specialEventForm.style.display = '';
+    setTimeout(() => specialEventTitle?.focus(), 50);
+  }
+
+  function deleteSpecialEvent(eventId) {
+    const item = (state.specialEvents || []).find(event => event.id === eventId);
+    if (!item) return;
+    if (!confirm(`Besonderes Ereignis „${item.title}“ löschen?`)) return;
+    state.specialEvents = (state.specialEvents || []).filter(event => event.id !== eventId);
+    saveState();
+    renderAll();
+    renderSpecialEventsModal();
+  }
+
+  function saveSpecialEventFromForm(event) {
+    event.preventDefault();
+    const title = (specialEventTitle?.value || '').trim();
+    const type = specialEventType?.value || 'other';
+    const date = specialEventDate?.value || '';
+    if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+    const yearValue = Number(specialEventYear?.value);
+    const now = new Date().toISOString();
+    const existing = editingSpecialEventId ? (state.specialEvents || []).find(item => item.id === editingSpecialEventId) : null;
+    const nextEvent = {
+      ...(existing || {}),
+      id: existing?.id || `special-event-${id()}`,
+      title: type === 'birthday' && !/^geburtstag/i.test(title) ? `Geburtstag von ${title}` : title,
+      type,
+      date,
+      year: Number.isInteger(yearValue) && yearValue > 0 ? yearValue : parseDateParts(date)?.year || null,
+      repeatsYearly: Boolean(specialEventRepeats?.checked),
+      personName: type === 'birthday' ? title : '',
+      note: specialEventNote?.value || '',
+      reminderDaysBefore: specialEventReminderDays?.value === '' ? null : clamp(Number(specialEventReminderDays?.value), 0, 365),
+      externalSourceKey: existing?.externalSourceKey || null,
+      externalUid: existing?.externalUid || null,
+      createdAt: existing?.createdAt || now,
+      updatedAt: now
+    };
+    state.specialEvents = existing
+      ? (state.specialEvents || []).map(item => item.id === existing.id ? nextEvent : item)
+      : [...(state.specialEvents || []), nextEvent];
+    saveState();
+    resetSpecialEventForm();
+    editingSpecialEventId = null;
+    if (specialEventForm) specialEventForm.style.display = 'none';
+    renderSpecialEventsModal();
+    renderCalendar();
+  }
+
   function changeWeek(offset) {
     const next = addDays(getSelectedWeekStartDate(), offset * 7);
     state.currentWeekStart = clampWeekKey(next);
@@ -1565,7 +1922,9 @@
       .sort((a, b) => Number(isTodoDone(a)) - Number(isTodoDone(b)) || String(a.createdAt).localeCompare(String(b.createdAt)));
     const allDayEvents = allDayEventsForDay(dayIndex)
       .sort((a, b) => String(a.label).localeCompare(String(b.label)));
+    const specialItems = specialEventsForDate(dateKey(getDayDate(dayIndex)));
     const headerItems = [
+      ...specialItems.map(item => ({ type: 'special', item })),
       ...allDayEvents.map(event => ({ type: 'event', event })),
       ...todos.map(todo => ({ type: 'todo', todo }))
     ];
@@ -1574,6 +1933,21 @@
 
     if (!isExpanded) {
       visible.forEach(headerItem => {
+        if (headerItem.type === 'special') {
+          const { event, date } = headerItem.item;
+          const item = document.createElement('div');
+          item.className = 'all-day-item special-all-day-item';
+          item.title = specialEventDisplayTitle(event, date);
+          item.innerHTML = `<span class="all-day-text">☝🏼 ${escapeHtml(specialEventDisplayTitle(event, date))}</span>`;
+          item.addEventListener('click', e => {
+            e.preventDefault();
+            e.stopPropagation();
+            openSpecialEventsModal();
+          });
+          cell.appendChild(item);
+          return;
+        }
+
         if (headerItem.type === 'event') {
           const ev = headerItem.event;
           const cat = state.categories[ev.categoryId] || state.categories.external || state.categories.orga;
@@ -1632,7 +2006,7 @@
       }
     }
 
-    if (isExpanded) renderAllDayTodoPopover(cell, dayIndex, todos, allDayEvents);
+    if (isExpanded) renderAllDayTodoPopover(cell, dayIndex, todos, allDayEvents, specialItems);
   }
 
   function openHeaderTodosForDay(dayIndex, event = null) {
@@ -1730,10 +2104,16 @@
     return div;
   }
 
-  function renderAllDayTodoPopover(container, dayIndex, todos, allDayEvents = []) {
+  function renderAllDayTodoPopover(container, dayIndex, todos, allDayEvents = [], specialItems = []) {
     const panel = document.createElement('div');
     panel.className = 'all-day-popover';
     panel.addEventListener('click', e => e.stopPropagation());
+
+    const specialRows = specialItems.map(({ event, date }) => `
+        <div class="all-day-popover-row all-day-popover-special" data-special-id="${event.id}">
+          <span class="all-day-popover-task">☝🏼 ${escapeHtml(specialEventDisplayTitle(event, date))}</span>
+          <span class="all-day-popover-meta">${escapeHtml(specialEventTypeLabels[event.type] || 'Ereignis')}</span>
+        </div>`).join('');
 
     const eventRows = allDayEvents.map(ev => {
       const cat = state.categories[ev.categoryId] || state.categories.external || state.categories.orga;
@@ -1756,8 +2136,8 @@
               ${meta}
             </div>`;
         }).join('');
-    const rows = eventRows || todoRows
-      ? `${eventRows}${todoRows}`
+    const rows = specialRows || eventRows || todoRows
+      ? `${specialRows}${eventRows}${todoRows}`
       : '<div class="all-day-popover-empty">Keine Tagesaufgaben oder Ganztagstermine.</div>';
 
     panel.innerHTML = `
@@ -1770,6 +2150,7 @@
 
     panel.querySelector('.all-day-popover-close').addEventListener('click', closeHeaderTodos);
     panel.querySelector('.all-day-popover-planner').addEventListener('click', e => openTodoPlannerForDay(dayIndex, e));
+    panel.querySelectorAll('.all-day-popover-special').forEach(row => row.addEventListener('click', openSpecialEventsModal));
     panel.querySelectorAll('.all-day-popover-row').forEach(row => {
       const todo = todos.find(item => item.id === row.dataset.todoId);
       if (!todo) return;
@@ -3748,31 +4129,56 @@ function toggleMissed(eventId) {
     saveState();
     renderAll();
   };
+  async function persistCalendarFeedChange(previousFeed, successMessage) {
+    saveState();
+    renderCalendarFeedSettings();
+    if (!cloudUser) {
+      state.calendarFeed = previousFeed;
+      saveState();
+      renderCalendarFeedSettings();
+      if (calendarFeedStatus) calendarFeedStatus.textContent = 'Bitte einloggen, damit der Kalenderlink serverseitig gespeichert werden kann.';
+      return false;
+    }
+    if (calendarFeedStatus) calendarFeedStatus.textContent = 'Speichere Kalenderfreigabe...';
+    try {
+      await saveCloudState(clone(state), { throwOnError: true });
+      renderCalendarFeedSettings();
+      if (calendarFeedStatus) calendarFeedStatus.textContent = successMessage || 'Kalenderfreigabe gespeichert.';
+      return true;
+    } catch (err) {
+      state.calendarFeed = previousFeed;
+      saveState();
+      renderCalendarFeedSettings();
+      if (calendarFeedStatus) calendarFeedStatus.textContent = `Kalenderfreigabe konnte nicht gespeichert werden: ${err.message || err}`;
+      return false;
+    }
+  }
+
   if (calendarFeedEnabled) {
-    calendarFeedEnabled.addEventListener('change', () => {
+    calendarFeedEnabled.addEventListener('change', async () => {
+      const previousFeed = clone(ensureCalendarFeedSettings());
       const feed = ensureCalendarFeedSettings({ ensureToken: calendarFeedEnabled.checked });
       feed.enabled = calendarFeedEnabled.checked;
       if (feed.enabled) ensureCalendarFeedSettings({ ensureToken: true });
-      saveState();
-      renderCalendarFeedSettings();
+      await persistCalendarFeedChange(previousFeed, feed.enabled ? 'Freigabe aktiv und gespeichert.' : 'Freigabe deaktiviert und gespeichert.');
     });
   }
   if (enableCalendarFeedBtn) {
-    enableCalendarFeedBtn.addEventListener('click', () => {
+    enableCalendarFeedBtn.addEventListener('click', async () => {
+      const previousFeed = clone(ensureCalendarFeedSettings());
       const feed = ensureCalendarFeedSettings({ ensureToken: true });
       feed.enabled = true;
-      saveState();
-      renderCalendarFeedSettings();
+      await persistCalendarFeedChange(previousFeed, 'Freigabe aktiv und gespeichert.');
     });
   }
   if (regenerateCalendarFeedTokenBtn) {
-    regenerateCalendarFeedTokenBtn.addEventListener('click', () => {
+    regenerateCalendarFeedTokenBtn.addEventListener('click', async () => {
       if (!confirm('Neuen Kalenderfeed-Token erstellen? Der bisherige Link funktioniert danach nicht mehr.')) return;
+      const previousFeed = clone(ensureCalendarFeedSettings());
       const feed = ensureCalendarFeedSettings();
       feed.token = generateCalendarFeedToken();
       feed.enabled = true;
-      saveState();
-      renderCalendarFeedSettings();
+      await persistCalendarFeedChange(previousFeed, 'Neuer Kalenderlink aktiv und gespeichert.');
     });
   }
   if (copyCalendarFeedBtn) {
@@ -3790,6 +4196,23 @@ function toggleMissed(eventId) {
       }
     });
   }
+  if (specialEventsBtn) specialEventsBtn.addEventListener('click', openSpecialEventsModal);
+  if (closeSpecialEventsModalBtn) closeSpecialEventsModalBtn.addEventListener('click', closeSpecialEventsModal);
+  if (specialEventsModalBackdrop) {
+    specialEventsModalBackdrop.addEventListener('click', e => {
+      if (e.target === specialEventsModalBackdrop) closeSpecialEventsModal();
+    });
+  }
+  if (showSpecialEventFormBtn) {
+    showSpecialEventFormBtn.addEventListener('click', () => {
+      resetSpecialEventForm();
+      if (specialEventForm) specialEventForm.style.display = '';
+      setTimeout(() => specialEventTitle?.focus(), 50);
+    });
+  }
+  if (cancelSpecialEventBtn) cancelSpecialEventBtn.addEventListener('click', () => { if (specialEventForm) specialEventForm.style.display = 'none'; });
+  if (specialEventForm) specialEventForm.addEventListener('submit', saveSpecialEventFromForm);
+
   applyTemplateBtn.onclick = applyTemplateToWeek;
   prevWeekBtn.onclick = () => changeWeek(-1);
   nextWeekBtn.onclick = () => changeWeek(1);
@@ -4232,6 +4655,88 @@ function icsExternalIdAliases(externalId) {
   return [...aliases].filter(Boolean);
 }
 
+function specialSuggestionKeyFromIcsEvent(icsEvent) {
+  const uid = icsEvent.sourceUid || icsEvent.uid || icsEvent.externalId || icsEvent.id || '';
+  const sourceId = icsEvent.sourceId || icsEvent.externalCalendarId || DEFAULT_ICS_SOURCE_ID;
+  const start = icsEvent.occurrenceStart || icsEvent.date || '';
+  const rule = icsEvent.recurrenceRule || icsEvent.recurrenceFrequency || '';
+  const title = icsEvent.title || icsEvent.summary || '';
+  return [sourceId, uid, start, rule, title].map(value => String(value).trim()).join('|');
+}
+
+function inferSpecialEventType(title) {
+  const text = String(title || '').toLowerCase();
+  if (text.includes('geburtstag') || text.includes('birthday')) return 'birthday';
+  if (text.includes('jahrestag') || text.includes('hochzeitstag') || text.includes('anniversary')) return 'anniversary';
+  if (text.includes('jubiläum') || text.includes('jubilaeum') || text.includes('jubilee')) return 'jubilee';
+  if (text.includes('erinnerung') || text.includes('reminder')) return 'reminder';
+  return 'other';
+}
+
+function isSpecialEventSeriesCandidate(icsEvent) {
+  const frequency = String(icsEvent.recurrenceFrequency || '').toUpperCase();
+  if (!icsEvent?.recurringSeries) return false;
+  return frequency === 'YEARLY' || frequency === 'MONTHLY' || frequency === 'RDATE';
+}
+
+function acceptedExternalSpecialKeys() {
+  const acceptedSuggestions = (state.specialEventSuggestions || [])
+    .filter(item => item.status === 'accepted')
+    .flatMap(item => [item.sourceKey, item.key, item.externalUid && `uid:${item.sourceId || DEFAULT_ICS_SOURCE_ID}:${item.externalUid}`]);
+  const acceptedEvents = (state.specialEvents || [])
+    .flatMap(item => [item.externalSourceKey, item.externalUid && `uid:${DEFAULT_ICS_SOURCE_ID}:${item.externalUid}`]);
+  return new Set([...acceptedSuggestions, ...acceptedEvents].filter(Boolean));
+}
+
+function isAcceptedSpecialExternalSeries(icsEvent) {
+  const keys = acceptedExternalSpecialKeys();
+  const uidKey = (icsEvent.sourceUid || icsEvent.uid) ? `uid:${icsEvent.sourceId || DEFAULT_ICS_SOURCE_ID}:${icsEvent.sourceUid || icsEvent.uid}` : null;
+  return keys.has(icsEvent.sourceKey) || keys.has(specialSuggestionKeyFromIcsEvent(icsEvent)) || (uidKey && keys.has(uidKey));
+}
+
+function collectSpecialEventSuggestions(icsEvents) {
+  if (!state.specialEventSuggestions) state.specialEventSuggestions = [];
+  const known = new Map(state.specialEventSuggestions.map(item => [item.key, item]));
+  let created = 0;
+  (icsEvents || []).forEach(icsEvent => {
+    if (!isSpecialEventSeriesCandidate(icsEvent)) return;
+    const key = specialSuggestionKeyFromIcsEvent(icsEvent);
+    if (!key || known.has(key)) return;
+    const now = new Date().toISOString();
+    const suggestion = {
+      id: `special-suggestion-${id()}`,
+      key,
+      title: icsEvent.title || icsEvent.summary || 'Besonderes Ereignis',
+      date: icsEvent.date || dateKey(new Date()),
+      recurrenceRule: icsEvent.recurrenceRule || '',
+      recurrenceFrequency: icsEvent.recurrenceFrequency || '',
+      externalUid: icsEvent.sourceUid || icsEvent.uid || null,
+      sourceId: icsEvent.sourceId || DEFAULT_ICS_SOURCE_ID,
+      sourceKey: icsEvent.sourceKey || key,
+      suggestedType: inferSpecialEventType(icsEvent.title || icsEvent.summary),
+      status: 'pending',
+      createdAt: now,
+      updatedAt: now
+    };
+    state.specialEventSuggestions.push(suggestion);
+    known.set(key, suggestion);
+    created++;
+  });
+  return created;
+}
+
+function removeImportedSeriesBySourceKey(sourceKey, externalUid = null) {
+  if ((!sourceKey && !externalUid) || !state.weekEventsByWeek) return;
+  Object.keys(state.weekEventsByWeek).forEach(weekKey => {
+    state.weekEventsByWeek[weekKey] = (state.weekEventsByWeek[weekKey] || []).filter(ev => {
+      if (sourceKey && ev.sourceKey === sourceKey) return false;
+      if (externalUid && (ev.sourceUid === externalUid || ev.uid === externalUid)) return false;
+      return true;
+    });
+  });
+  currentWeekEvents();
+}
+
 function clearImportedIcsEvents() {
   console.log('[ICS] Removing old ICS events');
   if (!state.weekEventsByWeek) state.weekEventsByWeek = {};
@@ -4356,6 +4861,10 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
   sourceId,
   sourceUid: icsEvent.sourceUid || icsEvent.uid || null,
   sourceKey: icsEvent.sourceKey || null,
+  recurrenceRule: icsEvent.recurrenceRule || null,
+  recurrenceFrequency: icsEvent.recurrenceFrequency || null,
+  recurringSeries: Boolean(icsEvent.recurringSeries),
+  rdateCount: icsEvent.rdateCount || 0,
   recurrenceId: icsEvent.recurrenceId || null,
   occurrenceStart: icsEvent.occurrenceStart || null,
   originalStart: icsEvent.originalStart || null,
@@ -4381,6 +4890,7 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
 
   function importIcsEventsIntoPlanner(icsEvents) {
   ensureExternalCalendarCategory();
+  const createdSuggestions = collectSpecialEventSuggestions(icsEvents);
 
   const existingByExternalKey = new Map();
   const existingIcsEvents = [];
@@ -4420,6 +4930,7 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
   let updatedCount = 0;
 
 (icsEvents || []).forEach((icsEvent, index) => {
+  if (isAcceptedSpecialExternalSeries(icsEvent)) return;
   const plannerEvent = plannerEventFromIcsEvent(icsEvent, index);
   const externalKey = icsExternalKey(plannerEvent.sourceId, plannerEvent.externalId);
 
@@ -4553,9 +5064,26 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
     allDayImportedCount,
     stateImportedCount: allImportedStateEvents.length,
     visibleImportedCount: visibleImportedStateEvents.length,
+    specialSuggestionsCreated: createdSuggestions,
     currentWeekStart: state.currentWeekStart
   };
 }
+
+  function formatIcsLastSync(value) {
+    if (!value) return 'Noch nicht synchronisiert';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Noch nicht synchronisiert';
+    const today = dateKey(new Date());
+    const prefix = dateKey(date) === today ? 'heute' : date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    return `${prefix}, ${date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr`;
+  }
+
+  function updateIcsAutoSyncMeta(statusText = null) {
+    const status = document.getElementById('icsAutoSyncStatus');
+    const lastSync = document.getElementById('icsLastSyncText');
+    if (status) status.textContent = statusText || (icsSyncing ? 'Synchronisiere ...' : (icsSyncStatus || 'Bereit'));
+    if (lastSync) lastSync.textContent = formatIcsLastSync(localStorage.getItem(ICS_LAST_SUCCESS_KEY));
+  }
 
   function setIcsStatus(message) {
     icsSyncStatus = message || '';
@@ -4563,6 +5091,7 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
     const progressText = document.getElementById('icsProgressText');
     if (status) status.textContent = icsSyncStatus;
     if (progressText) progressText.textContent = icsSyncStatus || 'Bereit';
+    updateIcsAutoSyncMeta();
   }
 
   function setIcsSyncProgress(progress, message = '') {
@@ -4590,21 +5119,24 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
     }
     if (quickSyncBtn) quickSyncBtn.disabled = icsSyncing;
     if (modal) modal.classList.toggle('syncing', icsSyncing);
+    updateIcsAutoSyncMeta(icsSyncing ? 'Synchronisiere ...' : null);
   }
 
-  async function syncIcsCalendarFromModal() {
-    if (icsSyncing) return;
+  async function syncIcsCalendarFromModal({ silent = false } = {}) {
+    if (icsSyncing) return false;
     const input = document.getElementById('icsUrlInput');
     const icsUrl = input ? input.value.trim() : '';
 
     if (!icsUrl) {
-      setIcsSyncProgress(0, 'Bitte füge zuerst einen ICS-Link ein.');
-      return;
+      if (!silent) setIcsSyncProgress(0, 'Bitte füge zuerst einen ICS-Link ein.');
+      else updateIcsAutoSyncMeta('Bereit');
+      return false;
     }
 
     if (!icsUrl.startsWith('https://')) {
-      setIcsSyncProgress(0, 'Bitte nutze den HTTPS-ICS-Link aus Outlook.');
-      return;
+      if (!silent) setIcsSyncProgress(0, 'Bitte nutze den HTTPS-ICS-Link aus Outlook.');
+      else updateIcsAutoSyncMeta('Fehler beim Aktualisieren');
+      return false;
     }
 
     const controller = new AbortController();
@@ -4612,7 +5144,7 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
 
     try {
       console.log('[ICS] Sync started');
-      console.log('[ICS] Fetching URL', icsUrl);
+      console.log('[ICS] Fetching saved ICS URL', { host: (() => { try { return new URL(icsUrl).host; } catch { return 'invalid-url'; } })() });
       setIcsSyncing(true);
       setIcsSyncProgress(10, 'Verbindung wird aufgebaut...');
 
@@ -4663,8 +5195,10 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
       if (recurringSkipped) detailParts.push(`${recurringSkipped} wiederkehrend`);
       if (allDaySkipped) detailParts.push(`${allDaySkipped} ganztägig`);
       if (clientSkippedEvents.length) detailParts.push(`${clientSkippedEvents.length} Duplikate`);
+      if (importDiagnostics.specialSuggestionsCreated) detailParts.push(`${importDiagnostics.specialSuggestionsCreated} Vorschläge`);
       const detailText = detailParts.length ? ` · Übersprungen: ${detailParts.join(', ')}` : '';
       const allDayText = allDayImported ? ` · davon ${allDayImported} ganztägig` : '';
+      localStorage.setItem(ICS_LAST_SUCCESS_KEY, new Date().toISOString());
       setIcsSyncProgress(100, `Sync abgeschlossen · ${importDiagnostics.processedCount} verarbeitet · ${importDiagnostics.updatedCount} aktualisiert · ${importDiagnostics.createdCount} neu · ${importDiagnostics.missingCount} nicht mehr gefunden · ${totalSkipped} übersprungen${allDayText}${detailText}`);
       console.log('[ICS] Sync diagnostics', {
         totalVevents,
@@ -4681,12 +5215,20 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
         currentWeekStart: importDiagnostics.currentWeekStart
       });
       console.log('[ICS] Sync finished');
+      updateIcsAutoSyncMeta('Erfolgreich aktualisiert');
+      return true;
     } catch (error) {
       console.error('[ICS] Sync failed', error);
       const message = error.name === 'AbortError'
         ? 'ICS Sync Timeout: Kalender antwortet nicht rechtzeitig. Bitte später erneut versuchen.'
         : (error.message || 'ICS Sync fehlgeschlagen: Kalender konnte nicht geladen werden.');
-      setIcsSyncProgress(100, `Fehler: ${message}`);
+      if (silent) {
+        icsSyncStatus = 'Fehler beim Aktualisieren';
+        updateIcsAutoSyncMeta('Fehler beim Aktualisieren');
+      } else {
+        setIcsSyncProgress(100, `Fehler: ${message}`);
+      }
+      return false;
     } finally {
       window.clearTimeout(timeout);
       setIcsSyncing(false);
@@ -4701,25 +5243,57 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
   setIcsStatus('Importierte ICS-Termine wurden entfernt.');
 }
 
-async function syncSavedIcsCalendar() {
+async function syncSavedIcsCalendar({ silent = false } = {}) {
   const savedUrl = localStorage.getItem('perfekte-woche-ics-url') || '';
   const input = document.getElementById('icsUrlInput');
   const modal = document.getElementById('icsModal');
 
   if (input) input.value = savedUrl;
 
-  // Wenn noch kein ICS-Link gespeichert ist, Modal öffnen
   if (!savedUrl) {
-    if (modal) {
+    if (!silent && modal) {
       modal.classList.remove('hidden');
       setIcsSyncProgress(0, 'Bitte füge zuerst deinen ICS-Link ein.');
       setTimeout(() => input?.focus(), 50);
     }
-    return;
+    updateIcsAutoSyncMeta('Bereit');
+    return false;
   }
 
-  // Wenn Link gespeichert ist, direkt synchronisieren
-  await syncIcsCalendarFromModal();
+  return syncIcsCalendarFromModal({ silent });
+}
+
+function lastSuccessfulIcsSyncTime() {
+  const value = localStorage.getItem(ICS_LAST_SUCCESS_KEY);
+  const time = value ? new Date(value).getTime() : 0;
+  return Number.isFinite(time) ? time : 0;
+}
+
+function shouldRunIcsAutoSync() {
+  if (icsSyncing) return false;
+  if (!localStorage.getItem('perfekte-woche-ics-url')) return false;
+  if (document.hidden) return false;
+  if (navigator.onLine === false) return false;
+  return Date.now() - lastSuccessfulIcsSyncTime() >= ICS_AUTO_SYNC_INTERVAL_MS;
+}
+
+function requestIcsAutoSync(reason = 'auto') {
+  if (!shouldRunIcsAutoSync()) {
+    updateIcsAutoSyncMeta();
+    return;
+  }
+  console.log('[ICS] Auto sync requested', reason);
+  syncSavedIcsCalendar({ silent: true });
+}
+
+function startIcsAutoSync() {
+  if (icsAutoSyncTimer) return;
+  updateIcsAutoSyncMeta();
+  window.setTimeout(() => requestIcsAutoSync('startup'), 1500);
+  icsAutoSyncTimer = window.setInterval(() => requestIcsAutoSync('interval'), ICS_AUTO_SYNC_INTERVAL_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) requestIcsAutoSync('visible'); });
+  window.addEventListener('focus', () => requestIcsAutoSync('focus'));
+  window.addEventListener('online', () => requestIcsAutoSync('online'));
 }
   
   function initIcsCalendarIntegration() {
@@ -4791,7 +5365,7 @@ if (removeBtn) {
   // INIT
   // ==================================================
 
-function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); renderCalendarFeedSettings(); }
+function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); renderCalendarFeedSettings(); renderSpecialEventsButton(); updateIcsAutoSyncMeta(); }
   fillTaskDaySelect();
   renderAll();
   renderAll();
@@ -4806,4 +5380,5 @@ if (document.readyState === 'loading') {
 } else {
   initIcsCalendarIntegration();
 }
+startIcsAutoSync();
 })();

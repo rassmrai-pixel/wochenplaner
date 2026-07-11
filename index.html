@@ -16,6 +16,10 @@
     </div>
     <div class="toolbar">
   <button id="quickIcsSyncBtn" type="button">ICS Sync</button>
+  <button id="specialEventsBtn" class="special-events-trigger" type="button" title="Besondere Ereignisse" aria-label="Besondere Ereignisse">
+    <span class="special-events-emoji">☝🏼</span>
+    <span id="specialEventsBadge" class="special-events-badge" aria-hidden="true"></span>
+  </button>
   <button id="todoDrawerToggleBtn" class="todo-drawer-trigger">To-do Planner</button>
 
   <div class="profile-menu" id="profileMenu">
@@ -469,6 +473,74 @@
     </div>
   </div>
 
+
+  <div class="modal-backdrop" id="specialEventsModalBackdrop">
+    <div class="modal special-events-modal">
+      <div class="modal-title-row">
+        <div>
+          <h2>Besondere Ereignisse</h2>
+          <div class="modal-subtitle">Geburtstage, Jahrestage und Erinnerungen</div>
+        </div>
+        <button class="modal-close-btn" id="closeSpecialEventsModalBtn" type="button" aria-label="Schließen">×</button>
+      </div>
+
+      <div class="special-events-sections">
+        <section>
+          <h3>Heute</h3>
+          <div id="specialEventsTodayList" class="special-events-list"></div>
+        </section>
+        <section>
+          <h3>Demnächst</h3>
+          <div id="specialEventsUpcomingList" class="special-events-list"></div>
+        </section>
+      </div>
+
+      <section class="special-event-suggestions-section">
+        <h3>Aus externen Kalendern erkannt</h3>
+        <div id="specialEventSuggestionsList" class="special-event-suggestions-list"></div>
+      </section>
+
+      <button class="primary special-events-add-toggle" id="showSpecialEventFormBtn" type="button">Besonderes Ereignis hinzufügen</button>
+
+      <form id="specialEventForm" class="special-event-form" style="display:none;">
+        <div class="form-grid">
+          <label>Typ
+            <select id="specialEventType">
+              <option value="birthday">Geburtstag</option>
+              <option value="anniversary">Jahrestag</option>
+              <option value="jubilee">Jubiläum</option>
+              <option value="reminder">Erinnerung</option>
+              <option value="other">Sonstiges</option>
+            </select>
+          </label>
+          <label>Titel oder Name
+            <input id="specialEventTitle" type="text" placeholder="z. B. Lisa" />
+          </label>
+          <label>Datum
+            <input id="specialEventDate" type="date" />
+          </label>
+          <label>Ursprüngliches Jahr optional
+            <input id="specialEventYear" type="number" min="1900" max="2200" placeholder="z. B. 1994" />
+          </label>
+          <label class="checkbox-row">
+            <input id="specialEventRepeats" type="checkbox" checked />
+            <span>Jährlich wiederholen</span>
+          </label>
+          <label>Erinnerung vorher optional
+            <input id="specialEventReminderDays" type="number" min="0" max="365" placeholder="Tage" />
+          </label>
+        </div>
+        <label>Notiz
+          <textarea id="specialEventNote" rows="3" placeholder="Optional"></textarea>
+        </label>
+        <div class="modal-actions">
+          <button class="primary" id="saveSpecialEventBtn" type="submit">Speichern</button>
+          <button class="ghost" id="cancelSpecialEventBtn" type="button">Abbrechen</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div class="modal-backdrop" id="helpModalBackdrop">
     <div class="modal help-modal">
       <div class="modal-title-row">
@@ -506,6 +578,10 @@
 <button id="closeIcsModalBtn" class="ics-secondary-btn" type="button">Abbrechen</button>
       </div>
 
+      <div class="ics-auto-sync-meta">
+        <div><span>Status:</span> <strong id="icsAutoSyncStatus">Bereit</strong></div>
+        <div><span>Zuletzt aktualisiert:</span> <strong id="icsLastSyncText">Noch nicht synchronisiert</strong></div>
+      </div>
       <div id="icsProgress" class="ics-progress" aria-live="polite">
         <div class="ics-progress-meta">
           <span id="icsProgressText">Bereit</span>

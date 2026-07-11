@@ -6,7 +6,8 @@ const DEFAULT_FEED_SETTINGS = {
   exportRoutines: true,
   exportTimedTodos: true,
   exportAllDayTodos: true,
-  includeCompleted: true
+  includeCompleted: true,
+  exportSpecialEvents: true
 };
 
 function jsonError(res, statusCode, message) {
@@ -32,15 +33,40 @@ function getQueryToken(req) {
 }
 
 function supabaseConfig() {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://uwynzmdsveplxfqgwzqp.supabase.co';
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || '';
   return {
-    url: process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://uwynzmdsveplxfqgwzqp.supabase.co',
-    key: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || ''
+    url,
+    key,
+    hasServiceRoleKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+    hasLegacyServiceKey: Boolean(process.env.SUPABASE_SERVICE_KEY),
+    hasExplicitUrl: Boolean(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL)
   };
 }
 
+function tokenPreview(token) {
+  const value = String(token || '');
+  return value ? `${value.slice(0, 6)}...${value.slice(-4)}` : '';
+}
+
 async function loadStateByFeedToken(token) {
-  const { url, key } = supabaseConfig();
-  if (!url || !key) throw Object.assign(new Error('Calendar feed is not configured'), { statusCode: 500 });
+  const config = supabaseConfig();
+  const { url, key } = config;
+  if (!url || !key) {
+    console.error('[CalendarFeed] Supabase config missing', {
+      hasUrl: Boolean(url),
+      hasExplicitUrl: config.hasExplicitUrl,
+      hasServiceRoleKey: config.hasServiceRoleKey,
+      hasLegacyServiceKey: config.hasLegacyServiceKey
+    });
+    throw Object.assign(new Error('Calendar feed is not configured'), { statusCode: 500 });
+  }
+
+  console.info('[CalendarFeed] Resolving token', {
+    token: tokenPreview(token),
+    hasExplicitUrl: config.hasExplicitUrl,
+    keyType: key.startsWith('sb_secret_') ? 'secret' : 'legacy-or-other'
+  });
 
   const params = new URLSearchParams();
   params.set('select', 'user_id,data');
@@ -56,14 +82,27 @@ async function loadStateByFeedToken(token) {
   });
 
   if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    console.error('[CalendarFeed] Supabase query failed', {
+      status: response.status,
+      statusText: response.statusText,
+      bodyPreview: body.slice(0, 300)
+    });
     throw Object.assign(new Error('Could not load calendar feed'), { statusCode: 502 });
   }
 
   const rows = await response.json();
   const state = rows?.[0]?.data || null;
   const feed = normalizeFeedSettings(state?.calendarFeed);
-  if (!state || feed.token !== token) throw Object.assign(new Error('Invalid calendar token'), { statusCode: 404 });
-  if (!feed.enabled) throw Object.assign(new Error('Calendar feed is disabled'), { statusCode: 403 });
+  if (!state || feed.token !== token) {
+    console.warn('[CalendarFeed] Token not found', { token: tokenPreview(token), rows: Array.isArray(rows) ? rows.length : null });
+    throw Object.assign(new Error('Invalid calendar token'), { statusCode: 404 });
+  }
+  if (!feed.enabled) {
+    console.warn('[CalendarFeed] Feed disabled', { token: tokenPreview(token) });
+    throw Object.assign(new Error('Calendar feed is disabled'), { statusCode: 403 });
+  }
+  console.info('[CalendarFeed] Token resolved', { token: tokenPreview(token) });
   return { state, feed };
 }
 
@@ -75,6 +114,7 @@ function normalizeFeedSettings(input) {
   feed.exportTimedTodos = feed.exportTimedTodos !== false;
   feed.exportAllDayTodos = true;
   feed.includeCompleted = feed.includeCompleted !== false;
+  feed.exportSpecialEvents = feed.exportSpecialEvents !== false;
   return feed;
 }
 
@@ -247,6 +287,58 @@ function veventForAllDayTodo(todo, feed, domain) {
   ].filter(Boolean);
 }
 
+function specialEventTypeLabel(type) {
+  return {
+    birthday: 'Geburtstag',
+    anniversary: 'Jahrestag',
+    jubilee: 'Jubiläum',
+    reminder: 'Erinnerung',
+    other: 'Sonstiges'
+  }[type] || 'Ereignis';
+}
+
+function specialEventOccurrenceDate(event, year) {
+  const parts = parseDateKey(event?.date);
+  if (!parts) return null;
+  const occurrenceYear = event.repeatsYearly === false ? parts.year : year;
+  return `${occurrenceYear}-${pad2(parts.month)}-${pad2(parts.day)}`;
+}
+
+function veventForSpecialEvent(event, occurrenceDate, domain) {
+  const updated = event.updatedAt || event.createdAt || new Date().toISOString();
+  const title = event.title || specialEventTypeLabel(event.type);
+  const summary = `☝🏼 ${title}`;
+  const lines = [
+    'BEGIN:VEVENT',
+    `UID:${stableUid(`special-${event.id}-${occurrenceDate}`, domain)}`,
+    `DTSTAMP:${compactUtcDateTime(updated)}`,
+    `LAST-MODIFIED:${compactUtcDateTime(updated)}`,
+    `SUMMARY:${escapeIcsText(summary)}`,
+    `CATEGORIES:${escapeIcsText(specialEventTypeLabel(event.type))}`,
+    `DTSTART;VALUE=DATE:${compactDate(occurrenceDate)}`,
+    `DTEND;VALUE=DATE:${compactDate(addDaysToDateKey(occurrenceDate, 1))}`
+  ];
+  if (event.note) lines.push(`DESCRIPTION:${escapeIcsText(event.note)}`);
+  lines.push('END:VEVENT');
+  return lines;
+}
+
+function specialEventLines(state, feed, domain) {
+  if (!feed.exportSpecialEvents) return [];
+  const events = Array.isArray(state.specialEvents) ? state.specialEvents : [];
+  const currentYear = new Date().getFullYear();
+  const years = [currentYear, currentYear + 1];
+  const lines = [];
+  events.forEach(event => {
+    years.forEach(year => {
+      const occurrenceDate = specialEventOccurrenceDate(event, year);
+      if (!occurrenceDate) return;
+      lines.push(...veventForSpecialEvent(event, occurrenceDate, domain));
+    });
+  });
+  return lines;
+}
+
 function calendarDomain(req) {
   return process.env.CALENDAR_FEED_UID_DOMAIN || req.headers.host || 'planner.local';
 }
@@ -265,6 +357,8 @@ function buildIcs(state, feed, req) {
   (state.todos || []).forEach(todo => {
     eventLines.push(...veventForAllDayTodo(todo, feed, domain));
   });
+
+  eventLines.push(...specialEventLines(state, feed, domain));
 
   const lines = [
     'BEGIN:VCALENDAR',
@@ -329,6 +423,7 @@ module.exports._test = {
   shouldExportEvent,
   veventForPlannerEvent,
   veventForAllDayTodo,
+  specialEventLines,
   escapeIcsText,
   foldLine
 };

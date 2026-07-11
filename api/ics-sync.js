@@ -1,5 +1,5 @@
 const ICS_SYNC_TIMEOUT_MS = 60000;
-const ICS_PAST_MONTHS = 12;
+const ICS_PAST_DAYS = 1;
 const ICS_FUTURE_MONTHS = 24;
 const ICS_MAX_OCCURRENCES_PER_SERIES = 5000;
 const DEFAULT_ICS_SOURCE_ID = "default-ics";
@@ -241,8 +241,10 @@ function addMonthsToDate(date, amount) {
 
 function importWindow() {
   const now = new Date();
-  const start = addMonthsToDate(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())), -ICS_PAST_MONTHS);
-  const end = addMonthsToDate(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())), ICS_FUTURE_MONTHS);
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const start = new Date(today.getTime());
+  start.setUTCDate(start.getUTCDate() - ICS_PAST_DAYS);
+  const end = addMonthsToDate(today, ICS_FUTURE_MONTHS);
   return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
 }
 
@@ -364,6 +366,13 @@ function addDurationToDateTime(parsed, durationMs) {
     second: date.getUTCSeconds()
   };
   return { ...parts, isDate: false, timezone: parsed.timezone, raw: "", dateKey: dateKeyFromParts(parts), time: timeFromParts(parts), key: dateTimeKey(parts) };
+}
+
+function recurrenceFrequency(event) {
+  const rule = parseRRule(event?.rrule || '') || {};
+  if (rule.FREQ) return String(rule.FREQ).toUpperCase();
+  if (event?.rdates?.length) return 'RDATE';
+  return '';
 }
 
 function parseRRule(value) {
@@ -596,6 +605,10 @@ function expandMultiDayEventForDisplay(item) {
     provider: "outlook",
     sourceId: DEFAULT_ICS_SOURCE_ID,
     externalCalendarId: DEFAULT_ICS_SOURCE_ID,
+    recurrenceRule: event.rrule || null,
+    recurrenceFrequency: recurrenceFrequency(event),
+    recurringSeries: Boolean(event.rrule || event.rdates?.length),
+    rdateCount: Array.isArray(event.rdates) ? event.rdates.length : 0,
     type: "external_event",
     title: event.summary,
     location: event.location,
@@ -790,7 +803,7 @@ export default async function handler(req, res) {
     }
 
     console.log("[ICS] Sync started");
-    console.log("[ICS] Fetching URL", icsUrl);
+    console.log("[ICS] Fetching URL", (() => { try { return new URL(icsUrl).host; } catch { return "invalid-url"; } })());
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), ICS_SYNC_TIMEOUT_MS);
