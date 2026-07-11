@@ -517,7 +517,10 @@
             <input id="specialEventTitle" type="text" placeholder="z. B. Lisa" />
           </label>
           <label>Datum
-            <input id="specialEventDate" type="date" />
+            <div class="special-date-field">
+              <input id="specialEventDate" type="text" inputmode="none" readonly placeholder="JJJJ-MM-TT" />
+              <button id="specialEventDatePickerBtn" class="special-date-picker-btn" type="button" aria-label="Datum auswählen">📅</button>
+            </div>
           </label>
           <label>Ursprüngliches Jahr optional
             <input id="specialEventYear" type="number" min="1900" max="2200" placeholder="z. B. 1994" />

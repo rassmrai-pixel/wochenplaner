@@ -97,6 +97,7 @@
   let currentTimeRenderDateKey = null;
   let editingDayTodoId = null;
   let editingSpecialEventId = null;
+  let specialDatePickerMonth = null;
   let drawerControlsCollapsed = true;
   let drawerTouchStartX = null;
   let drawerTouchStartY = null;
@@ -202,6 +203,7 @@
   const specialEventType = document.getElementById('specialEventType');
   const specialEventTitle = document.getElementById('specialEventTitle');
   const specialEventDate = document.getElementById('specialEventDate');
+  const specialEventDatePickerBtn = document.getElementById('specialEventDatePickerBtn');
   const specialEventYear = document.getElementById('specialEventYear');
   const specialEventRepeats = document.getElementById('specialEventRepeats');
   const specialEventReminderDays = document.getElementById('specialEventReminderDays');
@@ -1206,6 +1208,112 @@
     }));
   }
 
+  function specialDatePickerElement() {
+    let picker = document.getElementById('specialDatePicker');
+    if (!picker) {
+      picker = document.createElement('div');
+      picker.id = 'specialDatePicker';
+      picker.className = 'special-date-picker';
+      picker.addEventListener('click', e => e.stopPropagation());
+      document.body.appendChild(picker);
+    }
+    return picker;
+  }
+
+  function selectedSpecialDate() {
+    return /^\d{4}-\d{2}-\d{2}$/.test(specialEventDate?.value || '')
+      ? toLocalDate(specialEventDate.value)
+      : toLocalDate(new Date());
+  }
+
+  function renderSpecialDatePicker() {
+    const picker = specialDatePickerElement();
+    const selected = selectedSpecialDate();
+    const monthDate = specialDatePickerMonth || new Date(selected.getFullYear(), selected.getMonth(), 1);
+    specialDatePickerMonth = monthDate;
+    const monthStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+    const firstGridDay = addDays(monthStart, -((monthStart.getDay() + 6) % 7));
+    const selectedKey = dateKey(selected);
+    const todayKey = dateKey(new Date());
+    const monthLabel = monthDate.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
+    const daysHtml = Array.from({ length: 42 }, (_, index) => {
+      const day = addDays(firstGridDay, index);
+      const key = dateKey(day);
+      const outside = day.getMonth() !== monthDate.getMonth();
+      return `<button type="button" class="special-date-day ${outside ? 'outside' : ''} ${key === selectedKey ? 'selected' : ''} ${key === todayKey ? 'today' : ''}" data-date="${key}">${day.getDate()}</button>`;
+    }).join('');
+    picker.innerHTML = `
+      <div class="special-date-picker-head">
+        <button type="button" class="special-date-prev" aria-label="Vorheriger Monat">‹</button>
+        <strong>${escapeHtml(monthLabel)}</strong>
+        <button type="button" class="special-date-next" aria-label="Nächster Monat">›</button>
+      </div>
+      <div class="special-date-weekdays">${days.map(day => `<span>${day}</span>`).join('')}</div>
+      <div class="special-date-grid">${daysHtml}</div>
+      <div class="special-date-picker-actions">
+        <button type="button" class="ghost special-date-today">Heute</button>
+      </div>`;
+    picker.querySelector('.special-date-prev')?.addEventListener('click', () => {
+      specialDatePickerMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() - 1, 1);
+      renderSpecialDatePicker();
+    });
+    picker.querySelector('.special-date-next')?.addEventListener('click', () => {
+      specialDatePickerMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 1);
+      renderSpecialDatePicker();
+    });
+    picker.querySelector('.special-date-today')?.addEventListener('click', () => {
+      if (specialEventDate) specialEventDate.value = dateKey(new Date());
+      closeSpecialDatePicker();
+    });
+    picker.querySelectorAll('.special-date-day').forEach(button => {
+      button.addEventListener('click', () => {
+        if (specialEventDate) specialEventDate.value = button.dataset.date || '';
+        closeSpecialDatePicker();
+      });
+    });
+  }
+
+  function positionSpecialDatePicker() {
+    const picker = specialDatePickerElement();
+    if (!specialEventDate) return;
+    const rect = specialEventDate.getBoundingClientRect();
+    const isMobile = window.matchMedia('(max-width: 700px)').matches;
+    if (isMobile) {
+      picker.style.position = 'fixed';
+      picker.style.left = '12px';
+      picker.style.right = '12px';
+      picker.style.top = 'auto';
+      picker.style.bottom = '12px';
+      picker.style.width = 'auto';
+      return;
+    }
+    picker.style.position = 'fixed';
+    picker.style.width = '320px';
+    picker.style.right = 'auto';
+    picker.style.bottom = 'auto';
+    const left = Math.min(Math.max(12, rect.left), window.innerWidth - 332);
+    const top = Math.min(rect.bottom + 8, window.innerHeight - 390);
+    picker.style.left = `${left}px`;
+    picker.style.top = `${Math.max(12, top)}px`;
+  }
+
+  function openSpecialDatePicker(event = null) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    const selected = selectedSpecialDate();
+    specialDatePickerMonth = new Date(selected.getFullYear(), selected.getMonth(), 1);
+    renderSpecialDatePicker();
+    positionSpecialDatePicker();
+    specialDatePickerElement().classList.add('open');
+  }
+
+  function closeSpecialDatePicker() {
+    const picker = document.getElementById('specialDatePicker');
+    if (picker) picker.classList.remove('open');
+  }
+
   function pendingSpecialSuggestions() {
     return (state.specialEventSuggestions || []).filter(item => item.status === 'pending');
   }
@@ -1311,6 +1419,7 @@
   }
 
   function closeSpecialEventsModal() {
+    closeSpecialDatePicker();
     if (specialEventsModalBackdrop) specialEventsModalBackdrop.style.display = 'none';
     if (specialEventForm) specialEventForm.style.display = 'none';
   }
@@ -1382,6 +1491,7 @@
     saveState();
     resetSpecialEventForm();
     editingSpecialEventId = null;
+    closeSpecialDatePicker();
     if (specialEventForm) specialEventForm.style.display = 'none';
     renderSpecialEventsModal();
     renderCalendar();
@@ -4210,8 +4320,10 @@ function toggleMissed(eventId) {
       setTimeout(() => specialEventTitle?.focus(), 50);
     });
   }
-  if (cancelSpecialEventBtn) cancelSpecialEventBtn.addEventListener('click', () => { if (specialEventForm) specialEventForm.style.display = 'none'; });
+  if (cancelSpecialEventBtn) cancelSpecialEventBtn.addEventListener('click', () => { closeSpecialDatePicker(); if (specialEventForm) specialEventForm.style.display = 'none'; });
   if (specialEventForm) specialEventForm.addEventListener('submit', saveSpecialEventFromForm);
+  if (specialEventDate) specialEventDate.addEventListener('click', openSpecialDatePicker);
+  if (specialEventDatePickerBtn) specialEventDatePickerBtn.addEventListener('click', openSpecialDatePicker);
 
   applyTemplateBtn.onclick = applyTemplateToWeek;
   prevWeekBtn.onclick = () => changeWeek(-1);
@@ -4574,7 +4686,16 @@ function toggleMissed(eventId) {
       }
     }
   });
-  window.addEventListener('resize', renderCalendar);
+  window.addEventListener('resize', () => {
+    renderCalendar();
+    if (document.getElementById('specialDatePicker')?.classList.contains('open')) positionSpecialDatePicker();
+  });
+  document.addEventListener('click', e => {
+    const picker = document.getElementById('specialDatePicker');
+    if (!picker?.classList.contains('open')) return;
+    if (picker.contains(e.target) || specialEventDate?.contains(e.target) || specialEventDatePickerBtn?.contains(e.target)) return;
+    closeSpecialDatePicker();
+  });
 
 
   // ==================================================
