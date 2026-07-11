@@ -56,6 +56,30 @@
         <button class="ghost" id="logoutBtn" style="display:none;">Ausloggen</button>
       </div>
     </section>
+    <section class="calendar-feed-panel" id="calendarFeedPanel">
+      <div class="calendar-feed-head">
+        <div>
+          <div class="calendar-feed-title">Kalender extern anzeigen</div>
+          <div class="calendar-feed-sub">Diesen persönlichen Kalenderlink kannst du in Outlook oder einer anderen Kalender-App als Internetkalender abonnieren. Änderungen aus der App werden beim nächsten Abruf des Kalenders übernommen.</div>
+        </div>
+        <label class="calendar-feed-toggle">
+          <input id="calendarFeedEnabled" type="checkbox" />
+          <span>Kalenderfeed aktivieren</span>
+        </label>
+      </div>
+      <div class="calendar-feed-link-row">
+        <input id="calendarFeedUrl" type="text" readonly placeholder="Feed aktivieren, um den persönlichen Link zu erzeugen" />
+        <button class="ghost" id="copyCalendarFeedBtn" type="button">Link kopieren</button>
+        <button class="ghost" id="regenerateCalendarFeedTokenBtn" type="button">Neuen Token erstellen</button>
+      </div>
+      <div class="calendar-feed-options">
+        <label><input id="calendarFeedExportRoutines" type="checkbox" /> Routinen exportieren</label>
+        <label><input id="calendarFeedExportTimedTodos" type="checkbox" /> To-dos mit Uhrzeit exportieren</label>
+        <label><input id="calendarFeedExportAllDayTodos" type="checkbox" /> Ganztägige To-dos exportieren</label>
+        <label><input id="calendarFeedIncludeCompleted" type="checkbox" /> Erledigte Termine exportieren</label>
+      </div>
+      <div class="calendar-feed-note" id="calendarFeedStatus">Ein neuer Token macht den alten Kalenderlink sofort ungültig.</div>
+    </section>
     <div class="category-toggle-row">
       <button class="small ghost" id="categoryToggleBtn" type="button">Kategorien anzeigen ▾</button>
     </div>

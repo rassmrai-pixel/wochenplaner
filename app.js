@@ -43,6 +43,14 @@
     trackingFilter: 'all',
     drawerHabitFilter: 'all',
     drawerTaskFilter: 'all',
+    calendarFeed: {
+      enabled: false,
+      token: null,
+      exportRoutines: true,
+      exportTimedTodos: true,
+      exportAllDayTodos: false,
+      includeCompleted: true
+    },
     categories: {
       gym: { label: 'Gym / Sport', color: '#22c55e', habit: true },
       work: { label: 'Arbeit / Business', color: '#38bdf8', habit: true },
@@ -221,6 +229,16 @@
   const trackingInsights = document.getElementById('trackingInsights');
   const cloudPanel = document.getElementById('cloudPanel');
   const cloudStatus = document.getElementById('cloudStatus');
+  const calendarFeedPanel = document.getElementById('calendarFeedPanel');
+  const calendarFeedEnabled = document.getElementById('calendarFeedEnabled');
+  const calendarFeedUrl = document.getElementById('calendarFeedUrl');
+  const copyCalendarFeedBtn = document.getElementById('copyCalendarFeedBtn');
+  const regenerateCalendarFeedTokenBtn = document.getElementById('regenerateCalendarFeedTokenBtn');
+  const calendarFeedExportRoutines = document.getElementById('calendarFeedExportRoutines');
+  const calendarFeedExportTimedTodos = document.getElementById('calendarFeedExportTimedTodos');
+  const calendarFeedExportAllDayTodos = document.getElementById('calendarFeedExportAllDayTodos');
+  const calendarFeedIncludeCompleted = document.getElementById('calendarFeedIncludeCompleted');
+  const calendarFeedStatus = document.getElementById('calendarFeedStatus');
   const authEmail = document.getElementById('authEmail');
   const authPassword = document.getElementById('authPassword');
   const loginBtn = document.getElementById('loginBtn');
@@ -273,6 +291,14 @@
     s.uiHomeVersion = 'calendar-main-v1';
     s.categories = { ...clone(defaults).categories, ...(input.categories || {}) };
     Object.values(s.categories).forEach(cat => { if (cat.habit === undefined) cat.habit = true; });
+    const incomingFeed = input.calendarFeed && typeof input.calendarFeed === 'object' ? input.calendarFeed : {};
+    s.calendarFeed = { ...clone(defaults).calendarFeed, ...incomingFeed };
+    s.calendarFeed.enabled = Boolean(s.calendarFeed.enabled);
+    s.calendarFeed.token = typeof s.calendarFeed.token === 'string' && s.calendarFeed.token.length >= 32 ? s.calendarFeed.token : null;
+    s.calendarFeed.exportRoutines = s.calendarFeed.exportRoutines !== false;
+    s.calendarFeed.exportTimedTodos = s.calendarFeed.exportTimedTodos !== false;
+    s.calendarFeed.exportAllDayTodos = Boolean(s.calendarFeed.exportAllDayTodos);
+    s.calendarFeed.includeCompleted = s.calendarFeed.includeCompleted !== false;
     if (s.categories.neutral) {
       s.categories.orga = s.categories.orga || { label: 'Orga / To-dos', color: s.categories.neutral.color || '#94a3b8', habit: true };
       delete s.categories.neutral;
@@ -335,7 +361,8 @@
           done: Boolean(sub.done),
           createdAt: sub.createdAt || new Date().toISOString()
         })) : [],
-        createdAt: ev.createdAt || new Date().toISOString()
+        createdAt: ev.createdAt || new Date().toISOString(),
+        updatedAt: ev.updatedAt || ev.lastModified || ev.dtstamp || ev.createdAt || new Date().toISOString()
       };
     }
 
@@ -389,7 +416,8 @@
         done: Boolean(sub.done),
         createdAt: sub.createdAt || new Date().toISOString()
       })) : [],
-      createdAt: todo.createdAt || new Date().toISOString()
+      createdAt: todo.createdAt || new Date().toISOString(),
+      updatedAt: todo.updatedAt || todo.createdAt || new Date().toISOString()
     })).map(todo => syncTodoAutoComplete(todo)) : [];
 
     if (!s.categories[s.selectedCategory]) s.selectedCategory = 'gym';
@@ -551,6 +579,58 @@
     } else {
       setCloudStatus('Bitte einloggen oder registrieren. Alternativ kannst du ohne Login lokal starten.');
     }
+    renderCalendarFeedSettings();
+  }
+
+  function generateCalendarFeedToken() {
+    const bytes = new Uint8Array(32);
+    if (window.crypto?.getRandomValues) {
+      window.crypto.getRandomValues(bytes);
+      return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    }
+    return `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`.padEnd(43, 'x');
+  }
+
+  function ensureCalendarFeedSettings({ ensureToken = false } = {}) {
+    if (!state.calendarFeed || typeof state.calendarFeed !== 'object') state.calendarFeed = clone(defaults.calendarFeed);
+    state.calendarFeed = { ...clone(defaults.calendarFeed), ...state.calendarFeed };
+    if (ensureToken && !state.calendarFeed.token) state.calendarFeed.token = generateCalendarFeedToken();
+    return state.calendarFeed;
+  }
+
+  function calendarFeedLink() {
+    const feed = ensureCalendarFeedSettings();
+    if (!feed.token) return '';
+    const origin = window.location?.origin && window.location.origin !== 'null' ? window.location.origin : '';
+    return `${origin}/api/calendar-feed?token=${encodeURIComponent(feed.token)}`;
+  }
+
+  function renderCalendarFeedSettings() {
+    if (!calendarFeedPanel) return;
+    const feed = ensureCalendarFeedSettings();
+    const signedIn = Boolean(cloudUser);
+    const link = feed.enabled ? calendarFeedLink() : '';
+    calendarFeedEnabled.checked = Boolean(feed.enabled);
+    calendarFeedUrl.value = link;
+    calendarFeedExportRoutines.checked = feed.exportRoutines !== false;
+    calendarFeedExportTimedTodos.checked = feed.exportTimedTodos !== false;
+    calendarFeedExportAllDayTodos.checked = Boolean(feed.exportAllDayTodos);
+    calendarFeedIncludeCompleted.checked = feed.includeCompleted !== false;
+    copyCalendarFeedBtn.disabled = !link;
+    regenerateCalendarFeedTokenBtn.disabled = !feed.enabled;
+    calendarFeedUrl.disabled = !feed.enabled;
+    const cloudHint = signedIn ? '' : ' Melde dich für Cloud Sync an, damit der Server deine Kalenderdaten laden kann.';
+    calendarFeedStatus.textContent = feed.enabled
+      ? `Feed aktiv. Ein neuer Token macht den alten Kalenderlink sofort ungültig.${cloudHint}`
+      : `Feed deaktiviert. Der Server liefert keine Kalenderdaten aus.${cloudHint}`;
+  }
+
+  function updateCalendarFeedOption(key, value) {
+    const feed = ensureCalendarFeedSettings();
+    feed[key] = value;
+    if (feed.enabled) ensureCalendarFeedSettings({ ensureToken: true });
+    saveState();
+    renderCalendarFeedSettings();
   }
 
   function scheduleCloudSave(next = state) {
@@ -708,6 +788,7 @@
     return `${h}:${m}`;
   }
   function eventTime(ev) { return `${timeLabel(ev.start)}–${timeLabel(ev.end)}`; }
+  function touchEvent(ev) { if (ev) ev.updatedAt = new Date().toISOString(); }
 
   function currentWeekEvents() {
     if (!state.weekEventsByWeek) state.weekEventsByWeek = {};
@@ -1741,6 +1822,7 @@
     ev.end = nextEnd;
     ev.date = isTemplateMode() ? null : dateKey(getDayDate(nextDay));
     if (ev.missingFromLastSync) ev.syncStatus = ev.syncStatus || 'local-moved';
+    touchEvent(ev);
     syncEventAutoComplete(ev);
     saveState();
     renderAll();
@@ -2223,6 +2305,7 @@ return div;
     if (!clean) return alert('Der Untertask braucht einen Namen.');
     if (!Array.isArray(ev.subtasks)) ev.subtasks = [];
     ev.subtasks.push({ id: id(), text: clean, done: false, createdAt: new Date().toISOString() });
+    touchEvent(ev);
     syncEventAutoComplete(ev);
     syncParentAutoCompleteForChild(ev);
     saveState();
@@ -2352,6 +2435,7 @@ return div;
         todo.plannedWeekStart = todo.plannedWeekStart || state.currentWeekStart;
         if (todo.plannedDay === undefined || todo.plannedDay === null) todo.plannedDay = state.activeHabitDay;
         todo.plannedEventId = null;
+        todo.updatedAt = new Date().toISOString();
         syncTodoAutoComplete(todo);
       }
       closeDayTodoModal();
@@ -2370,7 +2454,8 @@ return div;
       plannedDay: state.activeHabitDay,
       autoComplete: Boolean(dayTodoModalAuto.checked),
       subtasks,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     });
     closeDayTodoModal();
     saveState();
@@ -3275,7 +3360,8 @@ return div;
       autoComplete: Boolean(templateEv.autoComplete),
       autoCompleteFromSubtasks: Boolean(templateEv.autoCompleteFromSubtasks || templateEv.autoComplete),
       subtasks: cloneEventSubtasks(templateEv).map(sub => ({ ...sub, done: false })),
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     }));
 
     setCurrentWeekEvents([...preservedEvents, ...appliedTemplateEvents]);
@@ -3563,6 +3649,7 @@ return div;
   if (!ev) return;
 
   setEventDoneStatus(ev, done);
+  touchEvent(ev);
   syncParentAutoCompleteForChild(ev);
 
   saveState();
@@ -3577,6 +3664,7 @@ function toggleMissed(eventId) {
 
   // Wenn nicht eingehalten, dann nicht gleichzeitig erledigt
   if (ev.missed) setEventDoneStatus(ev, false);
+  touchEvent(ev);
   syncParentAutoCompleteForChild(ev);
 
   saveState();
@@ -3607,6 +3695,44 @@ function toggleMissed(eventId) {
     saveState();
     renderAll();
   };
+  if (calendarFeedEnabled) {
+    calendarFeedEnabled.addEventListener('change', () => {
+      const feed = ensureCalendarFeedSettings({ ensureToken: calendarFeedEnabled.checked });
+      feed.enabled = calendarFeedEnabled.checked;
+      if (feed.enabled) ensureCalendarFeedSettings({ ensureToken: true });
+      saveState();
+      renderCalendarFeedSettings();
+    });
+  }
+  if (calendarFeedExportRoutines) calendarFeedExportRoutines.addEventListener('change', () => updateCalendarFeedOption('exportRoutines', calendarFeedExportRoutines.checked));
+  if (calendarFeedExportTimedTodos) calendarFeedExportTimedTodos.addEventListener('change', () => updateCalendarFeedOption('exportTimedTodos', calendarFeedExportTimedTodos.checked));
+  if (calendarFeedExportAllDayTodos) calendarFeedExportAllDayTodos.addEventListener('change', () => updateCalendarFeedOption('exportAllDayTodos', calendarFeedExportAllDayTodos.checked));
+  if (calendarFeedIncludeCompleted) calendarFeedIncludeCompleted.addEventListener('change', () => updateCalendarFeedOption('includeCompleted', calendarFeedIncludeCompleted.checked));
+  if (regenerateCalendarFeedTokenBtn) {
+    regenerateCalendarFeedTokenBtn.addEventListener('click', () => {
+      if (!confirm('Neuen Kalenderfeed-Token erstellen? Der bisherige Link funktioniert danach nicht mehr.')) return;
+      const feed = ensureCalendarFeedSettings();
+      feed.token = generateCalendarFeedToken();
+      feed.enabled = true;
+      saveState();
+      renderCalendarFeedSettings();
+    });
+  }
+  if (copyCalendarFeedBtn) {
+    copyCalendarFeedBtn.addEventListener('click', async () => {
+      const link = calendarFeedLink();
+      if (!link) return;
+      try {
+        await navigator.clipboard.writeText(link);
+        calendarFeedStatus.textContent = 'Kalenderlink kopiert. Ein neuer Token macht den alten Link ungültig.';
+      } catch {
+        calendarFeedUrl.focus();
+        calendarFeedUrl.select();
+        document.execCommand('copy');
+        calendarFeedStatus.textContent = 'Kalenderlink kopiert.';
+      }
+    });
+  }
   applyTemplateBtn.onclick = applyTemplateToWeek;
   prevWeekBtn.onclick = () => changeWeek(-1);
   nextWeekBtn.onclick = () => changeWeek(1);
@@ -3877,7 +4003,8 @@ function toggleMissed(eventId) {
           parentId: null,
           autoComplete,
           autoCompleteFromSubtasks: autoComplete,
-          subtasks: cloneEventSubtasks({ subtasks: eventDraftSubtasks })
+          subtasks: cloneEventSubtasks({ subtasks: eventDraftSubtasks }),
+          updatedAt: new Date().toISOString()
         });
         syncEventAutoComplete(ev);
         syncParentAutoCompleteForChild(ev);
@@ -3901,7 +4028,8 @@ function toggleMissed(eventId) {
     autoComplete: Boolean(modalAutoComplete?.checked),
     autoCompleteFromSubtasks: Boolean(modalAutoComplete?.checked),
     subtasks: cloneEventSubtasks({ subtasks: eventDraftSubtasks }),
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   });
 
   if (pendingTodoId) {
@@ -4602,7 +4730,7 @@ if (removeBtn) {
   // INIT
   // ==================================================
 
-function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); }
+function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); renderCalendarFeedSettings(); }
   fillTaskDaySelect();
   renderAll();
   renderAll();
