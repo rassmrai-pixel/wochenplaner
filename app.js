@@ -2780,6 +2780,48 @@
   }
   function clearSelection() { document.querySelectorAll('.slot.selected').forEach(el => el.classList.remove('selected')); }
 
+
+  let mobileEventTapState = null;
+
+  function bindMobileEventDoubleTap(element, ev) {
+    let touchStart = null;
+    element.addEventListener('touchstart', e => {
+      const touch = e.touches?.[0];
+      if (!touch || e.target.closest('input, button, select, textarea, a')) {
+        touchStart = null;
+        return;
+      }
+      touchStart = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+    }, { passive: true });
+
+    element.addEventListener('touchend', e => {
+      if (!touchStart || isDragging || e.target.closest('input, button, select, textarea, a')) {
+        touchStart = null;
+        return;
+      }
+      const touch = e.changedTouches?.[0];
+      if (!touch) {
+        touchStart = null;
+        return;
+      }
+      const dx = touch.clientX - touchStart.x;
+      const dy = touch.clientY - touchStart.y;
+      const moved = Math.hypot(dx, dy);
+      const now = Date.now();
+      const previous = mobileEventTapState;
+      touchStart = null;
+      if (moved > 12) return;
+      if (previous && previous.eventId === ev.id && now - previous.time <= 380) {
+        mobileEventTapState = null;
+        e.preventDefault();
+        e.stopPropagation();
+        if (ev.editable !== false) openEditor(ev.id);
+        return;
+      }
+      mobileEventTapState = { eventId: ev.id, time: now };
+    }, { passive: false });
+  }
+
   function layoutDayEvents(events) {
     const sorted = [...events].sort((a, b) => a.start - b.start || b.end - a.end);
     const active = [];
@@ -2905,6 +2947,7 @@
     div.addEventListener('mousedown', e => e.stopPropagation());
     div.addEventListener('click', e => e.stopPropagation());
     div.addEventListener('dblclick', e => { e.preventDefault(); e.stopPropagation(); if (ev.editable !== false) openEditor(ev.id); });
+    bindMobileEventDoubleTap(div, ev);
     div.addEventListener('dragstart', e => {
       if (!canMoveEventAcrossDays(ev) || e.target.closest('input, button, select, textarea, a')) {
         e.preventDefault();
