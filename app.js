@@ -2822,6 +2822,110 @@
     }, { passive: false });
   }
 
+
+
+  function isDesktopResizePointer() {
+    return window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  }
+
+  function canResizeEventDuration(ev) {
+    return Boolean(ev)
+      && isDesktopResizePointer()
+      && ev.editable !== false
+      && ev.importSource !== 'ics'
+      && isWeekMode()
+      && !ev.allDay
+      && !isIntegratedChild(ev)
+      && hasScheduledTime(ev);
+  }
+
+  function resizeSlotFromPointer(dayColumn, clientY) {
+    const rect = dayColumn.getBoundingClientRect();
+    const measuredSlotHeight = rect.height / slotsPerDay;
+    const pixelsPerSlot = Number.isFinite(measuredSlotHeight) && measuredSlotHeight > 0 ? measuredSlotHeight : cellHeight();
+    return Math.round((clientY - rect.top) / pixelsPerSlot);
+  }
+
+  function eventResizePreviewText(start, end) {
+    return `${timeLabel(start)}–${timeLabel(end)}`;
+  }
+
+  function updateEventResizePreview(clientY) {
+    if (!eventResizeState) return;
+    const { edge, dayColumn, eventElement, originalStart, originalEnd, preview } = eventResizeState;
+    let slot = resizeSlotFromPointer(dayColumn, clientY);
+    let nextStart = originalStart;
+    let nextEnd = originalEnd;
+    if (edge === 'start') {
+      nextStart = clamp(slot, 0, originalEnd - 1);
+    } else {
+      nextEnd = clamp(slot, originalStart + 1, slotsPerDay);
+    }
+    eventResizeState.nextStart = nextStart;
+    eventResizeState.nextEnd = nextEnd;
+    eventElement.style.top = `${nextStart * cellHeight() + 1}px`;
+    eventElement.style.height = `${Math.max(16, (nextEnd - nextStart) * cellHeight() - 2)}px`;
+    if (preview) preview.textContent = eventResizePreviewText(nextStart, nextEnd);
+  }
+
+  function startEventResize(ev, eventElement, edge, event) {
+    if (!canResizeEventDuration(ev) || event.button !== 0) return;
+    const dayColumn = eventElement.closest('.day-column');
+    if (!dayColumn) return;
+    event.preventDefault();
+    event.stopPropagation();
+    document.body.classList.add('event-resizing-active');
+    const preview = eventElement.querySelector('.event-resize-preview');
+    eventResizeState = {
+      eventId: ev.id,
+      edge,
+      dayColumn,
+      eventElement,
+      originalStart: Number(ev.start),
+      originalEnd: Number(ev.end),
+      nextStart: Number(ev.start),
+      nextEnd: Number(ev.end),
+      preview
+    };
+    if (preview) preview.textContent = eventResizePreviewText(ev.start, ev.end);
+    eventElement.classList.add('resizing');
+    updateEventResizePreview(event.clientY);
+  }
+
+  function finishEventResize(commit) {
+    if (!eventResizeState) return;
+    const stateForResize = eventResizeState;
+    eventResizeState = null;
+    document.body.classList.remove('event-resizing-active');
+    stateForResize.eventElement.classList.remove('resizing');
+    const ev = currentEvents().find(item => item.id === stateForResize.eventId);
+    if (!commit || !ev || !canResizeEventDuration(ev)) {
+      renderCalendar();
+      return;
+    }
+    const nextStart = clamp(Number(stateForResize.nextStart), 0, slotsPerDay - 1);
+    const nextEnd = clamp(Number(stateForResize.nextEnd), nextStart + 1, slotsPerDay);
+    if (nextStart === Number(ev.start) && nextEnd === Number(ev.end)) {
+      renderCalendar();
+      return;
+    }
+    ev.start = nextStart;
+    ev.end = nextEnd;
+    if (ev.missingFromLastSync) ev.syncStatus = ev.syncStatus || 'local-resized';
+    touchEvent(ev);
+    syncEventAutoComplete(ev);
+    saveState();
+    renderAll();
+  }
+
+  document.addEventListener('mousemove', event => {
+    if (!eventResizeState) return;
+    event.preventDefault();
+    updateEventResizePreview(event.clientY);
+  });
+
+  document.addEventListener('mouseup', () => finishEventResize(true));
+
   function layoutDayEvents(events) {
     const sorted = [...events].sort((a, b) => a.start - b.start || b.end - a.end);
     const active = [];
@@ -2928,7 +3032,11 @@
     const compactMeta = hasStartAlignedChild ? `<span class="event-compact-meta">${eventTime(ev)}${fulfillment.containedTotal ? ` · ${fulfillment.done}/${fulfillment.total}` : ''}</span>` : '';
 
     const trackable = isWeekMode() && Boolean(cat.habit);
-    div.innerHTML = `
+    const resizeHandles = canResizeEventDuration(ev) ? `
+  <button class="event-resize-handle event-resize-start" type="button" title="Startzeit ziehen" aria-label="Startzeit ändern"></button>
+  <button class="event-resize-handle event-resize-end" type="button" title="Endzeit ziehen" aria-label="Endzeit ändern"></button>
+  <div class="event-resize-preview" aria-hidden="true"></div>` : '';
+    div.innerHTML = `${resizeHandles}
   <div class="event-main-row event-title-row ${hasStartAlignedChild ? 'event-main-overlay-bar' : ''}">
     ${trackable ? `<input class="event-check" type="checkbox" ${isEventDone(ev) ? 'checked' : ''} ${eventAutoCompleteEnabled(ev) && (Array.isArray(ev.subtasks) && ev.subtasks.length || integratedCount) ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : 'title="Erledigt"'} />` : ''}
     ${trackable ? `<button class="event-missed-btn ${ev.missed ? 'active' : ''}" type="button" title="Nicht eingehalten">!</button>` : ''}
@@ -2943,13 +3051,19 @@
     div.querySelectorAll('input, button, select, textarea, a').forEach(control => {
       control.draggable = false;
     });
+    div.querySelector('.event-resize-start')?.addEventListener('mousedown', e => startEventResize(ev, div, 'start', e));
+    div.querySelector('.event-resize-end')?.addEventListener('mousedown', e => startEventResize(ev, div, 'end', e));
+    div.querySelectorAll('.event-resize-handle').forEach(handle => {
+      handle.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); });
+      handle.addEventListener('dblclick', e => { e.preventDefault(); e.stopPropagation(); });
+    });
 
     div.addEventListener('mousedown', e => e.stopPropagation());
     div.addEventListener('click', e => e.stopPropagation());
     div.addEventListener('dblclick', e => { e.preventDefault(); e.stopPropagation(); if (ev.editable !== false) openEditor(ev.id); });
     bindMobileEventDoubleTap(div, ev);
     div.addEventListener('dragstart', e => {
-      if (!canMoveEventAcrossDays(ev) || e.target.closest('input, button, select, textarea, a')) {
+      if (!canMoveEventAcrossDays(ev) || e.target.closest('input, button, select, textarea, a, .event-resize-handle')) {
         e.preventDefault();
         return;
       }
@@ -5178,10 +5292,19 @@ function toggleMissed(eventId) {
 
 
   let mobileSwipeStart = null;
+  let mobileSwipeLockUntil = 0;
+
+  function resetMobileSwipeVisual(animate = true) {
+    if (!calendar) return;
+    calendar.classList.toggle('mobile-swipe-animating', animate);
+    calendar.style.transform = '';
+    if (animate) window.setTimeout(() => calendar.classList.remove('mobile-swipe-animating'), 230);
+  }
+
   function isBlockingMobileCalendarSwipe(target) {
-    if (!isMobileViewport() || isDragging) return true;
+    if (!isMobileViewport() || isDragging || eventResizeState || Date.now() < mobileSwipeLockUntil) return true;
     if (state.todoDrawerOpen || state.specialEventsDrawerOpen) return true;
-    if (target?.closest?.('.event, .modal, .ics-modal-card, .todo-drawer, .special-events-drawer, .profile-menu, button, input, select, textarea')) return true;
+    if (target?.closest?.('.event, .event-resize-handle, .modal, .ics-modal-card, .todo-drawer, .special-events-drawer, .profile-menu, button, input, select, textarea')) return true;
     const icsModal = document.getElementById('icsModal');
     return Boolean(
       (icsModal && !icsModal.classList.contains('hidden')) ||
@@ -5196,29 +5319,86 @@ function toggleMissed(eventId) {
   if (calendarWrap) {
     calendarWrap.addEventListener('touchstart', e => {
       const touch = e.touches?.[0];
-      if (!touch || isBlockingMobileCalendarSwipe(e.target) || touch.clientX < 22) {
+      if (!touch || isBlockingMobileCalendarSwipe(e.target) || touch.clientX < 24) {
         mobileSwipeStart = null;
         return;
       }
       mobileSwipeStart = {
         x: touch.clientX,
         y: touch.clientY,
-        time: Date.now()
+        lastX: touch.clientX,
+        lastY: touch.clientY,
+        time: Date.now(),
+        horizontal: false,
+        cancelled: false,
+        navigated: false
       };
+      if (calendar) calendar.classList.remove('mobile-swipe-animating');
     }, { passive: true });
 
-    calendarWrap.addEventListener('touchend', e => {
+    calendarWrap.addEventListener('touchmove', e => {
       if (!mobileSwipeStart) return;
-      const touch = e.changedTouches?.[0];
+      const touch = e.touches?.[0];
       if (!touch || isBlockingMobileCalendarSwipe(e.target)) {
         mobileSwipeStart = null;
+        resetMobileSwipeVisual();
         return;
       }
       const dx = touch.clientX - mobileSwipeStart.x;
       const dy = touch.clientY - mobileSwipeStart.y;
+      mobileSwipeStart.lastX = touch.clientX;
+      mobileSwipeStart.lastY = touch.clientY;
+      if (!mobileSwipeStart.horizontal) {
+        if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx) * 1.15) {
+          mobileSwipeStart.cancelled = true;
+          resetMobileSwipeVisual(false);
+          return;
+        }
+        if (Math.abs(dx) < 14 || Math.abs(dx) < Math.abs(dy) * 1.45) return;
+        mobileSwipeStart.horizontal = true;
+      }
+      if (!mobileSwipeStart.horizontal || mobileSwipeStart.cancelled) return;
+      e.preventDefault();
+      const previewX = clamp(dx * 0.32, -46, 46);
+      if (calendar) calendar.style.transform = `translateX(${previewX}px)`;
+    }, { passive: false });
+
+    calendarWrap.addEventListener('touchend', e => {
+      if (!mobileSwipeStart) return;
+      const touch = e.changedTouches?.[0];
+      const swipe = mobileSwipeStart;
       mobileSwipeStart = null;
-      if (Math.abs(dx) < 52 || Math.abs(dx) < Math.abs(dy) * 1.35) return;
-      shiftMobileCalendarDays(dx < 0 ? 1 : -1);
+      if (!touch || swipe.cancelled || swipe.navigated || isBlockingMobileCalendarSwipe(e.target)) {
+        resetMobileSwipeVisual();
+        return;
+      }
+      const dx = touch.clientX - swipe.x;
+      const dy = touch.clientY - swipe.y;
+      const elapsed = Math.max(1, Date.now() - swipe.time);
+      const velocity = Math.abs(dx) / elapsed;
+      const clearHorizontal = Math.abs(dx) >= Math.abs(dy) * 1.55;
+      const passesDistance = Math.abs(dx) >= 52;
+      const passesVelocity = Math.abs(dx) >= 32 && velocity >= 0.42;
+      if (!swipe.horizontal || !clearHorizontal || (!passesDistance && !passesVelocity)) {
+        resetMobileSwipeVisual();
+        return;
+      }
+      e.preventDefault();
+      mobileSwipeLockUntil = Date.now() + 280;
+      swipe.navigated = true;
+      if (calendar) {
+        calendar.classList.add('mobile-swipe-animating');
+        calendar.style.transform = `translateX(${dx < 0 ? -72 : 72}px)`;
+      }
+      window.setTimeout(() => {
+        resetMobileSwipeVisual(false);
+        shiftMobileCalendarDays(dx < 0 ? 1 : -1);
+      }, 190);
+    }, { passive: false });
+
+    calendarWrap.addEventListener('touchcancel', () => {
+      mobileSwipeStart = null;
+      resetMobileSwipeVisual();
     }, { passive: true });
   }
   document.addEventListener('click', e => {
