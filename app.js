@@ -11,13 +11,13 @@
   const ICS_SYNC_TIMEOUT_MS = 60000;
   const ICS_AUTO_SYNC_INTERVAL_MS = 30 * 60 * 1000;
   const ICS_LAST_SUCCESS_KEY = 'perfekte-woche-ics-last-success';
-  const MOBILE_SWIPE_MIN_DISTANCE = 52;
+  const MOBILE_SWIPE_MIN_DISTANCE = 50;
   const MOBILE_SWIPE_FAST_DISTANCE = 32;
-  const MOBILE_SWIPE_VELOCITY = 0.42;
-  const MOBILE_SWIPE_HORIZONTAL_RATIO = 1.55;
+  const MOBILE_SWIPE_MIN_VELOCITY = 0.25;
+  const MOBILE_SWIPE_DIRECTION_RATIO = 1.3;
   const MOBILE_SWIPE_EDGE_GUARD = 24;
-  const MOBILE_SWIPE_LOCK_MS = 280;
-  const MOBILE_SWIPE_ANIMATION_MS = 190;
+  const MOBILE_SWIPE_COOLDOWN = 300;
+  const MOBILE_SWIPE_DEBUG = false;
   const MAX_INVITE_ATTENDEES = 10;
   const DEFAULT_ICS_SOURCE_ID = 'default-ics';
   const SUPABASE_URL = 'https://uwynzmdsveplxfqgwzqp.supabase.co';
@@ -102,6 +102,7 @@
   let movingPointerOffsetY = 0;
   let movingOriginalStart = null;
   let movingOriginalEnd = null;
+  let eventResizeState = null;
   let editingId = null;
   let editingCategoryId = null;
   let pendingTodoId = null;
@@ -5505,117 +5506,145 @@ function toggleMissed(eventId) {
   });
 
 
-  let mobileSwipeStart = null;
-  let mobileSwipeLockUntil = 0;
+  const mobileSwipeState = {
+    active: false,
+    pointerId: null,
+    startX: 0,
+    startY: 0,
+    lastX: 0,
+    lastY: 0,
+    startTime: 0,
+    direction: null,
+    navigated: false
+  };
+  let mobileSwipeCooldownUntil = 0;
 
-  function resetMobileSwipeVisual(animate = true) {
-    if (!calendar) return;
-    calendar.classList.toggle('mobile-swipe-animating', animate);
-    calendar.style.transform = '';
-    if (animate) window.setTimeout(() => calendar.classList.remove('mobile-swipe-animating'), MOBILE_SWIPE_ANIMATION_MS + 40);
+  function mobileSwipeDebug(eventName, details = {}) {
+    if (!MOBILE_SWIPE_DEBUG && !window.__MOBILE_SWIPE_DEBUG__) return;
+    console.log(`[mobile-swipe] ${eventName}`, details);
   }
 
-  function isBlockingMobileCalendarSwipe(target) {
-    if (!isMobileViewport() || isDragging || eventResizeState || Date.now() < mobileSwipeLockUntil) return true;
-    if (state.todoDrawerOpen || state.specialEventsDrawerOpen) return true;
-    if (target?.closest?.('.event, .event-resize-handle, .modal, .ics-modal-card, .todo-drawer, .special-events-drawer, .profile-menu, button, input, select, textarea, [data-horizontal-scroll]')) return true;
+  function resetMobileSwipeState(reason = 'reset') {
+    mobileSwipeDebug('swipe:cancel', { reason });
+    mobileSwipeState.active = false;
+    mobileSwipeState.pointerId = null;
+    mobileSwipeState.startX = 0;
+    mobileSwipeState.startY = 0;
+    mobileSwipeState.lastX = 0;
+    mobileSwipeState.lastY = 0;
+    mobileSwipeState.startTime = 0;
+    mobileSwipeState.direction = null;
+    mobileSwipeState.navigated = false;
+    if (calendar) {
+      calendar.classList.remove('mobile-swipe-animating');
+      calendar.style.transform = '';
+    }
+  }
+
+  function mobileSwipeIgnoreReason(target) {
+    if (!isMobileViewport()) return 'not-mobile';
+    if (!isWeekMode() || state.viewMode === 'tasks') return 'not-calendar-week';
+    if (isDragging) return 'dragging';
+    if (eventResizeState) return 'resizing';
+    if (Date.now() < mobileSwipeCooldownUntil) return 'cooldown';
+    if (state.todoDrawerOpen || state.specialEventsDrawerOpen) return 'drawer-open';
+    if (target?.closest?.('.event, .calendar-event, .event-resize-handle, .resize-handle, button, input, select, textarea, a, [contenteditable="true"], .modal, .ics-modal-card, .todo-drawer, .special-events-drawer, .drawer, .profile-menu, [data-horizontal-scroll]')) return 'interactive-target';
     const icsModal = document.getElementById('icsModal');
-    return Boolean(
-      (icsModal && !icsModal.classList.contains('hidden')) ||
-      modalBackdrop?.style.display === 'flex' ||
-      calendarFeedModalBackdrop?.style.display === 'flex' ||
-      accountModalBackdrop?.style.display === 'flex' ||
-      helpModalBackdrop?.style.display === 'flex' ||
-      specialEventFormBackdrop?.style.display === 'flex'
-    );
+    if (icsModal && !icsModal.classList.contains('hidden')) return 'ics-modal-open';
+    if (modalBackdrop?.style.display === 'flex') return 'event-modal-open';
+    if (calendarFeedModalBackdrop?.style.display === 'flex') return 'feed-modal-open';
+    if (accountModalBackdrop?.style.display === 'flex') return 'account-modal-open';
+    if (helpModalBackdrop?.style.display === 'flex') return 'help-modal-open';
+    if (specialEventFormBackdrop?.style.display === 'flex') return 'special-event-modal-open';
+    return '';
+  }
+
+  function startMobileSwipe(e) {
+    if (!['touch', 'pen'].includes(e.pointerType)) return;
+    const reason = mobileSwipeIgnoreReason(e.target);
+    if (reason) {
+      mobileSwipeDebug(reason === 'interactive-target' ? 'swipe:ignored-interactive-target' : 'swipe:cancel', { pointerType: e.pointerType, reason });
+      return;
+    }
+    if (e.clientX < MOBILE_SWIPE_EDGE_GUARD) {
+      mobileSwipeDebug('swipe:cancel', { pointerType: e.pointerType, reason: 'edge-guard', startX: e.clientX, startY: e.clientY });
+      return;
+    }
+    mobileSwipeState.active = true;
+    mobileSwipeState.pointerId = e.pointerId;
+    mobileSwipeState.startX = e.clientX;
+    mobileSwipeState.startY = e.clientY;
+    mobileSwipeState.lastX = e.clientX;
+    mobileSwipeState.lastY = e.clientY;
+    mobileSwipeState.startTime = Date.now();
+    mobileSwipeState.direction = null;
+    mobileSwipeState.navigated = false;
+    try { calendarWrap.setPointerCapture?.(e.pointerId); } catch {}
+    mobileSwipeDebug('swipe:pointerdown', { pointerType: e.pointerType, startX: e.clientX, startY: e.clientY, swipeTarget: Boolean(calendarWrap) });
+  }
+
+  function moveMobileSwipe(e) {
+    if (!mobileSwipeState.active || e.pointerId !== mobileSwipeState.pointerId) return;
+    const dx = e.clientX - mobileSwipeState.startX;
+    const dy = e.clientY - mobileSwipeState.startY;
+    mobileSwipeState.lastX = e.clientX;
+    mobileSwipeState.lastY = e.clientY;
+    mobileSwipeDebug('swipe:pointermove', { pointerType: e.pointerType, dx, dy, direction: mobileSwipeState.direction });
+
+    if (!mobileSwipeState.direction) {
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+      if (Math.abs(dx) > Math.abs(dy) * MOBILE_SWIPE_DIRECTION_RATIO) {
+        mobileSwipeState.direction = 'horizontal';
+      } else if (Math.abs(dy) > Math.abs(dx) * MOBILE_SWIPE_DIRECTION_RATIO) {
+        mobileSwipeDebug('swipe:ignored-vertical', { pointerType: e.pointerType, dx, dy, reason: 'vertical' });
+        try { calendarWrap.releasePointerCapture?.(mobileSwipeState.pointerId); } catch {}
+        resetMobileSwipeState('vertical');
+        return;
+      } else {
+        return;
+      }
+    }
+
+    if (mobileSwipeState.direction !== 'horizontal') return;
+    e.preventDefault();
+  }
+
+  function finishMobileSwipe(e) {
+    if (!mobileSwipeState.active || e.pointerId !== mobileSwipeState.pointerId) return;
+    const dx = e.clientX - mobileSwipeState.startX;
+    const dy = e.clientY - mobileSwipeState.startY;
+    const duration = Math.max(1, Date.now() - mobileSwipeState.startTime);
+    const velocity = Math.abs(dx) / duration;
+    const clearHorizontal = Math.abs(dx) > Math.abs(dy) * MOBILE_SWIPE_DIRECTION_RATIO;
+    const passesDistance = Math.abs(dx) >= MOBILE_SWIPE_MIN_DISTANCE;
+    const passesVelocity = Math.abs(dx) >= 32 && velocity >= MOBILE_SWIPE_MIN_VELOCITY;
+    const direction = dx < 0 ? 'left' : 'right';
+    try { calendarWrap.releasePointerCapture?.(mobileSwipeState.pointerId); } catch {}
+    mobileSwipeDebug('swipe:pointerup', { pointerType: e.pointerType, dx, dy, duration, velocity, direction, clearHorizontal, passesDistance, passesVelocity });
+
+    if (mobileSwipeState.navigated || mobileSwipeState.direction !== 'horizontal' || !clearHorizontal || (!passesDistance && !passesVelocity)) {
+      resetMobileSwipeState('threshold');
+      return;
+    }
+
+    e.preventDefault();
+    mobileSwipeState.navigated = true;
+    mobileSwipeCooldownUntil = Date.now() + MOBILE_SWIPE_COOLDOWN;
+    resetMobileSwipeState('navigate');
+    const delta = direction === 'left' ? 1 : -1;
+    mobileSwipeDebug(direction === 'left' ? 'swipe:navigate-left' : 'swipe:navigate-right', { delta });
+    shiftMobileCalendarDays(delta);
   }
 
   if (calendarWrap) {
-    calendarWrap.addEventListener('pointerdown', e => {
-      if (!['touch', 'pen'].includes(e.pointerType)) return;
-      if (isBlockingMobileCalendarSwipe(e.target) || e.clientX < MOBILE_SWIPE_EDGE_GUARD) {
-        mobileSwipeStart = null;
-        return;
-      }
-      mobileSwipeStart = {
-        pointerId: e.pointerId,
-        x: e.clientX,
-        y: e.clientY,
-        lastX: e.clientX,
-        lastY: e.clientY,
-        time: Date.now(),
-        horizontal: false,
-        cancelled: false,
-        navigated: false
-      };
-      calendarWrap.setPointerCapture?.(e.pointerId);
-      if (calendar) calendar.classList.remove('mobile-swipe-animating');
-    });
-
-    calendarWrap.addEventListener('pointermove', e => {
-      if (!mobileSwipeStart || e.pointerId !== mobileSwipeStart.pointerId) return;
-      if (isBlockingMobileCalendarSwipe(e.target)) {
-        mobileSwipeStart = null;
-        resetMobileSwipeVisual();
-        return;
-      }
-      const dx = e.clientX - mobileSwipeStart.x;
-      const dy = e.clientY - mobileSwipeStart.y;
-      mobileSwipeStart.lastX = e.clientX;
-      mobileSwipeStart.lastY = e.clientY;
-      if (!mobileSwipeStart.horizontal) {
-        if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx) * 1.15) {
-          mobileSwipeStart.cancelled = true;
-          resetMobileSwipeVisual(false);
-          return;
-        }
-        if (Math.abs(dx) < 14 || Math.abs(dx) < Math.abs(dy) * 1.45) return;
-        mobileSwipeStart.horizontal = true;
-      }
-      if (!mobileSwipeStart.horizontal || mobileSwipeStart.cancelled) return;
-      e.preventDefault();
-      const previewX = clamp(dx * 0.32, -46, 46);
-      if (calendar) calendar.style.transform = `translateX(${previewX}px)`;
-    });
-
-    const finishPointerSwipe = e => {
-      if (!mobileSwipeStart || e.pointerId !== mobileSwipeStart.pointerId) return;
-      const swipe = mobileSwipeStart;
-      mobileSwipeStart = null;
-      calendarWrap.releasePointerCapture?.(swipe.pointerId);
-      if (swipe.cancelled || swipe.navigated || isBlockingMobileCalendarSwipe(e.target)) {
-        resetMobileSwipeVisual();
-        return;
-      }
-      const dx = e.clientX - swipe.x;
-      const dy = e.clientY - swipe.y;
-      const elapsed = Math.max(1, Date.now() - swipe.time);
-      const velocity = Math.abs(dx) / elapsed;
-      const clearHorizontal = Math.abs(dx) >= Math.abs(dy) * MOBILE_SWIPE_HORIZONTAL_RATIO;
-      const passesDistance = Math.abs(dx) >= MOBILE_SWIPE_MIN_DISTANCE;
-      const passesVelocity = Math.abs(dx) >= MOBILE_SWIPE_FAST_DISTANCE && velocity >= MOBILE_SWIPE_VELOCITY;
-      if (!swipe.horizontal || !clearHorizontal || (!passesDistance && !passesVelocity)) {
-        resetMobileSwipeVisual();
-        return;
-      }
-      e.preventDefault();
-      mobileSwipeLockUntil = Date.now() + MOBILE_SWIPE_LOCK_MS;
-      swipe.navigated = true;
-      if (calendar) {
-        calendar.classList.add('mobile-swipe-animating');
-        calendar.style.transform = `translateX(${dx < 0 ? -72 : 72}px)`;
-      }
-      window.setTimeout(() => {
-        resetMobileSwipeVisual(false);
-        shiftMobileCalendarDays(dx < 0 ? 1 : -1);
-      }, MOBILE_SWIPE_ANIMATION_MS);
-    };
-
-    calendarWrap.addEventListener('pointerup', finishPointerSwipe);
+    mobileSwipeDebug('swipe:target', { exists: Boolean(calendarWrap) });
+    calendarWrap.addEventListener('pointerdown', startMobileSwipe);
+    calendarWrap.addEventListener('pointermove', moveMobileSwipe);
+    calendarWrap.addEventListener('pointerup', finishMobileSwipe);
     calendarWrap.addEventListener('pointercancel', e => {
-      if (mobileSwipeStart?.pointerId === e.pointerId) {
-        mobileSwipeStart = null;
-        resetMobileSwipeVisual();
+      if (mobileSwipeState.active && e.pointerId === mobileSwipeState.pointerId) {
+        try { calendarWrap.releasePointerCapture?.(mobileSwipeState.pointerId); } catch {}
+        resetMobileSwipeState('pointercancel');
       }
     });
   }
