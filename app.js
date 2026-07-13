@@ -5509,11 +5509,20 @@ function toggleMissed(eventId) {
   let mobileSwipeStart = null;
   let mobileSwipeLockUntil = 0;
 
-  function resetMobileSwipeVisual(animate = true) {
+  function mobileSwipeTransformTargets() {
+    if (!calendar) return [];
+    return Array.from(calendar.querySelectorAll(':scope > .head-cell:not(:first-child), :scope > .all-day-day, :scope > .day-column'));
+  }
+
+  function setMobileSwipeTransform(value = '', animate = false) {
     if (!calendar) return;
     calendar.classList.toggle('mobile-swipe-animating', animate);
-    calendar.style.transform = '';
+    mobileSwipeTransformTargets().forEach(el => { el.style.transform = value; });
     if (animate) window.setTimeout(() => calendar.classList.remove('mobile-swipe-animating'), MOBILE_SWIPE_ANIMATION_MS + 40);
+  }
+
+  function resetMobileSwipeVisual(animate = true) {
+    setMobileSwipeTransform('', animate);
   }
 
   function isBlockingMobileCalendarSwipe(target) {
@@ -5576,7 +5585,7 @@ function toggleMissed(eventId) {
       if (!mobileSwipeStart.horizontal || mobileSwipeStart.cancelled) return;
       e.preventDefault();
       const previewX = clamp(dx * 0.32, -46, 46);
-      if (calendar) calendar.style.transform = `translateX(${previewX}px)`;
+      setMobileSwipeTransform(`translateX(${previewX}px)`);
     });
 
     const finishPointerSwipe = e => {
@@ -5603,8 +5612,7 @@ function toggleMissed(eventId) {
       mobileSwipeLockUntil = Date.now() + MOBILE_SWIPE_LOCK_MS;
       swipe.navigated = true;
       if (calendar) {
-        calendar.classList.add('mobile-swipe-animating');
-        calendar.style.transform = `translateX(${dx < 0 ? -72 : 72}px)`;
+        setMobileSwipeTransform(`translateX(${dx < 0 ? -72 : 72}px)`, true);
       }
       window.setTimeout(() => {
         resetMobileSwipeVisual(false);

@@ -4624,11 +4624,15 @@ body:not(.special-events-drawer-open) .special-events-drawer-backdrop {
 }
 
 @media (max-width: 768px) {
-  .calendar.mobile-calendar-grid {
+  .calendar.mobile-calendar-grid > .head-cell:not(:first-child),
+  .calendar.mobile-calendar-grid > .all-day-day,
+  .calendar.mobile-calendar-grid > .day-column {
     will-change: transform;
   }
 
-  .calendar.mobile-calendar-grid.mobile-swipe-animating {
+  .calendar.mobile-calendar-grid.mobile-swipe-animating > .head-cell:not(:first-child),
+  .calendar.mobile-calendar-grid.mobile-swipe-animating > .all-day-day,
+  .calendar.mobile-calendar-grid.mobile-swipe-animating > .day-column {
     transition: transform 190ms ease;
   }
 }
