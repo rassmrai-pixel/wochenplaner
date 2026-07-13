@@ -316,6 +316,24 @@
       </div>
       <div class="footer-note" id="modalInfo">Zeiten werden in 15-Minuten-Schritten gespeichert.</div>
 
+      <section class="event-invite-panel" id="eventInvitePanel">
+        <div class="event-invite-head">
+          <div>
+            <strong>Teilnehmer einladen</strong>
+            <span id="eventInviteSummary">Noch keine Teilnehmer</span>
+          </div>
+          <button class="small ghost" id="sendInviteBtn" type="button">Einladung senden</button>
+        </div>
+        <div class="event-invite-input-row">
+          <input id="eventInviteEmailInput" type="text" inputmode="email" placeholder="E-Mail-Adresse eingeben" />
+          <button class="small ghost" id="addInviteEmailBtn" type="button">Hinzufügen</button>
+        </div>
+        <div class="event-invite-chips" id="eventInviteChips"></div>
+        <label for="eventInviteMessage">Nachricht an Teilnehmer optional</label>
+        <textarea id="eventInviteMessage" rows="2" placeholder="Hier ist die Einladung zu unserem Termin."></textarea>
+        <div class="event-invite-status" id="eventInviteStatus"></div>
+      </section>
+
       <label for="modalStackedInto">In bestehenden Block integrieren</label>
       <select id="modalStackedInto"></select>
       <div class="event-integrated-list" id="modalIntegratedEvents"></div>

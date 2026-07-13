@@ -1,0 +1,410 @@
+const DEFAULT_TIMEZONE = 'Europe/Berlin';
+const SLOTS_PER_DAY = 96;
+const MAX_ATTENDEES = 10;
+
+function json(res, statusCode, payload) {
+  res.statusCode = statusCode;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  res.end(JSON.stringify(payload));
+}
+
+function supabaseConfig() {
+  return {
+    url: process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://uwynzmdsveplxfqgwzqp.supabase.co',
+    key: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || ''
+  };
+}
+
+function emailConfig() {
+  return {
+    resendApiKey: process.env.RESEND_API_KEY || '',
+    fromEmail: process.env.CALENDAR_FROM_EMAIL || '',
+    organizerName: process.env.CALENDAR_ORGANIZER_NAME || 'Wochenplaner',
+    organizerEmail: process.env.CALENDAR_ORGANIZER_EMAIL || process.env.CALENDAR_FROM_EMAIL || ''
+  };
+}
+
+function pad2(value) {
+  return String(value).padStart(2, '0');
+}
+
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(value));
+}
+
+function readJsonBody(req) {
+  if (req.body && typeof req.body === 'object') return Promise.resolve(req.body);
+  if (typeof req.body === 'string') {
+    try { return Promise.resolve(JSON.parse(req.body)); } catch { return Promise.resolve({}); }
+  }
+  return new Promise(resolve => {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try { resolve(body ? JSON.parse(body) : {}); } catch { resolve({}); }
+    });
+    req.on('error', () => resolve({}));
+  });
+}
+
+function compactUtcDateTime(value) {
+  const date = value ? new Date(value) : new Date();
+  const safe = Number.isNaN(date.getTime()) ? new Date() : date;
+  return `${safe.getUTCFullYear()}${pad2(safe.getUTCMonth() + 1)}${pad2(safe.getUTCDate())}T${pad2(safe.getUTCHours())}${pad2(safe.getUTCMinutes())}${pad2(safe.getUTCSeconds())}Z`;
+}
+
+function addDaysToDateKey(dateKey, amount) {
+  const [year, month, day] = String(dateKey || '').split('-').map(Number);
+  const date = new Date(Date.UTC(year || 1970, (month || 1) - 1, day || 1));
+  date.setUTCDate(date.getUTCDate() + Number(amount || 0));
+  return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}`;
+}
+
+function compactDate(dateKey) {
+  const [year, month, day] = String(dateKey || '').split('-').map(Number);
+  if (!year || !month || !day) return '19700101';
+  return `${String(year).padStart(4, '0')}${pad2(month)}${pad2(day)}`;
+}
+
+function slotToTime(slot) {
+  const clamped = Math.max(0, Math.min(SLOTS_PER_DAY, Number(slot) || 0));
+  const minutes = clamped * 15;
+  return { hour: Math.floor(minutes / 60), minute: minutes % 60 };
+}
+
+function compactLocalDateTime(dateKey, slot) {
+  const time = slotToTime(slot);
+  return `${compactDate(dateKey)}T${pad2(time.hour)}${pad2(time.minute)}00`;
+}
+
+function dateForWeekDay(weekKey, dayIndex) {
+  return addDaysToDateKey(weekKey, Math.max(0, Math.min(6, Number(dayIndex) || 0)));
+}
+
+function escapeIcsText(value) {
+  return String(value || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\r?\n/g, '\\n')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,');
+}
+
+function escapeIcsParam(value) {
+  return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r?\n/g, ' ');
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function foldLine(line) {
+  const chars = Array.from(String(line));
+  const lines = [];
+  let current = '';
+  chars.forEach(char => {
+    if (Buffer.byteLength(current + char, 'utf8') > 73) {
+      lines.push(current);
+      current = ` ${char}`;
+    } else {
+      current += char;
+    }
+  });
+  lines.push(current);
+  return lines.join('\r\n');
+}
+
+function stableUid(event, host) {
+  const safeId = String(event.invitationUid || event.id || `event-${Date.now()}`).replace(/[^a-zA-Z0-9_.@-]/g, '-');
+  if (safeId.includes('@')) return safeId;
+  const domain = String(process.env.CALENDAR_INVITE_UID_DOMAIN || host || 'planner.local').replace(/[^a-zA-Z0-9.-]/g, '') || 'planner.local';
+  return `${safeId}@${domain}`;
+}
+
+function validateAttendees(event) {
+  const attendees = Array.isArray(event.attendees) ? event.attendees : [];
+  return attendees
+    .map(att => ({ ...att, email: normalizeEmail(att.email), name: String(att.name || '').trim() }))
+    .filter(att => isValidEmail(att.email))
+    .slice(0, MAX_ATTENDEES);
+}
+
+function eventDateKey(event, weekKey) {
+  return event.date || event.displayDate || dateForWeekDay(weekKey, event.day);
+}
+
+function isUnsupportedEvent(event) {
+  return Boolean(
+    event.source === 'routine' ||
+    event.stackedIntoId ||
+    event.parentId ||
+    event.allDay ||
+    event.isExternal ||
+    event.importSource === 'ics' ||
+    event.provider === 'ics' ||
+    event.rrule ||
+    event.recurrenceId
+  );
+}
+
+function buildInviteIcs({ event, weekKey, method, sequence, uid, message, organizerName, organizerEmail, host }) {
+  const start = Number(event.start);
+  const end = Number(event.end);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    throw Object.assign(new Error('Ungültige Terminzeit.'), { statusCode: 400 });
+  }
+  const attendees = validateAttendees(event);
+  if (!attendees.length) throw Object.assign(new Error('Keine gültigen Teilnehmer.'), { statusCode: 400 });
+  const dateKey = eventDateKey(event, weekKey);
+  const summary = event.label || event.title || 'Termin';
+  const description = [message, event.description].filter(Boolean).join('\n\n');
+  const dtstamp = compactUtcDateTime(new Date().toISOString());
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Perfekte Woche Planer//Calendar Invitation//DE',
+    'CALSCALE:GREGORIAN',
+    `METHOD:${method}`,
+    `X-WR-CALNAME:${escapeIcsText('Wochenplaner')}`,
+    `X-WR-TIMEZONE:${DEFAULT_TIMEZONE}`,
+    'BEGIN:VTIMEZONE',
+    `TZID:${DEFAULT_TIMEZONE}`,
+    'BEGIN:DAYLIGHT',
+    'TZOFFSETFROM:+0100',
+    'TZOFFSETTO:+0200',
+    'TZNAME:CEST',
+    'DTSTART:19700329T020000',
+    'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU',
+    'END:DAYLIGHT',
+    'BEGIN:STANDARD',
+    'TZOFFSETFROM:+0200',
+    'TZOFFSETTO:+0100',
+    'TZNAME:CET',
+    'DTSTART:19701025T030000',
+    'RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU',
+    'END:STANDARD',
+    'END:VTIMEZONE',
+    'BEGIN:VEVENT',
+    `UID:${uid || stableUid(event, host)}`,
+    `DTSTAMP:${dtstamp}`,
+    `SEQUENCE:${sequence}`,
+    `STATUS:${method === 'CANCEL' ? 'CANCELLED' : 'CONFIRMED'}`,
+    `SUMMARY:${escapeIcsText(summary)}`,
+    `DTSTART;TZID=${DEFAULT_TIMEZONE}:${compactLocalDateTime(dateKey, start)}`,
+    `DTEND;TZID=${DEFAULT_TIMEZONE}:${compactLocalDateTime(dateKey, end)}`,
+    `ORGANIZER;CN="${escapeIcsParam(organizerName)}":mailto:${normalizeEmail(organizerEmail)}`
+  ];
+  if (event.location) lines.push(`LOCATION:${escapeIcsText(event.location)}`);
+  if (description) lines.push(`DESCRIPTION:${escapeIcsText(description)}`);
+  attendees.forEach(att => {
+    const cn = escapeIcsParam(att.name || att.email);
+    lines.push(`ATTENDEE;CN="${cn}";ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:${att.email}`);
+  });
+  lines.push('END:VEVENT', 'END:VCALENDAR');
+  return `${lines.map(foldLine).join('\r\n')}\r\n`;
+}
+
+async function requireUser(req, config) {
+  const auth = req.headers.authorization || req.headers.Authorization || '';
+  const match = String(auth).match(/^Bearer\s+(.+)$/i);
+  if (!match) throw Object.assign(new Error('Nicht angemeldet.'), { statusCode: 401 });
+  const response = await fetch(`${config.url.replace(/\/$/, '')}/auth/v1/user`, {
+    headers: {
+      apikey: config.key,
+      Authorization: `Bearer ${match[1]}`,
+      Accept: 'application/json'
+    }
+  });
+  if (!response.ok) throw Object.assign(new Error('Sitzung konnte nicht geprüft werden.'), { statusCode: 401 });
+  return response.json();
+}
+
+async function loadPlannerState(userId, config) {
+  const params = new URLSearchParams();
+  params.set('select', 'data');
+  params.set('user_id', `eq.${userId}`);
+  params.set('limit', '1');
+  const response = await fetch(`${config.url.replace(/\/$/, '')}/rest/v1/planner_state?${params.toString()}`, {
+    headers: {
+      apikey: config.key,
+      Authorization: `Bearer ${config.key}`,
+      Accept: 'application/json'
+    }
+  });
+  if (!response.ok) throw Object.assign(new Error('Planner-State konnte nicht geladen werden.'), { statusCode: 502 });
+  const rows = await response.json();
+  const state = rows?.[0]?.data;
+  if (!state) throw Object.assign(new Error('Planner-State nicht gefunden.'), { statusCode: 404 });
+  return state;
+}
+
+async function savePlannerState(userId, state, config) {
+  const response = await fetch(`${config.url.replace(/\/$/, '')}/rest/v1/planner_state?user_id=eq.${encodeURIComponent(userId)}`, {
+    method: 'PATCH',
+    headers: {
+      apikey: config.key,
+      Authorization: `Bearer ${config.key}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal'
+    },
+    body: JSON.stringify({ data: state, updated_at: new Date().toISOString() })
+  });
+  if (!response.ok) throw Object.assign(new Error('Einladungsstatus konnte nicht gespeichert werden.'), { statusCode: 502 });
+}
+
+function findEventRecord(state, eventId, preferredWeekKey) {
+  const buckets = [];
+  if (preferredWeekKey && Array.isArray(state.weekEventsByWeek?.[preferredWeekKey])) buckets.push([preferredWeekKey, state.weekEventsByWeek[preferredWeekKey]]);
+  Object.entries(state.weekEventsByWeek || {}).forEach(([weekKey, events]) => {
+    if (weekKey !== preferredWeekKey && Array.isArray(events)) buckets.push([weekKey, events]);
+  });
+  for (const [weekKey, events] of buckets) {
+    const index = events.findIndex(event => event.id === eventId);
+    if (index >= 0) return { weekKey, events, index, event: events[index] };
+  }
+  return null;
+}
+
+async function sendViaResend({ to, subject, text, html, ics, method, email }) {
+  if (!email.resendApiKey || !email.fromEmail || !email.organizerEmail) {
+    throw Object.assign(new Error('Mailversand ist serverseitig nicht konfiguriert.'), { statusCode: 500 });
+  }
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${email.resendApiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      from: `${email.organizerName} <${email.fromEmail}>`,
+      to,
+      subject,
+      text,
+      html,
+      attachments: [{
+        filename: method === 'CANCEL' ? 'absage.ics' : 'einladung.ics',
+        content: Buffer.from(ics, 'utf8').toString('base64'),
+        contentType: `text/calendar; charset=UTF-8; method=${method}`
+      }],
+      headers: {
+        'Content-Class': 'urn:content-classes:calendarmessage'
+      }
+    })
+  });
+  const body = await response.text().catch(() => '');
+  if (!response.ok) {
+    throw Object.assign(new Error(`Mailanbieter hat den Versand abgelehnt (${response.status}).`), { statusCode: 502, providerBody: body.slice(0, 300) });
+  }
+}
+
+async function sendCalendarInvitationHandler(req, res) {
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+    return json(res, 405, { error: 'Method not allowed' });
+  }
+  const config = supabaseConfig();
+  if (!config.url || !config.key) return json(res, 500, { error: 'Supabase ist serverseitig nicht konfiguriert.' });
+
+  try {
+    const body = await readJsonBody(req);
+    const method = String(body.method || 'REQUEST').toUpperCase();
+    if (!['REQUEST', 'CANCEL'].includes(method)) throw Object.assign(new Error('Ungültige Einladungsaktion.'), { statusCode: 400 });
+    const eventId = String(body.eventId || '').trim();
+    const weekKey = String(body.weekKey || '').trim();
+    if (!eventId) throw Object.assign(new Error('Termin fehlt.'), { statusCode: 400 });
+
+    const user = await requireUser(req, config);
+    const state = await loadPlannerState(user.id, config);
+    const record = findEventRecord(state, eventId, weekKey);
+    if (!record) throw Object.assign(new Error('Termin nicht gefunden.'), { statusCode: 404 });
+    const event = record.event;
+    if (isUnsupportedEvent(event)) throw Object.assign(new Error('Einladungen sind nur für normale einzelne Kalendertermine verfügbar.'), { statusCode: 400 });
+    const attendees = validateAttendees(event);
+    if (!attendees.length) throw Object.assign(new Error('Keine gültigen Teilnehmer.'), { statusCode: 400 });
+    if ((Array.isArray(event.attendees) ? event.attendees.length : 0) > MAX_ATTENDEES) throw Object.assign(new Error(`Maximal ${MAX_ATTENDEES} Teilnehmer pro Termin.`), { statusCode: 400 });
+
+    event.attendees = attendees;
+    const email = emailConfig();
+    const now = new Date().toISOString();
+    const previousSequence = Number(event.invitationSequence || 0);
+    const sequence = method === 'CANCEL' || event.invitationSentAt || event.invitationUpdatedAt ? previousSequence + 1 : previousSequence;
+    const invitationUid = event.invitationUid || stableUid(event, req.headers.host);
+    const message = String(body.message || event.inviteMessage || '').trim();
+    event.inviteMessage = message;
+    event.invitationUid = invitationUid;
+    event.invitationSequence = sequence;
+
+    const ics = buildInviteIcs({
+      event,
+      weekKey: record.weekKey,
+      method,
+      sequence,
+      uid: invitationUid,
+      message,
+      organizerName: email.organizerName,
+      organizerEmail: email.organizerEmail,
+      host: req.headers.host
+    });
+    const title = event.label || event.title || 'Termin';
+    const subject = method === 'CANCEL' ? `Absage: ${title}` : `Einladung: ${title}`;
+    const text = method === 'CANCEL'
+      ? `Der Termin "${title}" wurde abgesagt.\n\nDiese Nachricht wurde aus dem Wochenplaner gesendet.`
+      : `Du wurdest zum Termin "${title}" eingeladen.\n\nDiese Nachricht wurde aus dem Wochenplaner gesendet.`;
+    const html = `<p>${escapeHtml(text).replace(/\n/g, '<br>')}</p>`;
+
+    await sendViaResend({
+      to: attendees.map(att => att.email),
+      subject,
+      text,
+      html,
+      ics,
+      method,
+      email
+    });
+
+    event.invitationStatus = method === 'CANCEL' ? 'cancelled' : (event.invitationSentAt ? 'updated' : 'sent');
+    event.invitationSentAt = method === 'CANCEL' ? event.invitationSentAt : (event.invitationSentAt || now);
+    event.invitationUpdatedAt = now;
+    event.invitationError = null;
+    event.attendees = attendees.map(att => ({
+      ...att,
+      invitationStatus: method === 'CANCEL' ? 'cancelled' : 'sent',
+      invitationError: null,
+      invitationSentAt: now
+    }));
+    record.events[record.index] = event;
+    await savePlannerState(user.id, state, config);
+
+    return json(res, 200, {
+      ok: true,
+      method,
+      invitationUid,
+      sequence,
+      status: event.invitationStatus
+    });
+  } catch (error) {
+    const status = error.statusCode || 500;
+    if (status >= 500) console.error('[CalendarInvite] failed', { status, message: error.message, providerBody: error.providerBody });
+    return json(res, status, { error: status >= 500 ? (error.message || 'Einladung konnte nicht gesendet werden.') : error.message });
+  }
+}
+
+module.exports = sendCalendarInvitationHandler;
+module.exports._test = {
+  buildInviteIcs,
+  validateAttendees,
+  findEventRecord,
+  isUnsupportedEvent,
+  escapeIcsText,
+  escapeHtml,
+  foldLine
+};

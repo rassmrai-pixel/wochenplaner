@@ -11,6 +11,14 @@
   const ICS_SYNC_TIMEOUT_MS = 60000;
   const ICS_AUTO_SYNC_INTERVAL_MS = 30 * 60 * 1000;
   const ICS_LAST_SUCCESS_KEY = 'perfekte-woche-ics-last-success';
+  const MOBILE_SWIPE_MIN_DISTANCE = 52;
+  const MOBILE_SWIPE_FAST_DISTANCE = 32;
+  const MOBILE_SWIPE_VELOCITY = 0.42;
+  const MOBILE_SWIPE_HORIZONTAL_RATIO = 1.55;
+  const MOBILE_SWIPE_EDGE_GUARD = 24;
+  const MOBILE_SWIPE_LOCK_MS = 280;
+  const MOBILE_SWIPE_ANIMATION_MS = 190;
+  const MAX_INVITE_ATTENDEES = 10;
   const DEFAULT_ICS_SOURCE_ID = 'default-ics';
   const SUPABASE_URL = 'https://uwynzmdsveplxfqgwzqp.supabase.co';
   const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_zIKjzTf24k4BDsVrQAyeZQ_WALpNEkH';
@@ -110,6 +118,7 @@
   let drawerTouchStartY = null;
   let dayTodoDraftSubtasks = [];
   let eventDraftSubtasks = [];
+  let inviteDraftAttendees = [];
   let modalBlockTasksExpanded = false;
   const openCompactEventIds = new Set();
 
@@ -133,6 +142,14 @@
   const modalEnd = document.getElementById('modalEnd');
   const modalStackedInto = document.getElementById('modalStackedInto');
   const modalIntegratedEvents = document.getElementById('modalIntegratedEvents');
+  const eventInvitePanel = document.getElementById('eventInvitePanel');
+  const eventInviteSummary = document.getElementById('eventInviteSummary');
+  const eventInviteEmailInput = document.getElementById('eventInviteEmailInput');
+  const addInviteEmailBtn = document.getElementById('addInviteEmailBtn');
+  const eventInviteChips = document.getElementById('eventInviteChips');
+  const eventInviteMessage = document.getElementById('eventInviteMessage');
+  const eventInviteStatus = document.getElementById('eventInviteStatus');
+  const sendInviteBtn = document.getElementById('sendInviteBtn');
   const modalInfo = document.getElementById('modalInfo');
   const modalAutoComplete = document.getElementById('modalAutoComplete');
   const modalSubtaskInput = document.getElementById('modalSubtaskInput');
@@ -413,6 +430,20 @@
         isExternal: ev.isExternal ?? (ev.importSource === 'ics' || ev.provider === 'ics'),
         autoComplete: Boolean(ev.autoComplete || ev.autoCompleteFromSubtasks),
         autoCompleteFromSubtasks: Boolean(ev.autoCompleteFromSubtasks),
+        attendees: Array.isArray(ev.attendees) ? ev.attendees.map(att => ({
+          email: String(att.email || '').trim().toLowerCase(),
+          name: String(att.name || '').trim(),
+          invitationStatus: att.invitationStatus || 'pending',
+          invitationError: att.invitationError || null,
+          invitationSentAt: att.invitationSentAt || null
+        })).filter(att => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(att.email)).slice(0, MAX_INVITE_ATTENDEES) : [],
+        inviteMessage: ev.inviteMessage || '',
+        invitationUid: ev.invitationUid || null,
+        invitationSequence: Number.isInteger(Number(ev.invitationSequence)) ? Number(ev.invitationSequence) : 0,
+        invitationSentAt: ev.invitationSentAt || null,
+        invitationUpdatedAt: ev.invitationUpdatedAt || null,
+        invitationStatus: ev.invitationStatus || 'not-sent',
+        invitationError: ev.invitationError || null,
         subtasks: Array.isArray(ev.subtasks) ? ev.subtasks.map(sub => ({
           id: sub.id || id(),
           text: sub.text || 'Untertask',
@@ -3142,6 +3173,152 @@ div.querySelectorAll('.event-embedded-child').forEach(childBtn => {
 return div;
   }
 
+
+  function normalizeInviteEmail(value) {
+    return String(value || '').trim().toLowerCase();
+  }
+
+  function isValidInviteEmail(value) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeInviteEmail(value));
+  }
+
+  function canInviteEvent(ev) {
+    return Boolean(ev && isWeekMode() && !ev.stackedIntoId && !ev.parentId && ev.source !== 'routine' && !ev.isExternal && ev.importSource !== 'ics' && !ev.allDay);
+  }
+
+  function invitationUidForEvent(ev) {
+    const domain = (window.location?.host || 'project-qk691.vercel.app').replace(/[^a-zA-Z0-9.-]/g, '') || 'project-qk691.vercel.app';
+    const safeId = String(ev?.id || id()).replace(/[^a-zA-Z0-9_.-]/g, '-');
+    return `${safeId}@${domain}`;
+  }
+
+  function setInviteStatus(message, mode = '') {
+    if (!eventInviteStatus) return;
+    eventInviteStatus.textContent = message || '';
+    eventInviteStatus.className = `event-invite-status ${mode}`.trim();
+  }
+
+  function renderInviteAttendees(ev = currentEvents().find(item => item.id === editingId)) {
+    if (!eventInviteChips) return;
+    eventInviteChips.innerHTML = '';
+    inviteDraftAttendees.forEach((att, index) => {
+      const chip = document.createElement('span');
+      chip.className = `event-invite-chip status-${att.invitationStatus || 'pending'}`;
+      chip.innerHTML = `<span>${escapeHtml(att.email)}</span><button type="button" title="Entfernen" aria-label="Teilnehmer entfernen">×</button>`;
+      chip.querySelector('button').onclick = () => {
+        inviteDraftAttendees.splice(index, 1);
+        renderInviteAttendees(ev);
+      };
+      eventInviteChips.appendChild(chip);
+    });
+    if (eventInviteSummary) {
+      const count = inviteDraftAttendees.length;
+      eventInviteSummary.textContent = count ? `${count} Teilnehmer` : 'Noch keine Teilnehmer';
+    }
+    const inviteAllowed = ev ? canInviteEvent(ev) : isWeekMode();
+    if (eventInviteEmailInput) eventInviteEmailInput.disabled = !inviteAllowed;
+    if (addInviteEmailBtn) addInviteEmailBtn.disabled = !inviteAllowed;
+    if (eventInviteMessage) eventInviteMessage.disabled = !inviteAllowed;
+    if (sendInviteBtn) {
+      sendInviteBtn.textContent = ev?.invitationSentAt ? 'Aktualisierung senden' : 'Einladung senden';
+      sendInviteBtn.disabled = !editingId || !inviteAllowed || !inviteDraftAttendees.length;
+    }
+  }
+
+  function addInviteEmailFromInput() {
+    if (!eventInviteEmailInput) return true;
+    const parts = String(eventInviteEmailInput.value || '').split(/[;,\n]+/).map(normalizeInviteEmail).filter(Boolean);
+    if (!parts.length) return true;
+    for (const email of parts) {
+      if (!isValidInviteEmail(email)) {
+        setInviteStatus(`Ungültige E-Mail-Adresse: ${email}`, 'error');
+        return false;
+      }
+      if (inviteDraftAttendees.some(att => att.email === email)) {
+        setInviteStatus(`Diese Adresse ist bereits hinzugefügt: ${email}`, 'error');
+        return false;
+      }
+      if (inviteDraftAttendees.length >= MAX_INVITE_ATTENDEES) {
+        setInviteStatus(`Maximal ${MAX_INVITE_ATTENDEES} Teilnehmer pro Termin.`, 'error');
+        return false;
+      }
+      inviteDraftAttendees.push({ email, name: '', invitationStatus: 'pending' });
+    }
+    eventInviteEmailInput.value = '';
+    setInviteStatus('', '');
+    renderInviteAttendees();
+    return true;
+  }
+
+  function invitationSummary(ev) {
+    if (!ev?.attendees?.length) return 'Noch nicht gesendet';
+    if (ev.invitationStatus === 'cancelled') return 'Absage gesendet';
+    if (ev.invitationStatus === 'sent' && ev.invitationSentAt) return `Einladung gesendet am ${new Date(ev.invitationSentAt).toLocaleString('de-DE')}`;
+    if (ev.invitationStatus === 'updated' && ev.invitationUpdatedAt) return `Aktualisierte Einladung gesendet am ${new Date(ev.invitationUpdatedAt).toLocaleString('de-DE')}`;
+    if (ev.invitationStatus === 'failed') return `Versand fehlgeschlagen: ${ev.invitationError || 'Bitte erneut versuchen.'}`;
+    return 'Noch nicht gesendet';
+  }
+
+  function applyInviteDraftToEvent(ev) {
+    ev.attendees = inviteDraftAttendees.map(att => ({ ...att }));
+    ev.inviteMessage = eventInviteMessage?.value || '';
+    if (ev.attendees.length && !ev.invitationUid) ev.invitationUid = invitationUidForEvent(ev);
+    if (!Number.isInteger(Number(ev.invitationSequence))) ev.invitationSequence = 0;
+    if (!ev.invitationStatus) ev.invitationStatus = 'not-sent';
+  }
+
+  async function sendCalendarInvitationForCurrentEvent(method = 'REQUEST') {
+    if (!editingId) { setInviteStatus('Bitte speichere den Termin zuerst.', 'error'); return false; }
+    if (!addInviteEmailFromInput()) return false;
+    const ev = currentEvents().find(item => item.id === editingId);
+    if (!ev) { setInviteStatus('Termin nicht gefunden.', 'error'); return false; }
+    if (!canInviteEvent(ev)) { setInviteStatus('Einladungen sind nur für normale einzelne Kalendertermine verfügbar.', 'error'); return false; }
+    applyInviteDraftToEvent(ev);
+    if (!ev.attendees.length) { setInviteStatus('Bitte mindestens einen Teilnehmer hinzufügen.', 'error'); return false; }
+    if (!cloudUser || !supabaseClient) { setInviteStatus('Bitte einloggen, um Einladungen zu senden.', 'error'); return false; }
+    saveState();
+    try {
+      await saveCloudState(state, { throwOnError: true });
+    } catch (error) {
+      setInviteStatus(`Termin gespeichert, aber Cloud-Speicherung fehlgeschlagen: ${error.message || error}`, 'error');
+      return false;
+    }
+    const { data } = await supabaseClient.auth.getSession();
+    const token = data?.session?.access_token;
+    if (!token) { setInviteStatus('Keine gültige Sitzung. Bitte erneut einloggen.', 'error'); return false; }
+    if (sendInviteBtn) sendInviteBtn.disabled = true;
+    setInviteStatus(method === 'CANCEL' ? 'Absage wird gesendet...' : 'Einladung wird gesendet...', 'pending');
+    try {
+      const response = await fetch('/api/send-calendar-invitation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ eventId: ev.id, weekKey: state.currentWeekStart, method, message: ev.inviteMessage })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Einladung konnte nicht gesendet werden.');
+      ev.invitationUid = result.invitationUid || ev.invitationUid || invitationUidForEvent(ev);
+      ev.invitationSequence = Number(result.sequence ?? ev.invitationSequence ?? 0);
+      ev.invitationStatus = method === 'CANCEL' ? 'cancelled' : (ev.invitationSentAt ? 'updated' : 'sent');
+      ev.invitationSentAt = method === 'CANCEL' ? ev.invitationSentAt : (ev.invitationSentAt || new Date().toISOString());
+      ev.invitationUpdatedAt = new Date().toISOString();
+      ev.invitationError = null;
+      ev.attendees = ev.attendees.map(att => ({ ...att, invitationStatus: method === 'CANCEL' ? 'cancelled' : 'sent', invitationError: null, invitationSentAt: new Date().toISOString() }));
+      inviteDraftAttendees = ev.attendees.map(att => ({ ...att }));
+      saveState();
+      renderInviteAttendees(ev);
+      setInviteStatus(method === 'CANCEL' ? 'Absage gesendet.' : 'Einladung gesendet.', 'success');
+      return true;
+    } catch (error) {
+      ev.invitationStatus = 'failed';
+      ev.invitationError = error.message || String(error);
+      saveState();
+      setInviteStatus(`Einladung konnte nicht gesendet werden. Termin wurde gespeichert. ${ev.invitationError}`, 'error');
+      return false;
+    } finally {
+      renderInviteAttendees(ev);
+    }
+  }
+
   // ==================================================
   // MODALS
   // ==================================================
@@ -3172,6 +3349,11 @@ return div;
     eventDraftSubtasks = cloneEventSubtasks(ev);
     if (modalAutoComplete) modalAutoComplete.checked = Boolean(ev.autoComplete);
     if (modalSubtaskInput) modalSubtaskInput.value = '';
+    inviteDraftAttendees = Array.isArray(ev.attendees) ? ev.attendees.map(att => ({ ...att })) : [];
+    if (eventInviteEmailInput) eventInviteEmailInput.value = '';
+    if (eventInviteMessage) eventInviteMessage.value = ev.inviteMessage || '';
+    setInviteStatus(canInviteEvent(ev) || !eventId ? invitationSummary(ev) : 'Einladungen sind nur für normale einzelne Kalendertermine verfügbar.', canInviteEvent(ev) || !eventId ? '' : 'error');
+    renderInviteAttendees(ev);
     renderEventDraftSubtasks();
     modalLabel.value = ev.label;
     modalCategory.innerHTML = '';
@@ -3195,7 +3377,7 @@ return div;
     modalBackdrop.style.display = 'flex';
   }
 
-  function closeModal() { modalBackdrop.style.display = 'none'; editingId = null; pendingTodoId = null; presetSource = null; eventDraftSubtasks = []; }
+  function closeModal() { modalBackdrop.style.display = 'none'; editingId = null; pendingTodoId = null; presetSource = null; eventDraftSubtasks = []; inviteDraftAttendees = []; setInviteStatus('', ''); }
 
   function openHelpModal() {
     if (!helpModalBackdrop) return;
@@ -5165,6 +5347,14 @@ function toggleMissed(eventId) {
   };
   if (modalAddSubtaskBtn) modalAddSubtaskBtn.onclick = addEventDraftSubtask;
   if (modalSubtaskInput) modalSubtaskInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addEventDraftSubtask(); } });
+  if (addInviteEmailBtn) addInviteEmailBtn.onclick = addInviteEmailFromInput;
+  if (eventInviteEmailInput) eventInviteEmailInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      addInviteEmailFromInput();
+    }
+  });
+  if (sendInviteBtn) sendInviteBtn.onclick = () => sendCalendarInvitationForCurrentEvent('REQUEST');
   document.getElementById('cancelModalBtn').onclick = closeModal;
   document.getElementById('saveModalBtn').onclick = () => {
     const categoryId = modalCategory.value;
@@ -5176,6 +5366,11 @@ function toggleMissed(eventId) {
     const stackedIntoId = selectedStackedIntoId && selectedStackedIntoId !== editingId ? selectedStackedIntoId : null;
     if (Number.isNaN(day) || Number.isNaN(start) || Number.isNaN(end) || end <= start) {
       alert('Die Endzeit muss nach der Startzeit liegen.');
+      return;
+    }
+    if (!addInviteEmailFromInput()) return;
+    if (inviteDraftAttendees.length && (stackedIntoId || isTemplateMode())) {
+      alert('Einladungen sind nur für normale einzelne Kalendertermine verfügbar.');
       return;
     }
     if (editingId) {
@@ -5195,13 +5390,14 @@ function toggleMissed(eventId) {
           subtasks: cloneEventSubtasks({ subtasks: eventDraftSubtasks }),
           updatedAt: new Date().toISOString()
         });
+        applyInviteDraftToEvent(ev);
         syncEventAutoComplete(ev);
         syncParentAutoCompleteForChild(ev);
       }
     } else {
   const newEventId = id();
 
-  currentEvents().push({
+  const newEvent = {
     id: newEventId,
     day,
     start,
@@ -5217,9 +5413,17 @@ function toggleMissed(eventId) {
     autoComplete: Boolean(modalAutoComplete?.checked),
     autoCompleteFromSubtasks: Boolean(modalAutoComplete?.checked),
     subtasks: cloneEventSubtasks({ subtasks: eventDraftSubtasks }),
+    attendees: [],
+    inviteMessage: '',
+    invitationUid: null,
+    invitationSequence: 0,
+    invitationStatus: 'not-sent',
+    invitationError: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
-  });
+  };
+  applyInviteDraftToEvent(newEvent);
+  currentEvents().push(newEvent);
 
   if (pendingTodoId) {
     const todo = state.todos.find(t => t.id === pendingTodoId);
@@ -5237,13 +5441,23 @@ function toggleMissed(eventId) {
     renderAll();
     closeModal();
   };
-  document.getElementById('deleteBlockBtn').onclick = () => {
+  document.getElementById('deleteBlockBtn').onclick = async () => {
     if (!editingId) return;
-    currentEvents().forEach(ev => {
-      if (ev.stackedIntoId === editingId) ev.stackedIntoId = null;
-      if (ev.parentId === editingId) ev.parentId = null;
+    const ev = currentEvents().find(item => item.id === editingId);
+    if (ev?.attendees?.length && ev.invitationSentAt) {
+      const sendCancel = confirm('Für diesen Termin wurden Einladungen gesendet. Auch eine Absage an die Teilnehmer senden?');
+      if (sendCancel) {
+        const sent = await sendCalendarInvitationForCurrentEvent('CANCEL');
+        if (!sent && !confirm('Absage konnte nicht gesendet werden. Termin trotzdem nur in deiner App löschen?')) return;
+      } else if (!confirm('Termin nur in deiner App löschen?')) {
+        return;
+      }
+    }
+    currentEvents().forEach(item => {
+      if (item.stackedIntoId === editingId) item.stackedIntoId = null;
+      if (item.parentId === editingId) item.parentId = null;
     });
-    setCurrentEvents(currentEvents().filter(ev => ev.id !== editingId));
+    setCurrentEvents(currentEvents().filter(item => item.id !== editingId));
     saveState();
     renderAll();
     closeModal();
@@ -5298,13 +5512,13 @@ function toggleMissed(eventId) {
     if (!calendar) return;
     calendar.classList.toggle('mobile-swipe-animating', animate);
     calendar.style.transform = '';
-    if (animate) window.setTimeout(() => calendar.classList.remove('mobile-swipe-animating'), 230);
+    if (animate) window.setTimeout(() => calendar.classList.remove('mobile-swipe-animating'), MOBILE_SWIPE_ANIMATION_MS + 40);
   }
 
   function isBlockingMobileCalendarSwipe(target) {
     if (!isMobileViewport() || isDragging || eventResizeState || Date.now() < mobileSwipeLockUntil) return true;
     if (state.todoDrawerOpen || state.specialEventsDrawerOpen) return true;
-    if (target?.closest?.('.event, .event-resize-handle, .modal, .ics-modal-card, .todo-drawer, .special-events-drawer, .profile-menu, button, input, select, textarea')) return true;
+    if (target?.closest?.('.event, .event-resize-handle, .modal, .ics-modal-card, .todo-drawer, .special-events-drawer, .profile-menu, button, input, select, textarea, [data-horizontal-scroll]')) return true;
     const icsModal = document.getElementById('icsModal');
     return Boolean(
       (icsModal && !icsModal.classList.contains('hidden')) ||
@@ -5317,39 +5531,40 @@ function toggleMissed(eventId) {
   }
 
   if (calendarWrap) {
-    calendarWrap.addEventListener('touchstart', e => {
-      const touch = e.touches?.[0];
-      if (!touch || isBlockingMobileCalendarSwipe(e.target) || touch.clientX < 24) {
+    calendarWrap.addEventListener('pointerdown', e => {
+      if (!['touch', 'pen'].includes(e.pointerType)) return;
+      if (isBlockingMobileCalendarSwipe(e.target) || e.clientX < MOBILE_SWIPE_EDGE_GUARD) {
         mobileSwipeStart = null;
         return;
       }
       mobileSwipeStart = {
-        x: touch.clientX,
-        y: touch.clientY,
-        lastX: touch.clientX,
-        lastY: touch.clientY,
+        pointerId: e.pointerId,
+        x: e.clientX,
+        y: e.clientY,
+        lastX: e.clientX,
+        lastY: e.clientY,
         time: Date.now(),
         horizontal: false,
         cancelled: false,
         navigated: false
       };
+      calendarWrap.setPointerCapture?.(e.pointerId);
       if (calendar) calendar.classList.remove('mobile-swipe-animating');
-    }, { passive: true });
+    });
 
-    calendarWrap.addEventListener('touchmove', e => {
-      if (!mobileSwipeStart) return;
-      const touch = e.touches?.[0];
-      if (!touch || isBlockingMobileCalendarSwipe(e.target)) {
+    calendarWrap.addEventListener('pointermove', e => {
+      if (!mobileSwipeStart || e.pointerId !== mobileSwipeStart.pointerId) return;
+      if (isBlockingMobileCalendarSwipe(e.target)) {
         mobileSwipeStart = null;
         resetMobileSwipeVisual();
         return;
       }
-      const dx = touch.clientX - mobileSwipeStart.x;
-      const dy = touch.clientY - mobileSwipeStart.y;
-      mobileSwipeStart.lastX = touch.clientX;
-      mobileSwipeStart.lastY = touch.clientY;
+      const dx = e.clientX - mobileSwipeStart.x;
+      const dy = e.clientY - mobileSwipeStart.y;
+      mobileSwipeStart.lastX = e.clientX;
+      mobileSwipeStart.lastY = e.clientY;
       if (!mobileSwipeStart.horizontal) {
-        if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx) * 1.15) {
+        if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx) * 1.15) {
           mobileSwipeStart.cancelled = true;
           resetMobileSwipeVisual(false);
           return;
@@ -5361,30 +5576,30 @@ function toggleMissed(eventId) {
       e.preventDefault();
       const previewX = clamp(dx * 0.32, -46, 46);
       if (calendar) calendar.style.transform = `translateX(${previewX}px)`;
-    }, { passive: false });
+    });
 
-    calendarWrap.addEventListener('touchend', e => {
-      if (!mobileSwipeStart) return;
-      const touch = e.changedTouches?.[0];
+    const finishPointerSwipe = e => {
+      if (!mobileSwipeStart || e.pointerId !== mobileSwipeStart.pointerId) return;
       const swipe = mobileSwipeStart;
       mobileSwipeStart = null;
-      if (!touch || swipe.cancelled || swipe.navigated || isBlockingMobileCalendarSwipe(e.target)) {
+      calendarWrap.releasePointerCapture?.(swipe.pointerId);
+      if (swipe.cancelled || swipe.navigated || isBlockingMobileCalendarSwipe(e.target)) {
         resetMobileSwipeVisual();
         return;
       }
-      const dx = touch.clientX - swipe.x;
-      const dy = touch.clientY - swipe.y;
+      const dx = e.clientX - swipe.x;
+      const dy = e.clientY - swipe.y;
       const elapsed = Math.max(1, Date.now() - swipe.time);
       const velocity = Math.abs(dx) / elapsed;
-      const clearHorizontal = Math.abs(dx) >= Math.abs(dy) * 1.55;
-      const passesDistance = Math.abs(dx) >= 52;
-      const passesVelocity = Math.abs(dx) >= 32 && velocity >= 0.42;
+      const clearHorizontal = Math.abs(dx) >= Math.abs(dy) * MOBILE_SWIPE_HORIZONTAL_RATIO;
+      const passesDistance = Math.abs(dx) >= MOBILE_SWIPE_MIN_DISTANCE;
+      const passesVelocity = Math.abs(dx) >= MOBILE_SWIPE_FAST_DISTANCE && velocity >= MOBILE_SWIPE_VELOCITY;
       if (!swipe.horizontal || !clearHorizontal || (!passesDistance && !passesVelocity)) {
         resetMobileSwipeVisual();
         return;
       }
       e.preventDefault();
-      mobileSwipeLockUntil = Date.now() + 280;
+      mobileSwipeLockUntil = Date.now() + MOBILE_SWIPE_LOCK_MS;
       swipe.navigated = true;
       if (calendar) {
         calendar.classList.add('mobile-swipe-animating');
@@ -5393,13 +5608,16 @@ function toggleMissed(eventId) {
       window.setTimeout(() => {
         resetMobileSwipeVisual(false);
         shiftMobileCalendarDays(dx < 0 ? 1 : -1);
-      }, 190);
-    }, { passive: false });
+      }, MOBILE_SWIPE_ANIMATION_MS);
+    };
 
-    calendarWrap.addEventListener('touchcancel', () => {
-      mobileSwipeStart = null;
-      resetMobileSwipeVisual();
-    }, { passive: true });
+    calendarWrap.addEventListener('pointerup', finishPointerSwipe);
+    calendarWrap.addEventListener('pointercancel', e => {
+      if (mobileSwipeStart?.pointerId === e.pointerId) {
+        mobileSwipeStart = null;
+        resetMobileSwipeVisual();
+      }
+    });
   }
   document.addEventListener('click', e => {
     const picker = document.getElementById('specialDatePicker');
