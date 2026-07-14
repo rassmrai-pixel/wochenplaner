@@ -88,6 +88,7 @@
       <button class="small ghost" id="prevWeekBtn">← Vorwoche</button>
       <button class="small ghost" id="todayWeekBtn">Heute</button>
       <button class="small ghost" id="nextWeekBtn">Nächste Woche →</button>
+      <button class="small ghost" id="bulkSelectModeBtn" type="button" title="Termine auswählen">Auswählen</button>
       <input id="weekDateInput" type="date" title="Woche über Datum auswählen" />
       <span class="week-label" id="weekLabel">KW</span>
       <span class="week-range" id="weekRange"></span>
@@ -199,6 +200,16 @@
       </div>
       <div class="task-list" id="taskList"></div>
     </section>
+
+    <div class="bulk-action-bar" id="bulkActionBar" hidden>
+      <span id="bulkSelectionCount">0 Termine ausgewählt</span>
+      <button class="small ghost" id="bulkInviteBtn" type="button">Einladen</button>
+      <button class="small ghost" id="bulkCategoryBtn" type="button">Kategorie ändern</button>
+      <button class="small ghost" id="bulkMoveBtn" type="button">Verschieben</button>
+      <button class="small ghost" id="bulkStatusBtn" type="button">Status ändern</button>
+      <button class="small danger" id="bulkDeleteBtn" type="button">Löschen</button>
+      <button class="small ghost" id="bulkClearBtn" type="button">Auswahl aufheben</button>
+    </div>
 
     <div class="calendar-wrap" id="calendarWrap">
       <div class="calendar" id="calendar"></div>
@@ -360,6 +371,50 @@
     </div>
   </div>
 
+
+  <div class="modal-backdrop" id="bulkActionModalBackdrop">
+    <div class="modal bulk-action-modal">
+      <div class="modal-title-row">
+        <h2 id="bulkActionTitle">Sammelaktion</h2>
+        <button class="modal-close-btn" id="closeBulkActionModalBtn" type="button" aria-label="Schließen">×</button>
+      </div>
+      <p class="modal-subtitle" id="bulkActionSubtitle"></p>
+
+      <section class="bulk-action-section" id="bulkInviteSection">
+        <label for="bulkInviteEmails">E-Mail-Adressen</label>
+        <input id="bulkInviteEmails" type="text" inputmode="email" placeholder="name@outlook.de, team@example.com" />
+        <label for="bulkInviteMessage">Nachricht optional</label>
+        <textarea id="bulkInviteMessage" rows="3" placeholder="Kurze Nachricht an die Teilnehmer"></textarea>
+      </section>
+
+      <section class="bulk-action-section" id="bulkCategorySection">
+        <label for="bulkCategorySelect">Kategorie</label>
+        <select id="bulkCategorySelect"></select>
+      </section>
+
+      <section class="bulk-action-section" id="bulkMoveSection">
+        <label for="bulkMoveDaySelect">Zieltag</label>
+        <select id="bulkMoveDaySelect"></select>
+        <label for="bulkMoveOffset">Gemeinsame Zeitverschiebung in Minuten optional</label>
+        <input id="bulkMoveOffset" type="number" step="15" value="0" />
+      </section>
+
+      <section class="bulk-action-section" id="bulkStatusSection">
+        <label for="bulkStatusSelect">Status</label>
+        <select id="bulkStatusSelect">
+          <option value="done">Eingehalten</option>
+          <option value="missed">Nicht eingehalten</option>
+          <option value="open">Offen</option>
+        </select>
+      </section>
+
+      <div class="event-invite-status" id="bulkActionStatus"></div>
+      <div class="modal-actions">
+        <button class="ghost" id="cancelBulkActionBtn" type="button">Abbrechen</button>
+        <button class="primary" id="confirmBulkActionBtn" type="button">Anwenden</button>
+      </div>
+    </div>
+  </div>
 
   <div class="modal-backdrop" id="categoryModalBackdrop">
     <div class="modal">

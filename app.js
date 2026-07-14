@@ -120,6 +120,9 @@
   let dayTodoDraftSubtasks = [];
   let eventDraftSubtasks = [];
   let inviteDraftAttendees = [];
+  let bulkSelectionMode = false;
+  const selectedEventIds = new Set();
+  let bulkActionType = null;
   let modalBlockTasksExpanded = false;
   const openCompactEventIds = new Set();
 
@@ -129,6 +132,32 @@
 
   const calendar = document.getElementById('calendar');
   const calendarWrap = document.getElementById('calendarWrap');
+  const bulkSelectModeBtn = document.getElementById('bulkSelectModeBtn');
+  const bulkActionBar = document.getElementById('bulkActionBar');
+  const bulkSelectionCount = document.getElementById('bulkSelectionCount');
+  const bulkInviteBtn = document.getElementById('bulkInviteBtn');
+  const bulkCategoryBtn = document.getElementById('bulkCategoryBtn');
+  const bulkMoveBtn = document.getElementById('bulkMoveBtn');
+  const bulkStatusBtn = document.getElementById('bulkStatusBtn');
+  const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+  const bulkClearBtn = document.getElementById('bulkClearBtn');
+  const bulkActionModalBackdrop = document.getElementById('bulkActionModalBackdrop');
+  const closeBulkActionModalBtn = document.getElementById('closeBulkActionModalBtn');
+  const cancelBulkActionBtn = document.getElementById('cancelBulkActionBtn');
+  const confirmBulkActionBtn = document.getElementById('confirmBulkActionBtn');
+  const bulkActionTitle = document.getElementById('bulkActionTitle');
+  const bulkActionSubtitle = document.getElementById('bulkActionSubtitle');
+  const bulkInviteSection = document.getElementById('bulkInviteSection');
+  const bulkInviteEmails = document.getElementById('bulkInviteEmails');
+  const bulkInviteMessage = document.getElementById('bulkInviteMessage');
+  const bulkCategorySection = document.getElementById('bulkCategorySection');
+  const bulkCategorySelect = document.getElementById('bulkCategorySelect');
+  const bulkMoveSection = document.getElementById('bulkMoveSection');
+  const bulkMoveDaySelect = document.getElementById('bulkMoveDaySelect');
+  const bulkMoveOffset = document.getElementById('bulkMoveOffset');
+  const bulkStatusSection = document.getElementById('bulkStatusSection');
+  const bulkStatusSelect = document.getElementById('bulkStatusSelect');
+  const bulkActionStatus = document.getElementById('bulkActionStatus');
   const legend = document.getElementById('legend');
   const categoryToggleBtn = document.getElementById('categoryToggleBtn');
   const mobileControlsToggleBtn = document.getElementById('mobileControlsToggleBtn');
@@ -1001,6 +1030,312 @@
 
   function isWeekMode() { return state.plannerMode === 'week'; }
   function isTemplateMode() { return state.plannerMode === 'template'; }
+
+  function isExternalReadOnlyEvent(ev) {
+    return Boolean(
+      ev?.readOnly ||
+      ev?.editable === false ||
+      ev?.isExternal ||
+      ev?.importSource === 'ics' ||
+      ev?.provider === 'ics' ||
+      ev?.externalId ||
+      ev?.externalCalendarId
+    );
+  }
+
+  function isBulkSelectableEvent(ev) {
+    return Boolean(ev && isWeekMode() && !isIntegratedChild(ev) && !ev.allDay);
+  }
+
+  function isBulkEditableEvent(ev) {
+    return isBulkSelectableEvent(ev) && !isExternalReadOnlyEvent(ev);
+  }
+
+  function selectedEvents() {
+    const ids = new Set(selectedEventIds);
+    return currentEvents().filter(ev => ids.has(ev.id));
+  }
+
+  function selectedEditableEvents() {
+    return selectedEvents().filter(isBulkEditableEvent);
+  }
+
+  function selectedReadOnlyEvents() {
+    return selectedEvents().filter(ev => !isBulkEditableEvent(ev));
+  }
+
+  function pruneBulkSelection() {
+    const visibleIds = new Set(currentEvents().filter(isBulkSelectableEvent).map(ev => ev.id));
+    Array.from(selectedEventIds).forEach(eventId => {
+      if (!visibleIds.has(eventId)) selectedEventIds.delete(eventId);
+    });
+  }
+
+  function setBulkSelectionMode(next, initialEventId = null) {
+    bulkSelectionMode = Boolean(next) && isWeekMode();
+    if (!bulkSelectionMode) selectedEventIds.clear();
+    if (bulkSelectionMode && initialEventId) selectedEventIds.add(initialEventId);
+    renderCalendar();
+    renderBulkActionBar();
+  }
+
+  function toggleBulkEventSelection(eventId) {
+    if (!bulkSelectionMode) bulkSelectionMode = true;
+    if (selectedEventIds.has(eventId)) selectedEventIds.delete(eventId);
+    else selectedEventIds.add(eventId);
+    renderCalendar();
+    renderBulkActionBar();
+  }
+
+  function renderBulkActionBar() {
+    if (!bulkActionBar || !bulkSelectionCount) return;
+    pruneBulkSelection();
+    const selected = selectedEvents();
+    const editable = selectedEditableEvents();
+    const readOnly = selected.length - editable.length;
+    if (bulkSelectModeBtn) {
+      bulkSelectModeBtn.classList.toggle('active', bulkSelectionMode);
+      bulkSelectModeBtn.textContent = bulkSelectionMode ? 'Auswahl beenden' : 'Auswählen';
+      bulkSelectModeBtn.disabled = !isWeekMode();
+    }
+    bulkActionBar.hidden = !bulkSelectionMode || !selected.length;
+    const suffix = readOnly ? ` · ${editable.length} bearbeitbar` : '';
+    bulkSelectionCount.textContent = `${selected.length} ${selected.length === 1 ? 'Termin' : 'Termine'} ausgewählt${suffix}`;
+    const hasEditable = editable.length > 0;
+    [bulkInviteBtn, bulkCategoryBtn, bulkMoveBtn, bulkStatusBtn, bulkDeleteBtn].forEach(btn => { if (btn) btn.disabled = !hasEditable; });
+  }
+
+  function parseBulkInviteEmails() {
+    const raw = bulkInviteEmails?.value || '';
+    const emails = raw.split(/[;,\n]+/).map(normalizeInviteEmail).filter(Boolean);
+    const unique = [];
+    for (const email of emails) {
+      if (!isValidInviteEmail(email)) throw new Error(`Ungültige E-Mail-Adresse: ${email}`);
+      if (!unique.includes(email)) unique.push(email);
+    }
+    if (!unique.length) throw new Error('Bitte mindestens eine E-Mail-Adresse eintragen.');
+    return unique.slice(0, MAX_INVITE_ATTENDEES);
+  }
+
+  function setBulkActionStatus(message, mode = '') {
+    if (!bulkActionStatus) return;
+    bulkActionStatus.textContent = message || '';
+    bulkActionStatus.className = `event-invite-status ${mode}`.trim();
+  }
+
+  function closeBulkActionModal() {
+    if (bulkActionModalBackdrop) bulkActionModalBackdrop.style.display = 'none';
+    bulkActionType = null;
+    setBulkActionStatus('', '');
+  }
+
+  function fillBulkCategorySelect() {
+    if (!bulkCategorySelect) return;
+    bulkCategorySelect.innerHTML = '';
+    Object.entries(state.categories).forEach(([catId, cat]) => {
+      const option = document.createElement('option');
+      option.value = catId;
+      option.textContent = cat.label;
+      bulkCategorySelect.appendChild(option);
+    });
+  }
+
+  function fillBulkMoveDaySelect() {
+    if (!bulkMoveDaySelect) return;
+    bulkMoveDaySelect.innerHTML = '';
+    days.forEach((day, index) => {
+      const option = document.createElement('option');
+      option.value = String(index);
+      option.textContent = `${day} ${formatShortDate(getDayDate(index))}`;
+      bulkMoveDaySelect.appendChild(option);
+    });
+    const first = selectedEditableEvents()[0];
+    bulkMoveDaySelect.value = String(first?.day ?? state.activeHabitDay ?? 0);
+  }
+
+  function openBulkActionModal(type) {
+    const editable = selectedEditableEvents();
+    if (!editable.length) return alert('In der Auswahl gibt es keine bearbeitbaren Termine.');
+    bulkActionType = type;
+    [bulkInviteSection, bulkCategorySection, bulkMoveSection, bulkStatusSection].forEach(section => { if (section) section.style.display = 'none'; });
+    setBulkActionStatus('', '');
+    if (bulkActionSubtitle) bulkActionSubtitle.textContent = `${editable.length} von ${selectedEvents().length} ausgewählten Terminen können bearbeitet werden.`;
+    if (bulkActionModalBackdrop) bulkActionModalBackdrop.style.display = 'flex';
+    if (type === 'invite') {
+      if (bulkActionTitle) bulkActionTitle.textContent = 'Termine gesammelt einladen';
+      if (bulkInviteSection) bulkInviteSection.style.display = '';
+      if (bulkInviteEmails) bulkInviteEmails.value = '';
+      if (bulkInviteMessage) bulkInviteMessage.value = '';
+      if (bulkActionSubtitle) bulkActionSubtitle.textContent = `Die Einladung wird für ${editable.length} einzelne Termine separat gesendet.`;
+      setTimeout(() => bulkInviteEmails?.focus(), 50);
+    } else if (type === 'category') {
+      if (bulkActionTitle) bulkActionTitle.textContent = 'Kategorie ändern';
+      if (bulkCategorySection) bulkCategorySection.style.display = '';
+      fillBulkCategorySelect();
+    } else if (type === 'move') {
+      if (bulkActionTitle) bulkActionTitle.textContent = 'Termine verschieben';
+      if (bulkMoveSection) bulkMoveSection.style.display = '';
+      fillBulkMoveDaySelect();
+      if (bulkMoveOffset) bulkMoveOffset.value = '0';
+    } else if (type === 'status') {
+      if (bulkActionTitle) bulkActionTitle.textContent = 'Status ändern';
+      if (bulkStatusSection) bulkStatusSection.style.display = '';
+      if (bulkStatusSelect) bulkStatusSelect.value = 'done';
+    }
+  }
+
+  function applyBulkCategoryChange() {
+    const editable = selectedEditableEvents();
+    const categoryId = bulkCategorySelect?.value;
+    if (!categoryId || !state.categories[categoryId]) throw new Error('Bitte eine gültige Kategorie wählen.');
+    editable.forEach(ev => { ev.categoryId = categoryId; ev.updatedAt = new Date().toISOString(); });
+    saveState();
+    setBulkSelectionMode(false);
+    renderAll();
+    closeBulkActionModal();
+  }
+
+  function applyBulkMove() {
+    const editable = selectedEditableEvents();
+    const targetDay = Number(bulkMoveDaySelect?.value);
+    const offsetSlots = Math.round((Number(bulkMoveOffset?.value || 0) || 0) / 15);
+    let changed = 0;
+    editable.forEach(ev => {
+      const start = Number(ev.start) + offsetSlots;
+      const end = Number(ev.end) + offsetSlots;
+      if (!Number.isFinite(targetDay) || start < 0 || end > slotsPerDay || end <= start) return;
+      ev.day = clamp(targetDay, 0, 6);
+      ev.start = start;
+      ev.end = end;
+      ev.updatedAt = new Date().toISOString();
+      changed += 1;
+    });
+    if (!changed) throw new Error('Keine Termine konnten mit dieser Zeitverschiebung verschoben werden.');
+    saveState();
+    setBulkSelectionMode(false);
+    renderAll();
+    closeBulkActionModal();
+  }
+
+  function applyBulkStatusChange() {
+    const editable = selectedEditableEvents();
+    const status = bulkStatusSelect?.value || 'open';
+    editable.forEach(ev => {
+      if (status === 'done') { setEventDoneStatus(ev, true); ev.missed = false; }
+      else if (status === 'missed') { ev.missed = true; setEventDoneStatus(ev, false); }
+      else { ev.missed = false; setEventDoneStatus(ev, false); }
+      ev.updatedAt = new Date().toISOString();
+    });
+    saveState();
+    setBulkSelectionMode(false);
+    renderAll();
+    closeBulkActionModal();
+  }
+
+  async function sendBulkInvitations() {
+    const editable = selectedEditableEvents().filter(canInviteEvent);
+    if (!editable.length) throw new Error('Keine ausgewählten Termine können eingeladen werden.');
+    const emails = parseBulkInviteEmails();
+    const message = bulkInviteMessage?.value || '';
+    if (!cloudUser || !supabaseClient) throw new Error('Bitte einloggen, um Einladungen zu senden.');
+    editable.forEach(ev => {
+      if (!Array.isArray(ev.attendees)) ev.attendees = [];
+      const existing = new Set((ev.attendees || []).map(att => att.email));
+      emails.forEach(email => { if (!existing.has(email)) ev.attendees.push({ email, name: '', invitationStatus: 'pending' }); });
+      ev.inviteMessage = message;
+      if (!ev.invitationUid) ev.invitationUid = invitationUidForEvent(ev);
+      if (!Number.isInteger(Number(ev.invitationSequence))) ev.invitationSequence = 0;
+      ev.updatedAt = new Date().toISOString();
+    });
+    saveState();
+    await saveCloudState(state, { throwOnError: true });
+    const { data } = await supabaseClient.auth.getSession();
+    const token = data?.session?.access_token;
+    if (!token) throw new Error('Keine gültige Sitzung. Bitte erneut einloggen.');
+    let ok = 0;
+    const failed = [];
+    for (const ev of editable) {
+      try {
+        const response = await fetch('/api/send-calendar-invitation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ eventId: ev.id, weekKey: state.currentWeekStart, method: 'REQUEST', message })
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || 'Versand fehlgeschlagen');
+        ev.invitationUid = result.invitationUid || ev.invitationUid || invitationUidForEvent(ev);
+        ev.invitationSequence = Number(result.sequence ?? ev.invitationSequence ?? 0);
+        ev.invitationStatus = ev.invitationSentAt ? 'updated' : 'sent';
+        ev.invitationSentAt = ev.invitationSentAt || new Date().toISOString();
+        ev.invitationUpdatedAt = new Date().toISOString();
+        ev.invitationError = null;
+        ev.attendees = ev.attendees.map(att => emails.includes(att.email) ? { ...att, invitationStatus: 'sent', invitationError: null, invitationSentAt: new Date().toISOString() } : att);
+        ok += 1;
+      } catch (error) {
+        ev.invitationStatus = 'failed';
+        ev.invitationError = error.message || String(error);
+        failed.push(ev.label || ev.id);
+      }
+    }
+    saveState();
+    renderAll();
+    setBulkActionStatus(`${ok} erfolgreich gesendet${failed.length ? `, ${failed.length} fehlgeschlagen: ${failed.join(', ')}` : '.'}`, failed.length ? 'error' : 'success');
+    if (!failed.length) {
+      setBulkSelectionMode(false);
+      window.setTimeout(closeBulkActionModal, 900);
+    }
+  }
+
+  async function applyBulkAction() {
+    try {
+      if (confirmBulkActionBtn) confirmBulkActionBtn.disabled = true;
+      if (bulkActionType === 'invite') await sendBulkInvitations();
+      else if (bulkActionType === 'category') applyBulkCategoryChange();
+      else if (bulkActionType === 'move') applyBulkMove();
+      else if (bulkActionType === 'status') applyBulkStatusChange();
+    } catch (error) {
+      setBulkActionStatus(error.message || String(error), 'error');
+    } finally {
+      if (confirmBulkActionBtn) confirmBulkActionBtn.disabled = false;
+    }
+  }
+
+  async function deleteBulkSelectedEvents() {
+    const editable = selectedEditableEvents();
+    if (!editable.length) return alert('In der Auswahl gibt es keine löschbaren Termine.');
+    const readOnly = selectedReadOnlyEvents().length;
+    if (!confirm(`Möchtest du wirklich ${editable.length} ${editable.length === 1 ? 'Termin' : 'Termine'} löschen?${readOnly ? ` ${readOnly} schreibgeschützte Termine bleiben erhalten.` : ''}`)) return;
+    const invited = editable.filter(ev => ev.attendees?.length && ev.invitationSentAt);
+    if (invited.length) {
+      const sendCancel = confirm(`${invited.length} Termine haben bereits versendete Einladungen. OK = Absagen senden und löschen. Abbrechen = nur in meiner App löschen oder im nächsten Dialog abbrechen.`);
+      if (!sendCancel && !confirm('Nur in meiner App löschen?')) return;
+      if (sendCancel) {
+        const previousEditingId = editingId;
+        const previousInviteDraftAttendees = inviteDraftAttendees.map(att => ({ ...att }));
+        const previousInviteMessage = eventInviteMessage?.value || '';
+        for (const ev of invited) {
+          editingId = ev.id;
+          inviteDraftAttendees = Array.isArray(ev.attendees) ? ev.attendees.map(att => ({ ...att })) : [];
+          if (eventInviteMessage) eventInviteMessage.value = ev.inviteMessage || '';
+          await sendCalendarInvitationForCurrentEvent('CANCEL');
+        }
+        editingId = previousEditingId;
+        inviteDraftAttendees = previousInviteDraftAttendees;
+        if (eventInviteMessage) eventInviteMessage.value = previousInviteMessage;
+      }
+    }
+    const routineLike = editable.filter(ev => ev.source === 'routine' || ev.rrule || ev.recurrenceId || ev.templateEventId);
+    if (routineLike.length && !confirm(`${routineLike.length} Routine-/Serientermine werden nur als ausgewählte Instanzen gelöscht. Fortfahren?`)) return;
+    const deleteIds = new Set(editable.map(ev => ev.id));
+    currentEvents().forEach(ev => {
+      if (deleteIds.has(ev.stackedIntoId)) ev.stackedIntoId = null;
+      if (deleteIds.has(ev.parentId)) ev.parentId = null;
+    });
+    setCurrentEvents(currentEvents().filter(ev => !deleteIds.has(ev.id)));
+    saveState();
+    setBulkSelectionMode(false);
+    renderAll();
+  }
 
 
 
@@ -2410,6 +2745,7 @@
       calendar.appendChild(col);
     });
     autoScrollCalendarToMorning();
+    renderBulkActionBar();
   }
 
   function allDayTodosForDay(dayIndex) {
@@ -2827,6 +3163,11 @@
     }, { passive: true });
 
     element.addEventListener('touchend', e => {
+      if (element.dataset.bulkLongPressFired === '1') {
+        element.dataset.bulkLongPressFired = '0';
+        touchStart = null;
+        return;
+      }
       if (!touchStart || isDragging || e.target.closest('input, button, select, textarea, a')) {
         touchStart = null;
         return;
@@ -2993,11 +3334,72 @@
     return laidOut;
   }
 
+  function showEventTitlePopup(ev, anchor) {
+    if (!isMobileViewport() || !anchor) return;
+    document.querySelector('.event-title-popover')?.remove();
+    const cat = state.categories[ev.categoryId] || state.categories.orga;
+    const pop = document.createElement('div');
+    pop.className = 'event-title-popover';
+    pop.textContent = `${ev.label} · ${eventTime(ev)} · ${cat.label}`;
+    document.body.appendChild(pop);
+    const rect = anchor.getBoundingClientRect();
+    pop.style.left = `${clamp(rect.left, 8, window.innerWidth - 240)}px`;
+    pop.style.top = `${Math.max(8, rect.top - pop.offsetHeight - 8)}px`;
+    window.setTimeout(() => pop.remove(), 2200);
+  }
+
+  function bindBulkLongPress(element, ev) {
+    let press = null;
+    const canStart = target => !bulkSelectionMode && isBulkEditableEvent(ev) && !target.closest('input, button, select, textarea, a, .event-resize-handle');
+    const beginPress = (x, y, target) => {
+      if (!canStart(target)) return;
+      if (press) window.clearTimeout(press.timer);
+      element.dataset.bulkLongPressFired = '0';
+      press = { x, y, timer: null };
+      press.timer = window.setTimeout(() => {
+        element.dataset.bulkLongPressFired = '1';
+        press = null;
+        setBulkSelectionMode(true, ev.id);
+      }, 520);
+    };
+    const movePress = (x, y) => {
+      if (!press) return;
+      if (Math.hypot(x - press.x, y - press.y) > 10) {
+        window.clearTimeout(press.timer);
+        press = null;
+      }
+    };
+    const endPress = () => {
+      if (press) window.clearTimeout(press.timer);
+      press = null;
+    };
+    element.addEventListener('touchstart', e => {
+      const touch = e.touches?.[0];
+      if (touch) beginPress(touch.clientX, touch.clientY, e.target);
+    }, { passive: true });
+    element.addEventListener('touchmove', e => {
+      const touch = e.touches?.[0];
+      if (!touch) endPress();
+      else movePress(touch.clientX, touch.clientY);
+    }, { passive: true });
+    ['touchend', 'touchcancel'].forEach(type => element.addEventListener(type, endPress, { passive: true }));
+    element.addEventListener('pointerdown', e => {
+      if (e.pointerType !== 'touch') return;
+      beginPress(e.clientX, e.clientY, e.target);
+    }, { passive: true });
+    element.addEventListener('pointermove', e => {
+      if (e.pointerType !== 'touch') return;
+      movePress(e.clientX, e.clientY);
+    }, { passive: true });
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(type => element.addEventListener(type, endPress, { passive: true }));
+  }
+
   function eventEl(ev) {
     syncEventAutoComplete(ev);
     const cat = state.categories[ev.categoryId] || state.categories.orga;
+    const bulkSelected = selectedEventIds.has(ev.id);
     const div = document.createElement('div');
-    div.className = `event ${isEventDone(ev) ? 'done' : ''} ${ev.missed ? 'missed' : ''} ${ev.source === 'extra' ? 'extra-event' : ''} ${ev.importSource === 'ics' ? 'external-calendar-event' : ''}`;
+    div.className = `event ${isEventDone(ev) ? 'done' : ''} ${ev.missed ? 'missed' : ''} ${ev.source === 'extra' ? 'extra-event' : ''} ${ev.importSource === 'ics' ? 'external-calendar-event' : ''} ${bulkSelectionMode && isBulkSelectableEvent(ev) ? 'bulk-selectable' : ''} ${bulkSelected ? 'bulk-selected' : ''}`;
     div.dataset.id = ev.id;
     if (canMoveEventAcrossDays(ev)) {
       div.draggable = true;
@@ -3068,7 +3470,8 @@
   <button class="event-resize-handle event-resize-start" type="button" title="Startzeit ziehen" aria-label="Startzeit ändern"></button>
   <button class="event-resize-handle event-resize-end" type="button" title="Endzeit ziehen" aria-label="Endzeit ändern"></button>
   <div class="event-resize-preview" aria-hidden="true"></div>` : '';
-    div.innerHTML = `${resizeHandles}
+    const bulkSelectButton = bulkSelectionMode && isBulkSelectableEvent(ev) ? `<button class="event-bulk-select ${bulkSelected ? 'selected' : ''}" type="button" aria-label="Termin auswählen" title="Termin auswählen">${bulkSelected ? '✓' : ''}</button>` : '';
+    div.innerHTML = `${resizeHandles}${bulkSelectButton}
   <div class="event-main-row event-title-row ${hasStartAlignedChild ? 'event-main-overlay-bar' : ''}">
     ${trackable ? `<input class="event-check" type="checkbox" ${isEventDone(ev) ? 'checked' : ''} ${eventAutoCompleteEnabled(ev) && (Array.isArray(ev.subtasks) && ev.subtasks.length || integratedCount) ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : 'title="Erledigt"'} />` : ''}
     ${trackable ? `<button class="event-missed-btn ${ev.missed ? 'active' : ''}" type="button" title="Nicht eingehalten">!</button>` : ''}
@@ -3083,6 +3486,16 @@
     div.querySelectorAll('input, button, select, textarea, a').forEach(control => {
       control.draggable = false;
     });
+    div.querySelector('.event-bulk-select')?.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleBulkEventSelection(ev.id);
+    });
+    div.querySelector('.event-title')?.addEventListener('click', e => {
+      if (!isMobileViewport() || bulkSelectionMode) return;
+      e.stopPropagation();
+      showEventTitlePopup(ev, e.currentTarget);
+    });
     div.querySelector('.event-resize-start')?.addEventListener('mousedown', e => startEventResize(ev, div, 'start', e));
     div.querySelector('.event-resize-end')?.addEventListener('mousedown', e => startEventResize(ev, div, 'end', e));
     div.querySelectorAll('.event-resize-handle').forEach(handle => {
@@ -3094,8 +3507,9 @@
     div.addEventListener('click', e => e.stopPropagation());
     div.addEventListener('dblclick', e => { e.preventDefault(); e.stopPropagation(); if (ev.editable !== false) openEditor(ev.id); });
     bindMobileEventDoubleTap(div, ev);
+    bindBulkLongPress(div, ev);
     div.addEventListener('dragstart', e => {
-      if (!canMoveEventAcrossDays(ev) || e.target.closest('input, button, select, textarea, a, .event-resize-handle')) {
+      if (bulkSelectionMode || !canMoveEventAcrossDays(ev) || e.target.closest('input, button, select, textarea, a, .event-resize-handle')) {
         e.preventDefault();
         return;
       }
@@ -5348,6 +5762,17 @@ function toggleMissed(eventId) {
   };
   if (modalAddSubtaskBtn) modalAddSubtaskBtn.onclick = addEventDraftSubtask;
   if (modalSubtaskInput) modalSubtaskInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addEventDraftSubtask(); } });
+  if (bulkSelectModeBtn) bulkSelectModeBtn.onclick = () => setBulkSelectionMode(!bulkSelectionMode);
+  if (bulkClearBtn) bulkClearBtn.onclick = () => setBulkSelectionMode(false);
+  if (bulkInviteBtn) bulkInviteBtn.onclick = () => openBulkActionModal('invite');
+  if (bulkCategoryBtn) bulkCategoryBtn.onclick = () => openBulkActionModal('category');
+  if (bulkMoveBtn) bulkMoveBtn.onclick = () => openBulkActionModal('move');
+  if (bulkStatusBtn) bulkStatusBtn.onclick = () => openBulkActionModal('status');
+  if (bulkDeleteBtn) bulkDeleteBtn.onclick = deleteBulkSelectedEvents;
+  if (closeBulkActionModalBtn) closeBulkActionModalBtn.onclick = closeBulkActionModal;
+  if (cancelBulkActionBtn) cancelBulkActionBtn.onclick = closeBulkActionModal;
+  if (confirmBulkActionBtn) confirmBulkActionBtn.onclick = applyBulkAction;
+  if (bulkActionModalBackdrop) bulkActionModalBackdrop.addEventListener('click', e => { if (e.target === bulkActionModalBackdrop) closeBulkActionModal(); });
   if (addInviteEmailBtn) addInviteEmailBtn.onclick = addInviteEmailFromInput;
   if (eventInviteEmailInput) eventInviteEmailInput.addEventListener('keydown', e => {
     if (e.key === 'Enter' || e.key === ',') {
@@ -5483,6 +5908,8 @@ function toggleMissed(eventId) {
 
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
+      if (bulkActionModalBackdrop?.style.display === 'flex') { closeBulkActionModal(); return; }
+      if (bulkSelectionMode) { setBulkSelectionMode(false); return; }
       const icsModal = document.getElementById('icsModal');
       if (icsModal && !icsModal.classList.contains('hidden')) icsModal.classList.add('hidden');
       else if (specialEventFormBackdrop?.style.display === 'flex') { showSpecialEventOverview(); renderSpecialEventsModal(); }
@@ -6430,7 +6857,7 @@ if (removeBtn) {
   // INIT
   // ==================================================
 
-function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); renderCalendarFeedSettings(); renderSpecialEventsButton(); renderSpecialEventsModal(); renderSpecialEventsDrawer(); renderMobileControls(); updateIcsAutoSyncMeta(); }
+function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); renderCalendarFeedSettings(); renderSpecialEventsButton(); renderSpecialEventsModal(); renderSpecialEventsDrawer(); renderMobileControls(); renderBulkActionBar(); updateIcsAutoSyncMeta(); }
   fillTaskDaySelect();
   renderAll();
   renderAll();
