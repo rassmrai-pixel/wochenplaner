@@ -488,6 +488,9 @@
         sourceUid: ev.sourceUid || ev.uid || ev.externalUid || null,
         sourceKey: ev.sourceKey || null,
         externalSourceKey: ev.externalSourceKey || ev.sourceKey || null,
+        externalOriginal: ev.externalOriginal && typeof ev.externalOriginal === 'object' ? { ...ev.externalOriginal } : (ev.importSource === 'ics' || ev.provider === 'ics' || ev.isExternal ? externalOriginalFromEvent(ev) : null),
+        localOverrides: normalizeExternalLocalOverrides(ev.localOverrides),
+        externalLocalEditedAt: ev.externalLocalEditedAt || ev.localOverrides?.updatedAt || null,
         mirroredInExternalCalendar: Boolean(ev.mirroredInExternalCalendar),
         externalMirrorLastSeenAt: ev.externalMirrorLastSeenAt || null,
         externalMirrorLastMissingAt: ev.externalMirrorLastMissingAt || null,
@@ -543,7 +546,7 @@
     const rawWeekEvents = Array.isArray(input.weekEvents) ? input.weekEvents : [];
 
     s.templateEvents = rawTemplateEvents
-      .map(ev => normalizeEvent(ev, 'routine'))
+      .map(ev => applyExternalLocalOverrides(normalizeEvent(ev, 'routine')))
       .map(ev => ({ ...ev, source: 'routine', done: false, templateEventId: null }))
       .filter(ev => ev.allDay || ev.end > ev.start);
 
@@ -553,14 +556,14 @@
         const safeWeek = clampWeekKey(weekKey);
         if (!Array.isArray(events)) return;
         s.weekEventsByWeek[safeWeek] = events
-          .map(ev => normalizeEvent(ev, ev.source || 'extra'))
+          .map(ev => applyExternalLocalOverrides(normalizeEvent(ev, ev.source || 'extra')))
           .filter(ev => ev.allDay || ev.end > ev.start);
       });
     }
 
     if (rawWeekEvents.length && !s.weekEventsByWeek[initialWeek]) {
       s.weekEventsByWeek[initialWeek] = rawWeekEvents
-        .map(ev => normalizeEvent(ev, ev.source || 'extra'))
+        .map(ev => applyExternalLocalOverrides(normalizeEvent(ev, ev.source || 'extra')))
         .filter(ev => ev.allDay || ev.end > ev.start);
     }
 
@@ -1050,6 +1053,132 @@
   function eventTime(ev) { return `${timeLabel(ev.start)}–${timeLabel(ev.end)}`; }
   function touchEvent(ev) { if (ev) ev.updatedAt = new Date().toISOString(); }
 
+  function isExternalIcsEvent(ev) {
+    return Boolean(ev && (
+      ev.importSource === 'ics' ||
+      ev.provider === 'ics' ||
+      ev.importedFromIcs ||
+      ev.isExternal ||
+      ev.externalId ||
+      ev.externalCalendarId
+    ));
+  }
+
+  function normalizeExternalLocalOverrides(overrides = {}) {
+    const raw = overrides && typeof overrides === 'object' ? overrides : {};
+    const numberOrNull = value => Number.isFinite(Number(value)) ? Number(value) : null;
+    return {
+      title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim() : null,
+      label: typeof raw.label === 'string' && raw.label.trim() ? raw.label.trim() : null,
+      date: /^\d{4}-\d{2}-\d{2}$/.test(String(raw.date || '')) ? String(raw.date).slice(0, 10) : null,
+      day: numberOrNull(raw.day),
+      start: numberOrNull(raw.start),
+      end: numberOrNull(raw.end),
+      categoryId: typeof raw.categoryId === 'string' && raw.categoryId ? raw.categoryId : null,
+      stackedIntoId: typeof raw.stackedIntoId === 'string' && raw.stackedIntoId ? raw.stackedIntoId : null,
+      parentId: typeof raw.parentId === 'string' && raw.parentId ? raw.parentId : null,
+      hidden: Boolean(raw.hidden),
+      note: typeof raw.note === 'string' && raw.note.trim() ? raw.note.trim() : null,
+      updatedAt: raw.updatedAt || null
+    };
+  }
+
+  function externalOriginalFromEvent(ev = {}) {
+    return {
+      title: ev.externalOriginal?.title || ev.title || ev.label || 'Kalendertermin',
+      label: ev.externalOriginal?.label || ev.label || ev.title || 'Kalendertermin',
+      date: ev.externalOriginal?.date || ev.date || null,
+      day: Number.isFinite(Number(ev.externalOriginal?.day)) ? Number(ev.externalOriginal.day) : (Number.isFinite(Number(ev.day)) ? Number(ev.day) : null),
+      start: Number.isFinite(Number(ev.externalOriginal?.start)) ? Number(ev.externalOriginal.start) : (Number.isFinite(Number(ev.start)) ? Number(ev.start) : null),
+      end: Number.isFinite(Number(ev.externalOriginal?.end)) ? Number(ev.externalOriginal.end) : (Number.isFinite(Number(ev.end)) ? Number(ev.end) : null),
+      allDay: Boolean(ev.externalOriginal?.allDay ?? ev.allDay),
+      categoryId: ev.externalOriginal?.categoryId || ev.categoryId || 'external',
+      location: ev.externalOriginal?.location ?? ev.location ?? null,
+      description: ev.externalOriginal?.description ?? ev.description ?? null,
+      duration: ev.externalOriginal?.duration ?? ev.duration ?? null,
+      sourceId: ev.externalOriginal?.sourceId || ev.sourceId || ev.externalCalendarId || DEFAULT_ICS_SOURCE_ID,
+      externalId: ev.externalOriginal?.externalId || ev.externalId || null,
+      externalUid: ev.externalOriginal?.externalUid || ev.externalUid || ev.sourceUid || null,
+      sourceKey: ev.externalOriginal?.sourceKey || ev.sourceKey || null,
+      organizerEmail: ev.externalOriginal?.organizerEmail || ev.organizerEmail || null,
+      organizerName: ev.externalOriginal?.organizerName || ev.organizerName || null,
+      importedAt: ev.externalOriginal?.importedAt || ev.createdAt || new Date().toISOString(),
+      lastSeenAt: new Date().toISOString()
+    };
+  }
+
+  function hasExternalLocalEdits(ev) {
+    if (!isExternalIcsEvent(ev)) return false;
+    const overrides = normalizeExternalLocalOverrides(ev.localOverrides);
+    return Boolean(
+      overrides.title || overrides.label || overrides.date || overrides.day !== null ||
+      overrides.start !== null || overrides.end !== null || overrides.categoryId ||
+      overrides.stackedIntoId || overrides.parentId || overrides.hidden || overrides.note ||
+      (Array.isArray(ev.subtasks) && ev.subtasks.length) || ev.done || ev.completed || ev.missed ||
+      ev.autoComplete || ev.autoCompleteFromSubtasks || ev.categoryId !== 'external'
+    );
+  }
+
+  function applyExternalLocalOverrides(ev) {
+    if (!isExternalIcsEvent(ev)) return ev;
+    const overrides = normalizeExternalLocalOverrides(ev.localOverrides);
+    ev.localOverrides = overrides;
+    ev.externalOriginal = externalOriginalFromEvent(ev);
+    const title = overrides.title || overrides.label;
+    if (title) {
+      ev.label = title;
+      ev.title = title;
+    }
+    if (overrides.categoryId) ev.categoryId = overrides.categoryId;
+    if (overrides.date) ev.date = overrides.date;
+    if (overrides.day !== null) ev.day = clamp(Number(overrides.day), 0, 6);
+    if (!ev.allDay) {
+      if (overrides.start !== null) ev.start = clamp(Number(overrides.start), 0, slotsPerDay - 1);
+      if (overrides.end !== null) ev.end = clamp(Number(overrides.end), 1, slotsPerDay);
+      if (Number(ev.end) <= Number(ev.start)) ev.end = Math.min(Number(ev.start) + 1, slotsPerDay);
+    }
+    ev.stackedIntoId = overrides.stackedIntoId || ev.stackedIntoId || null;
+    ev.parentId = overrides.parentId || ev.parentId || null;
+    return ev;
+  }
+
+  function isEventLocallyHidden(ev) {
+    return Boolean(isExternalIcsEvent(ev) && normalizeExternalLocalOverrides(ev.localOverrides).hidden);
+  }
+
+  function visibleEvents(events = currentEvents()) {
+    return (events || []).filter(ev => !isEventLocallyHidden(ev));
+  }
+
+  function recordExternalLocalOverrides(ev, fields = {}) {
+    if (!isExternalIcsEvent(ev)) return;
+    const original = ev.externalOriginal || externalOriginalFromEvent(ev);
+    const overrides = normalizeExternalLocalOverrides(ev.localOverrides);
+    const same = (a, b) => String(a ?? '') === String(b ?? '');
+    if ('label' in fields || 'title' in fields) {
+      const title = String(fields.label ?? fields.title ?? '').trim();
+      overrides.title = title && !same(title, original.title || original.label) ? title : null;
+      overrides.label = overrides.title;
+    }
+    if ('categoryId' in fields) overrides.categoryId = fields.categoryId && fields.categoryId !== (original.categoryId || 'external') ? fields.categoryId : null;
+    if ('date' in fields) overrides.date = fields.date && !same(fields.date, original.date) ? fields.date : null;
+    if ('day' in fields) overrides.day = Number(fields.day) !== Number(original.day) ? Number(fields.day) : null;
+    if ('start' in fields) overrides.start = Number(fields.start) !== Number(original.start) ? Number(fields.start) : null;
+    if ('end' in fields) overrides.end = Number(fields.end) !== Number(original.end) ? Number(fields.end) : null;
+    if ('stackedIntoId' in fields) overrides.stackedIntoId = fields.stackedIntoId || null;
+    if ('parentId' in fields) overrides.parentId = fields.parentId || null;
+    if ('hidden' in fields) overrides.hidden = Boolean(fields.hidden);
+    overrides.updatedAt = new Date().toISOString();
+    ev.localOverrides = overrides;
+    ev.externalLocalEditedAt = overrides.updatedAt;
+  }
+
+  function canLocallyEditEvent(ev) {
+    if (!ev) return false;
+    if (ev.readOnly || ev.editable === false || ev.allDay) return false;
+    return true;
+  }
+
   function currentWeekEvents() {
     if (!state.weekEventsByWeek) state.weekEventsByWeek = {};
     const key = clampWeekKey(state.currentWeekStart || weekStartKey(new Date()));
@@ -1411,7 +1540,7 @@
   function dayCompletionStats(dayIndex) {
   if (!isWeekMode()) return { total: 0, done: 0, missed: 0, open: 0, percent: 0 };
 
-  const habitItems = currentWeekEvents()
+  const habitItems = visibleEvents(currentWeekEvents())
     .filter(ev => ev.day === dayIndex && !isIntegratedChild(ev) && state.categories[ev.categoryId]?.habit)
     .map(ev => syncEventAutoComplete(ev));
 
@@ -2265,7 +2394,7 @@
   function integratedEventsForEvent(eventId, events = currentEvents()) {
     if (!eventId) return [];
     return events
-      .filter(ev => ev.stackedIntoId === eventId || ev.parentId === eventId)
+      .filter(ev => !isEventLocallyHidden(ev) && (ev.stackedIntoId === eventId || ev.parentId === eventId))
       .sort((a, b) => a.start - b.start || a.end - b.end || String(a.createdAt).localeCompare(String(b.createdAt)));
   }
 
@@ -2374,7 +2503,7 @@
   }
 
   function parentBlockCandidates(day, start, end, ownId = null) {
-    return currentEvents()
+    return visibleEvents()
       .filter(ev =>
         ev.id !== ownId &&
         !isIntegratedChild(ev) &&
@@ -2808,7 +2937,7 @@
         col.appendChild(slot);
       }
 
-      const events = currentEvents().filter(ev => ev.day === d && !isIntegratedChild(ev) && !ev.allDay);
+      const events = visibleEvents().filter(ev => ev.day === d && !isIntegratedChild(ev) && !ev.allDay);
       layoutDayEvents(events).forEach(ev => col.appendChild(eventEl(ev)));
       renderCurrentTimeLine(col, d, today);
       calendar.appendChild(col);
@@ -2827,7 +2956,7 @@
   function allDayEventsForDay(dayIndex) {
     if (!isWeekMode()) return [];
     return currentEvents()
-      .filter(ev => ev.allDay && Number(ev.day) === Number(dayIndex) && !isIntegratedChild(ev));
+      .filter(ev => ev.allDay && Number(ev.day) === Number(dayIndex) && !isIntegratedChild(ev) && !isEventLocallyHidden(ev));
   }
 
   function renderAllDayTodosForDay(cell, dayIndex) {
@@ -3181,7 +3310,8 @@
     ev.start = nextStart;
     ev.end = nextEnd;
     ev.date = isTemplateMode() ? null : dateKey(getDayDate(nextDay));
-    if (ev.missingFromLastSync) ev.syncStatus = ev.syncStatus || 'local-moved';
+    if (isExternalIcsEvent(ev)) recordExternalLocalOverrides(ev, { day: nextDay, start: nextStart, end: nextEnd, date: ev.date });
+    if (ev.missingFromLastSync || isExternalIcsEvent(ev)) ev.syncStatus = ev.syncStatus || 'local-moved';
     touchEvent(ev);
     syncEventAutoComplete(ev);
     saveState();
@@ -3678,7 +3808,7 @@ return div;
   }
 
   function canManageParticipants(ev) {
-    return Boolean(ev && !ev.allDay && hasScheduledTime(ev) && !isExternalReadOnlyEvent(ev));
+    return Boolean(ev && !ev.allDay && hasScheduledTime(ev) && !isExternalIcsEvent(ev) && !isExternalReadOnlyEvent(ev));
   }
 
   function canInviteEvent(ev) {
@@ -3899,8 +4029,9 @@ return div;
     };
     if (!ev) return;
 
-    const readOnlyEvent = Boolean(eventId && isExternalReadOnlyEvent(ev));
-    modalTitle.textContent = readOnlyEvent ? 'Block ansehen' : (eventId ? 'Block bearbeiten' : 'Neuen Block erstellen');
+    const externalEvent = Boolean(eventId && isExternalIcsEvent(ev));
+    const readOnlyEvent = Boolean(eventId && !canLocallyEditEvent(ev));
+    modalTitle.textContent = readOnlyEvent ? 'Block ansehen' : (externalEvent ? 'Externen Termin lokal bearbeiten' : (eventId ? 'Block bearbeiten' : 'Neuen Block erstellen'));
     eventDraftSubtasks = cloneEventSubtasks(ev);
     if (modalAutoComplete) modalAutoComplete.checked = Boolean(ev.autoComplete);
     if (modalSubtaskInput) modalSubtaskInput.value = '';
@@ -3935,6 +4066,7 @@ return div;
     const saveModalBtn = document.getElementById('saveModalBtn');
     if (saveModalBtn) saveModalBtn.disabled = readOnlyEvent;
     deleteBlockBtn.style.display = eventId && !readOnlyEvent ? '' : 'none';
+    if (deleteBlockBtn) deleteBlockBtn.textContent = externalEvent ? 'In dieser App ausblenden' : 'Block löschen';
     updateModalInfo();
     modalBackdrop.style.display = 'flex';
   }
@@ -3998,7 +4130,9 @@ return div;
     const durationText = hours ? `${hours}h ${minutes ? minutes + 'min' : ''}` : `${minutes}min`;
     const categoryId = modalCategory.value;
     const habitText = state.categories[categoryId]?.habit ? 'erscheint im Habit Tracker' : 'kein Habit Tracking';
-    modalInfo.textContent = `${days[d] || ''}${isTemplateMode() ? '' : ' · ' + formatShortDate(getDayDate(d))} · ${timeLabel(start)}–${timeLabel(end)} · Dauer: ${durationText} · ${habitText} · ${isTemplateMode() ? 'Routine-Vorlage' : (presetSource === 'extra' ? 'Extra-To-do' : 'Kalenderwoche')}`;
+    const ev = editingId ? currentEvents().find(item => item.id === editingId) : null;
+    const externalPrefix = isExternalIcsEvent(ev) ? 'Externer Kalendertermin · Lokale Änderungen werden nicht zurück in den externen Kalender übertragen. · ' : '';
+    modalInfo.textContent = `${externalPrefix}${days[d] || ''}${isTemplateMode() ? '' : ' · ' + formatShortDate(getDayDate(d))} · ${timeLabel(start)}–${timeLabel(end)} · Dauer: ${durationText} · ${habitText} · ${isTemplateMode() ? 'Routine-Vorlage' : (presetSource === 'extra' ? 'Extra-To-do' : 'Kalenderwoche')}`;
   }
 
   function fillDrawerDaySelect() {
@@ -4336,7 +4470,7 @@ return div;
     });
 
     const filter = state.drawerHabitFilter || 'all';
-    const dayEvents = currentWeekEvents()
+    const dayEvents = visibleEvents(currentWeekEvents())
       .filter(ev => ev.day === state.activeHabitDay)
       .filter(ev => !isIntegratedChild(ev))
       .filter(ev => filter === 'all' || (filter === 'done' ? isEventDone(ev) : (filter === 'missed' ? ev.missed : (!isEventDone(ev) && !ev.missed))))
@@ -4657,7 +4791,7 @@ return div;
   function renderTaskView() {
     const d = state.activeHabitDay;
     taskTitle.textContent = `${days[d]} ${formatShortDate(getDayDate(d))} · Tages-Tasks`;
-    const all = currentWeekEvents()
+    const all = visibleEvents(currentWeekEvents())
       .filter(ev => ev.day === d && !isIntegratedChild(ev) && state.categories[ev.categoryId]?.habit)
       .sort((a, b) => a.start - b.start || a.end - b.end);
     const stats = all.reduce((acc, ev) => {
@@ -4773,7 +4907,7 @@ return div;
   }
 
   function extraTrackingStats() {
-    const extras = currentWeekEvents().filter(ev => ev.source === 'extra' && !isIntegratedChild(ev) && state.categories[ev.categoryId]?.habit);
+    const extras = visibleEvents(currentWeekEvents()).filter(ev => ev.source === 'extra' && !isIntegratedChild(ev) && state.categories[ev.categoryId]?.habit);
     const stats = extras.reduce((acc, ev) => {
       const progress = eventProgressStats(ev);
       acc.total += progress.total;
@@ -4826,7 +4960,7 @@ return div;
     eachDateInRange(range.start, end).forEach(date => {
       const weekKey = weekStartKey(date);
       const dayIndex = (date.getDay() + 6) % 7;
-      const weekEvents = weekEventsForKey(weekKey);
+      const weekEvents = visibleEvents(weekEventsForKey(weekKey));
       state.templateEvents
         .filter(ev => ev.day === dayIndex && !isIntegratedChild(ev) && state.categories[ev.categoryId]?.habit)
         .forEach(templateEv => {
@@ -5951,11 +6085,12 @@ function toggleMissed(eventId) {
     if (editingId) {
       const ev = currentEvents().find(x => x.id === editingId);
       if (ev) {
-        if (!canManageParticipants(ev) && inviteDraftAttendees.length) {
+        const participantsBefore = participantSignature(eventParticipantList(ev));
+        const participantDraftChanged = participantSignature(inviteDraftAttendees) !== participantsBefore;
+        if (!canManageParticipants(ev) && participantDraftChanged) {
           alert('Teilnehmer können für importierte Kalender nicht bearbeitet werden.');
           return;
         }
-        const participantsBefore = participantSignature(eventParticipantList(ev));
         const autoComplete = Boolean(modalAutoComplete?.checked);
         Object.assign(ev, {
           day,
@@ -5970,7 +6105,12 @@ function toggleMissed(eventId) {
           subtasks: cloneEventSubtasks({ subtasks: eventDraftSubtasks }),
           updatedAt: new Date().toISOString()
         });
-        applyInviteDraftToEvent(ev);
+        if (isExternalIcsEvent(ev)) {
+          ev.date = isTemplateMode() ? null : dateKey(getDayDate(day));
+          recordExternalLocalOverrides(ev, { label, categoryId, day, start, end, date: ev.date, stackedIntoId, parentId: null });
+        } else {
+          applyInviteDraftToEvent(ev);
+        }
         const participantsAfter = participantSignature(eventParticipantList(ev));
         if (participantsBefore !== participantsAfter && routineParticipantScopeEligible(ev)) {
           const applyFuture = confirm('Diese Teilnehmeränderung gilt für:\n\nOK = Alle zukünftigen Termine dieser Routine\nAbbrechen = Nur diesen Termin');
@@ -6030,6 +6170,20 @@ function toggleMissed(eventId) {
   document.getElementById('deleteBlockBtn').onclick = async () => {
     if (!editingId) return;
     const ev = currentEvents().find(item => item.id === editingId);
+    if (isExternalIcsEvent(ev)) {
+      if (!confirm('Diesen externen Termin nur in dieser App ausblenden?\n\nDer Termin bleibt im externen Kalender bestehen.')) return;
+      recordExternalLocalOverrides(ev, { hidden: true });
+      ev.syncStatus = 'local-hidden';
+      currentEvents().forEach(item => {
+        if (item.stackedIntoId === editingId) item.stackedIntoId = null;
+        if (item.parentId === editingId) item.parentId = null;
+      });
+      touchEvent(ev);
+      saveState();
+      renderAll();
+      closeModal();
+      return;
+    }
     if (eventParticipantList(ev).length && ev.invitationSentAt) {
       const sendCancel = confirm('Für diesen Termin wurden Einladungen gesendet. Auch eine Absage an die Teilnehmer senden?');
       if (sendCancel) {
@@ -6570,17 +6724,47 @@ function cleanIcsStoredText(value, maxLength = 240) {
 
 function compactIcsPlannerEvent(plannerEvent, existing = null) {
   const keepExisting = (field, fallback) => existing && existing[field] !== undefined ? existing[field] : fallback;
+  const externalOriginal = externalOriginalFromEvent({ ...plannerEvent, externalOriginal: existing?.externalOriginal });
+  externalOriginal.title = plannerEvent.title || plannerEvent.label || externalOriginal.title;
+  externalOriginal.label = plannerEvent.label || plannerEvent.title || externalOriginal.label;
+  externalOriginal.date = plannerEvent.date || externalOriginal.date;
+  externalOriginal.day = plannerEvent.day;
+  externalOriginal.start = plannerEvent.start;
+  externalOriginal.end = plannerEvent.end;
+  externalOriginal.allDay = plannerEvent.allDay;
+  externalOriginal.categoryId = 'external';
+  externalOriginal.location = cleanIcsStoredText(plannerEvent.location, 160);
+  externalOriginal.description = plannerEvent.description || null;
+  externalOriginal.duration = plannerEvent.duration;
+  externalOriginal.sourceId = plannerEvent.sourceId;
+  externalOriginal.externalId = plannerEvent.externalId;
+  externalOriginal.externalUid = plannerEvent.externalUid || plannerEvent.sourceUid || null;
+  externalOriginal.sourceKey = plannerEvent.sourceKey || null;
+  externalOriginal.organizerEmail = plannerEvent.organizerEmail || null;
+  externalOriginal.organizerName = plannerEvent.organizerName || null;
+  externalOriginal.lastSeenAt = new Date().toISOString();
+
+  const localOverrides = normalizeExternalLocalOverrides(existing?.localOverrides);
+  const localTitle = localOverrides.title || localOverrides.label;
+  const displayDate = localOverrides.date || plannerEvent.date;
+  const displayDay = localOverrides.day !== null ? clamp(Number(localOverrides.day), 0, 6) : plannerEvent.day;
+  const displayStart = localOverrides.start !== null ? clamp(Number(localOverrides.start), 0, slotsPerDay - 1) : plannerEvent.start;
+  const displayEnd = localOverrides.end !== null ? clamp(Number(localOverrides.end), 1, slotsPerDay) : plannerEvent.end;
+  const displayCategory = localOverrides.categoryId && state.categories[localOverrides.categoryId]
+    ? localOverrides.categoryId
+    : keepExisting('categoryId', plannerEvent.categoryId);
+
   return {
-    id: plannerEvent.id,
-    day: plannerEvent.day,
-    start: plannerEvent.start,
-    end: plannerEvent.end,
-    date: plannerEvent.date,
+    id: keepExisting('id', plannerEvent.id),
+    day: displayDay,
+    start: displayStart,
+    end: displayEnd,
+    date: displayDate,
     allDay: plannerEvent.allDay,
-    label: plannerEvent.label,
-    title: plannerEvent.title,
-    categoryId: keepExisting('categoryId', plannerEvent.categoryId),
-    location: cleanIcsStoredText(plannerEvent.location, 160),
+    label: localTitle || plannerEvent.label,
+    title: localTitle || plannerEvent.title,
+    categoryId: displayCategory,
+    location: externalOriginal.location,
     description: null,
     duration: plannerEvent.duration,
     completed: keepExisting('completed', false),
@@ -6598,6 +6782,9 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
     sourceUid: plannerEvent.sourceUid,
     sourceKey: plannerEvent.sourceKey,
     externalSourceKey: plannerEvent.externalSourceKey || plannerEvent.sourceKey || null,
+    externalOriginal,
+    localOverrides,
+    externalLocalEditedAt: existing?.externalLocalEditedAt || localOverrides.updatedAt || null,
     organizerEmail: plannerEvent.organizerEmail || null,
     organizerName: plannerEvent.organizerName || null,
     attendees: Array.isArray(plannerEvent.attendees) ? plannerEvent.attendees : [],
@@ -6610,16 +6797,17 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
     importedFromIcs: true,
     isExternal: true,
     missingFromLastSync: false,
-    syncStatus: plannerEvent.syncStatus || 'synced',
+    syncStatus: localOverrides.hidden ? 'local-hidden' : (plannerEvent.syncStatus || 'synced'),
     readOnly: plannerEvent.readOnly,
     editable: keepExisting('editable', plannerEvent.editable),
-    parentId: keepExisting('parentId', null),
-    stackedIntoId: keepExisting('stackedIntoId', null),
+    parentId: localOverrides.parentId || keepExisting('parentId', null),
+    stackedIntoId: localOverrides.stackedIntoId || keepExisting('stackedIntoId', null),
     category: keepExisting('category', null),
     subtasks: Array.isArray(existing?.subtasks) ? existing.subtasks : [],
     autoComplete: keepExisting('autoComplete', false),
     autoCompleteFromSubtasks: keepExisting('autoCompleteFromSubtasks', false),
-    createdAt: keepExisting('createdAt', plannerEvent.createdAt || new Date().toISOString())
+    createdAt: keepExisting('createdAt', plannerEvent.createdAt || new Date().toISOString()),
+    updatedAt: new Date().toISOString()
   };
 }
 
@@ -6691,6 +6879,9 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
 
   // true = Doppelklick öffnet Editor, falls du später Kategorie/Subtasks ändern willst
   editable: !isAllDay,
+  externalOriginal: null,
+  localOverrides: normalizeExternalLocalOverrides(),
+  externalLocalEditedAt: null,
 
   // gleiche Logik wie deine normalen Events
   autoComplete: false,
@@ -6798,14 +6989,16 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
     const existing = existingEntry.ev;
     const updatedEvent = compactIcsPlannerEvent({ ...plannerEvent, syncStatus: 'updated' }, existing);
 
-    if (existingEntry.weekKey === weekKey) {
-      const existingIndex = state.weekEventsByWeek[weekKey].findIndex(ev => ev.id === existing.id);
-      if (existingIndex >= 0) state.weekEventsByWeek[weekKey][existingIndex] = updatedEvent;
-      else state.weekEventsByWeek[weekKey].push(updatedEvent);
+    const targetWeekKey = weekStartKey(dateKeyToLocalDate(updatedEvent.date || icsEvent.date || dateKey(new Date())));
+    if (!state.weekEventsByWeek[targetWeekKey]) state.weekEventsByWeek[targetWeekKey] = [];
+    if (existingEntry.weekKey === targetWeekKey) {
+      const existingIndex = state.weekEventsByWeek[targetWeekKey].findIndex(ev => ev.id === existing.id);
+      if (existingIndex >= 0) state.weekEventsByWeek[targetWeekKey][existingIndex] = updatedEvent;
+      else state.weekEventsByWeek[targetWeekKey].push(updatedEvent);
     } else {
       state.weekEventsByWeek[existingEntry.weekKey] = (state.weekEventsByWeek[existingEntry.weekKey] || [])
         .filter(ev => ev.id !== existing.id);
-      state.weekEventsByWeek[weekKey].push(updatedEvent);
+      state.weekEventsByWeek[targetWeekKey].push(updatedEvent);
     }
     updatedCount++;
   } else {
@@ -6829,9 +7022,15 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
       || processedKeys.has(icsExternalKey(DEFAULT_ICS_SOURCE_ID, externalIdAlias))
     ));
     if (wasProcessed) return;
-    Object.keys(state.weekEventsByWeek).forEach((weekKey) => {
-      state.weekEventsByWeek[weekKey] = (state.weekEventsByWeek[weekKey] || []).filter(item => item.id !== ev.id);
-    });
+    if (hasExternalLocalEdits(ev)) {
+      ev.missingFromLastSync = true;
+      ev.syncStatus = normalizeExternalLocalOverrides(ev.localOverrides).hidden ? 'local-hidden-missing' : 'external-missing-local-kept';
+      touchEvent(ev);
+    } else {
+      Object.keys(state.weekEventsByWeek).forEach((weekKey) => {
+        state.weekEventsByWeek[weekKey] = (state.weekEventsByWeek[weekKey] || []).filter(item => item.id !== ev.id);
+      });
+    }
     missingCount++;
   });
 
