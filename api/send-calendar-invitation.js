@@ -196,6 +196,7 @@ function buildCalendarMimeMessage({ to, subject, text, html, ics, method, email 
     `Content-Type: multipart/alternative; boundary="${alternativeBoundary}"`
   ];
 
+  const filename = method === 'CANCEL' ? 'absage.ics' : 'einladung.ics';
   const calendarContentType = `text/calendar; method=${method}; charset=UTF-8`;
   const parts = [
     ...headerLines,
@@ -211,10 +212,10 @@ function buildCalendarMimeMessage({ to, subject, text, html, ics, method, email 
     '',
     base64Mime(html),
     `--${alternativeBoundary}`,
-    `Content-Type: ${calendarContentType}`,
+    `Content-Type: ${calendarContentType}; name="${filename}"`,
     'Content-Class: urn:content-classes:calendarmessage',
     'Content-Transfer-Encoding: base64',
-    'Content-Disposition: inline',
+    `Content-Disposition: inline; filename="${filename}"`,
     '',
     base64Mime(ics),
     `--${alternativeBoundary}--`,
@@ -324,6 +325,7 @@ function buildInviteIcs({ event, weekKey, method, sequence, uid, message, organi
     `DTSTAMP:${dtstamp}`,
     `SEQUENCE:${sequence}`,
     `STATUS:${method === 'CANCEL' ? 'CANCELLED' : 'CONFIRMED'}`,
+    'TRANSP:OPAQUE',
     `SUMMARY:${escapeIcsText(summary)}`,
     `DTSTART;TZID=${DEFAULT_TIMEZONE}:${compactLocalDateTime(dateKey, start)}`,
     `DTEND;TZID=${DEFAULT_TIMEZONE}:${compactLocalDateTime(dateKey, end)}`,
@@ -479,7 +481,8 @@ async function sendCalendarInvitationHandler(req, res) {
     const now = new Date().toISOString();
     const previousSequence = Number(event.invitationSequence || 0);
     const sequence = method === 'CANCEL' || event.invitationSentAt || event.invitationUpdatedAt ? previousSequence + 1 : previousSequence;
-    const invitationUid = event.invitationUid || stableUid(event, req.headers.host);
+    const fromDomain = normalizeEmail(email.fromEmail).split('@')[1] || req.headers.host;
+    const invitationUid = event.invitationUid || stableUid(event, fromDomain);
     const message = String(body.message || event.inviteMessage || '').trim();
     event.inviteMessage = message;
     event.invitationUid = invitationUid;
