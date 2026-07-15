@@ -3,6 +3,7 @@ const ICS_PAST_DAYS = 1;
 const ICS_FUTURE_MONTHS = 24;
 const ICS_MAX_OCCURRENCES_PER_SERIES = 5000;
 const DEFAULT_ICS_SOURCE_ID = "default-ics";
+const ICS_SYNC_DEBUG_TEST_TITLE = "ICS SYNC TEST 001";
 
 const WINDOWS_TIMEZONE_MAP = {
   "W. Europe Standard Time": "Europe/Berlin"
@@ -723,6 +724,10 @@ function parseIcsEvents(icsText) {
 
   console.log("[ICS] Total VEVENT blocks:", totalVevents);
   console.log("[ICS] Import range:", window.start, window.end);
+  console.log("[ICS SYNC DEBUG] raw-search", {
+    testTitleFound: String(icsText || "").includes(ICS_SYNC_DEBUG_TEST_TITLE),
+    veventCount: eventBlocks.length
+  });
 
   const skipEvent = (reason, details) => {
     skippedEvents.push({ reason, ...details });
@@ -754,7 +759,19 @@ function parseIcsEvents(icsText) {
         skipEvent("invalid or missing date", baseDetails(event));
         return;
       }
-      if (compareDateKeys(bounds.start.dateKey, window.end) > 0 || compareDateKeys(bounds.end.dateKey, window.start) < 0) return;
+      const included = !(compareDateKeys(bounds.start.dateKey, window.end) > 0 || compareDateKeys(bounds.end.dateKey, window.start) < 0);
+      if (String(event.summary || "").includes(ICS_SYNC_DEBUG_TEST_TITLE)) {
+        console.log("[ICS SYNC DEBUG] date-filter", {
+          title: event.summary,
+          rawStart: event.dtStart?.raw || event.dtStart?.value || null,
+          parsedStart: bounds.start?.key || bounds.start?.dateKey || null,
+          localStart: bounds.start?.dateKey && bounds.start?.time ? `${bounds.start.dateKey} ${bounds.start.time}` : bounds.start?.dateKey || null,
+          rangeStart: window.start,
+          rangeEnd: window.end,
+          included
+        });
+      }
+      if (!included) return;
       importedEvents.push(...expandMultiDayEventForDisplay({ event, start: bounds.start, originalStart: bounds.start, end: bounds.end }));
     });
 
@@ -781,6 +798,19 @@ function parseIcsEvents(icsText) {
   const allDayImported = uniqueEvents.filter(event => event.allDay).length;
   console.log("[ICS] Imported events:", uniqueEvents.length);
   console.log("[ICS] Skipped events:", skippedEvents.length);
+  console.log("[ICS SYNC DEBUG] parsed-events", {
+    parsedCount: uniqueEvents.length,
+    matchingEvents: uniqueEvents
+      .filter(event => String(event.title || "").includes(ICS_SYNC_DEBUG_TEST_TITLE))
+      .map(event => ({
+        uid: event.uid,
+        title: event.title,
+        date: event.date,
+        start: event.startTime,
+        end: event.endTime,
+        externalId: event.externalId
+      }))
+  });
   console.table(skipReasonsSummary);
 
   return {
@@ -852,15 +882,23 @@ export default async function handler(req, res) {
 
     console.log("[ICS] Fetch response", icsResponse.status, icsResponse.ok);
 
+    const icsText = await icsResponse.text();
+    console.log("[ICS] Text length", icsText.length);
+    console.log("[ICS SYNC DEBUG] fetch-result", {
+      source: (() => { try { return new URL(icsUrl).host; } catch { return "invalid-url"; } })(),
+      success: icsResponse.ok,
+      status: icsResponse.status,
+      contentLength: icsText.length,
+      firstCharacters: icsText.slice(0, 200),
+      syncedAt: new Date().toISOString()
+    });
+
     if (!icsResponse.ok) {
       return res.status(400).json({
         error: "ICS-Link konnte nicht geladen werden.",
         status: icsResponse.status
       });
     }
-
-    const icsText = await icsResponse.text();
-    console.log("[ICS] Text length", icsText.length);
 
     if (!icsText.includes("BEGIN:VCALENDAR")) {
       return res.status(400).json({ error: "Der Link liefert keine gültige ICS-Datei." });

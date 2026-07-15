@@ -20,6 +20,7 @@
   const MOBILE_SWIPE_ANIMATION_MS = 190;
   const MAX_INVITE_ATTENDEES = 10;
   const DEFAULT_ICS_SOURCE_ID = 'default-ics';
+  const ICS_SYNC_DEBUG_TEST_TITLE = 'ICS SYNC TEST 001';
   const SUPABASE_URL = 'https://uwynzmdsveplxfqgwzqp.supabase.co';
   const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_zIKjzTf24k4BDsVrQAyeZQ_WALpNEkH';
   const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY) : null;
@@ -386,7 +387,11 @@
   function loadState() {
     try {
       const rawV2 = localStorage.getItem(storageKeyV2);
-      if (rawV2) return normalizeState(JSON.parse(rawV2));
+      if (rawV2) {
+        const loaded = normalizeState(JSON.parse(rawV2));
+        logIcsSyncAfterReload(loaded);
+        return loaded;
+      }
       const rawV1 = localStorage.getItem(storageKeyV1);
       if (rawV1) return migrateV1(JSON.parse(rawV1));
       return clone(defaults);
@@ -2937,6 +2942,30 @@
         col.appendChild(slot);
       }
 
+      const rawDayEvents = currentEvents().filter(ev => Number(ev.day) === Number(d));
+      rawDayEvents.filter(icsSyncDebugMatches).forEach(event => {
+        const hidden = isEventLocallyHidden(event);
+        const child = isIntegratedChild(event);
+        const allDay = Boolean(event.allDay);
+        const included = !hidden && !child && !allDay;
+        const exclusionReason = hidden ? 'localOverrides.hidden' : (child ? 'integrated child parentId/stackedIntoId' : (allDay ? 'all-day header event' : null));
+        console.log('[ICS SYNC DEBUG] visibility', {
+          id: event.id,
+          uid: event.uid || event.sourceUid || event.externalUid || null,
+          title: event.title || event.label,
+          source: event.source,
+          importSource: event.importSource,
+          date: event.date,
+          day: event.day,
+          renderedDay: d,
+          stackedIntoId: event.stackedIntoId || null,
+          parentId: event.parentId || null,
+          hidden: event.localOverrides?.hidden || false,
+          visibleDateRange: { weekStart: state.currentWeekStart, dayDate: dayDateKey },
+          included,
+          exclusionReason
+        });
+      });
       const events = visibleEvents().filter(ev => ev.day === d && !isIntegratedChild(ev) && !ev.allDay);
       layoutDayEvents(events).forEach(ev => col.appendChild(eventEl(ev)));
       renderCurrentTimeLine(col, d, today);
@@ -2964,6 +2993,26 @@
       .sort((a, b) => Number(isTodoDone(a)) - Number(isTodoDone(b)) || String(a.createdAt).localeCompare(String(b.createdAt)));
     const allDayEvents = allDayEventsForDay(dayIndex)
       .sort((a, b) => String(a.label).localeCompare(String(b.label)));
+    currentEvents().filter(ev => Number(ev.day) === Number(dayIndex) && Boolean(ev.allDay) && icsSyncDebugMatches(ev)).forEach(event => {
+      const hidden = isEventLocallyHidden(event);
+      const child = isIntegratedChild(event);
+      console.log('[ICS SYNC DEBUG] visibility', {
+        id: event.id,
+        uid: event.uid || event.sourceUid || event.externalUid || null,
+        title: event.title || event.label,
+        source: event.source,
+        importSource: event.importSource,
+        date: event.date,
+        day: event.day,
+        renderedDay: dayIndex,
+        stackedIntoId: event.stackedIntoId || null,
+        parentId: event.parentId || null,
+        hidden: event.localOverrides?.hidden || false,
+        visibleDateRange: { weekStart: state.currentWeekStart, dayDate: dateKey(getDayDate(dayIndex)) },
+        included: !hidden && !child,
+        exclusionReason: hidden ? 'localOverrides.hidden' : (child ? 'integrated child parentId/stackedIntoId' : null)
+      });
+    });
     const specialItems = specialEventsForDate(dateKey(getDayDate(dayIndex)));
     const headerItems = [
       ...specialItems.map(item => ({ type: 'special', item })),
@@ -6516,6 +6565,34 @@ function toggleMissed(eventId) {
   );
 }
 
+function icsSyncDebugMatches(value) {
+  return String(value?.title || value?.label || value?.summary || '').includes(ICS_SYNC_DEBUG_TEST_TITLE);
+}
+
+function logIcsSyncAfterReload(loadedState) {
+  const events = Object.values(loadedState?.weekEventsByWeek || {}).flatMap(weekEvents => Array.isArray(weekEvents) ? weekEvents : []);
+  console.log('[ICS SYNC DEBUG] after-reload', {
+    totalEvents: events.length,
+    icsEvents: events.filter(isImportedIcsEvent).length,
+    testEvents: events
+      .filter(icsSyncDebugMatches)
+      .map(event => ({
+        id: event.id,
+        uid: event.uid || event.sourceUid || event.externalUid || null,
+        title: event.title || event.label,
+        date: event.date,
+        day: event.day,
+        start: event.start,
+        end: event.end,
+        source: event.source,
+        importSource: event.importSource,
+        stackedIntoId: event.stackedIntoId || null,
+        parentId: event.parentId || null,
+        hidden: event.localOverrides?.hidden || false
+      }))
+  });
+}
+
 function icsExternalKey(sourceId, externalId) {
   if (!sourceId || !externalId) return null;
   return `${String(sourceId)}:${String(externalId)}`;
@@ -6988,6 +7065,7 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
   });
 
   console.log('[ICS] Upserting ICS events');
+  const totalBefore = Object.values(state.weekEventsByWeek || {}).reduce((total, weekEvents) => total + (Array.isArray(weekEvents) ? weekEvents.length : 0), 0);
 
   const invitationUidIndex = buildOwnInvitationUidIndex();
   const importedExternalIds = new Set();
@@ -6999,8 +7077,47 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
   const seenRoundtripLocalEventIds = new Set();
 
 (icsEvents || []).forEach((icsEvent, index) => {
-  if (isAcceptedSpecialExternalSeries(icsEvent)) return;
+  if (isAcceptedSpecialExternalSeries(icsEvent)) {
+    if (icsSyncDebugMatches(icsEvent)) {
+      console.log('[ICS SYNC DEBUG] duplicate-check', {
+        uid: icsEvent.sourceUid || icsEvent.uid || null,
+        title: icsEvent.title || icsEvent.summary || null,
+        existingMatch: true,
+        matchedEventId: null,
+        matchedSource: 'special-events',
+        decision: 'skip',
+        reason: 'accepted special external series'
+      });
+    }
+    return;
+  }
   const plannerEvent = plannerEventFromIcsEvent(icsEvent, index);
+  if (icsSyncDebugMatches(plannerEvent) || icsSyncDebugMatches(icsEvent)) {
+    console.log('[ICS SYNC DEBUG] transform', {
+      parsedEvent: {
+        uid: icsEvent.uid || icsEvent.sourceUid || null,
+        title: icsEvent.title || icsEvent.summary || null,
+        date: icsEvent.date || null,
+        start: icsEvent.startTime || null,
+        end: icsEvent.endTime || null,
+        source: icsEvent.source || null,
+        importSource: icsEvent.importSource || null
+      },
+      internalEvent: {
+        id: plannerEvent.id,
+        uid: plannerEvent.uid || plannerEvent.sourceUid || plannerEvent.externalUid || null,
+        title: plannerEvent.title,
+        date: plannerEvent.date,
+        start: plannerEvent.start,
+        end: plannerEvent.end,
+        source: plannerEvent.source,
+        type: plannerEvent.type || null,
+        stackedIntoId: plannerEvent.stackedIntoId || null,
+        parentId: plannerEvent.parentId || null,
+        hidden: plannerEvent.localOverrides?.hidden || false
+      }
+    });
+  }
   const externalKey = icsExternalKey(plannerEvent.sourceId, plannerEvent.externalId);
 
   if (!externalKey) {
@@ -7015,6 +7132,18 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
 
   // verhindert doppelte Termine direkt aus dem ICS-Feed
   if (importedExternalIds.has(externalKey)) {
+    if (icsSyncDebugMatches(plannerEvent)) {
+      console.log('[ICS SYNC DEBUG] duplicate-check', {
+        uid: plannerEvent.sourceUid || plannerEvent.externalUid || null,
+        title: plannerEvent.title,
+        existingMatch: true,
+        matchedEventId: null,
+        matchedSource: 'current sync batch',
+        decision: 'skip',
+        reason: 'duplicate externalId/sourceId',
+        externalKey
+      });
+    }
     skippedEvents.push({
       reason: 'duplicate externalId/sourceId',
       title: icsEvent.title || icsEvent.summary || 'Kalendertermin',
@@ -7035,6 +7164,18 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
     || existingByExternalKey.get(icsExternalKey(DEFAULT_ICS_SOURCE_ID, plannerEvent.externalId));
 
   const roundtripMatch = findRoundtripLocalEvent(plannerEvent, icsEvent, invitationUidIndex);
+  if (icsSyncDebugMatches(plannerEvent)) {
+    console.log('[ICS SYNC DEBUG] duplicate-check', {
+      uid: plannerEvent.sourceUid || plannerEvent.externalUid || null,
+      title: plannerEvent.title,
+      existingMatch: Boolean(roundtripMatch?.event || existingEntry?.ev),
+      matchedEventId: roundtripMatch?.event?.id || existingEntry?.ev?.id || null,
+      matchedSource: roundtripMatch?.event ? 'local invitation uid' : (existingEntry?.ev ? 'existing imported ics' : null),
+      decision: roundtripMatch?.event ? 'skip' : (existingEntry?.ev ? 'update' : 'import'),
+      reason: roundtripMatch?.event ? `roundtrip mirror ${roundtripMatch.reason}` : (existingEntry?.ev ? 'existing external event' : 'new external event'),
+      externalKey
+    });
+  }
   if (roundtripMatch?.event) {
     markLocalEventMirrored(roundtripMatch.event, plannerEvent, icsEvent, roundtripMatch.reason);
     seenRoundtripLocalEventIds.add(roundtripMatch.event.id);
@@ -7099,6 +7240,27 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
   });
 
   currentWeekEvents();
+  const importedDebugEvents = Object.values(state.weekEventsByWeek || {}).flatMap(weekEvents => Array.isArray(weekEvents) ? weekEvents : []).filter(isImportedIcsEvent);
+  console.log('[ICS SYNC DEBUG] before-save', {
+    importedCount: processedCount,
+    totalBefore,
+    importedEvents: importedDebugEvents
+      .filter(icsSyncDebugMatches)
+      .map(event => ({
+        id: event.id,
+        uid: event.uid || event.sourceUid || event.externalUid || null,
+        title: event.title || event.label,
+        date: event.date,
+        day: event.day,
+        start: event.start,
+        end: event.end,
+        source: event.source,
+        importSource: event.importSource,
+        stackedIntoId: event.stackedIntoId || null,
+        parentId: event.parentId || null,
+        hidden: event.localOverrides?.hidden || false
+      }))
+  });
   const afterSize = serializedSizeInfo(state);
   console.log('[ICS] State size before import', {
     bytes: beforeSize.bytes,
@@ -7120,6 +7282,25 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
     throw error;
   }
   console.log('[ICS] State saved locally; cloud save queued if enabled');
+  const savedIcsEvents = Object.values(state.weekEventsByWeek || {}).flatMap(weekEvents => Array.isArray(weekEvents) ? weekEvents : []).filter(isImportedIcsEvent);
+  console.log('[ICS SYNC DEBUG] after-save', {
+    totalAfter: Object.values(state.weekEventsByWeek || {}).reduce((total, weekEvents) => total + (Array.isArray(weekEvents) ? weekEvents.length : 0), 0),
+    savedIcsCount: savedIcsEvents.length,
+    testEventSaved: savedIcsEvents
+      .filter(icsSyncDebugMatches)
+      .map(event => ({
+        id: event.id,
+        uid: event.uid || event.sourceUid || event.externalUid || null,
+        title: event.title || event.label,
+        date: event.date,
+        day: event.day,
+        start: event.start,
+        end: event.end,
+        stackedIntoId: event.stackedIntoId || null,
+        parentId: event.parentId || null,
+        hidden: event.localOverrides?.hidden || false
+      }))
+  });
   renderAll();
   const allImportedStateEvents = Object.entries(state.weekEventsByWeek || {})
     .flatMap(([weekKey, events]) => (events || []).filter(isImportedIcsEvent).map(ev => ({ weekKey, ev })));
