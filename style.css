@@ -4664,6 +4664,23 @@ body:not(.special-events-drawer-open) .special-events-drawer-backdrop {
 }
 
 /* Bulk calendar selection */
+.bulk-select-mode-btn {
+  width: 34px;
+  min-width: 34px;
+  padding-inline: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bulk-select-mode-btn[aria-pressed="true"],
+.bulk-select-mode-btn.active {
+  border-color: rgba(56, 189, 248, 0.72);
+  background: rgba(56, 189, 248, 0.18);
+  color: #e0f2fe;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.14);
+}
+
 .bulk-action-bar {
   display: flex;
   align-items: center;

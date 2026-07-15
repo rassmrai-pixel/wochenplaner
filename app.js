@@ -142,6 +142,7 @@
   const bulkStatusBtn = document.getElementById('bulkStatusBtn');
   const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
   const bulkClearBtn = document.getElementById('bulkClearBtn');
+  const bulkExitBtn = document.getElementById('bulkExitBtn');
   const bulkActionModalBackdrop = document.getElementById('bulkActionModalBackdrop');
   const closeBulkActionModalBtn = document.getElementById('closeBulkActionModalBtn');
   const cancelBulkActionBtn = document.getElementById('cancelBulkActionBtn');
@@ -1077,17 +1078,18 @@
       ev?.isExternal ||
       ev?.importSource === 'ics' ||
       ev?.provider === 'ics' ||
+      ev?.externalReadOnly ||
       ev?.externalId ||
       ev?.externalCalendarId
     );
   }
 
   function isBulkSelectableEvent(ev) {
-    return Boolean(ev && isWeekMode() && !isIntegratedChild(ev) && !ev.allDay);
+    return Boolean(ev && isWeekMode() && !isIntegratedChild(ev) && !ev.allDay && !isExternalReadOnlyEvent(ev));
   }
 
   function isBulkEditableEvent(ev) {
-    return isBulkSelectableEvent(ev) && !isExternalReadOnlyEvent(ev);
+    return isBulkSelectableEvent(ev);
   }
 
   function selectedEvents() {
@@ -1134,14 +1136,16 @@
     const readOnly = selected.length - editable.length;
     if (bulkSelectModeBtn) {
       bulkSelectModeBtn.classList.toggle('active', bulkSelectionMode);
-      bulkSelectModeBtn.textContent = bulkSelectionMode ? 'Auswahl beenden' : 'Auswählen';
+      bulkSelectModeBtn.textContent = '🖊️';
+      bulkSelectModeBtn.setAttribute('aria-pressed', String(bulkSelectionMode));
+      bulkSelectModeBtn.title = bulkSelectionMode ? 'Sammelbearbeitung beenden' : 'Sammelbearbeitung aktivieren';
       bulkSelectModeBtn.disabled = !isWeekMode();
     }
     bulkActionBar.hidden = !bulkSelectionMode || !selected.length;
     const suffix = readOnly ? ` · ${editable.length} bearbeitbar` : '';
     bulkSelectionCount.textContent = `${selected.length} ${selected.length === 1 ? 'Termin' : 'Termine'} ausgewählt${suffix}`;
     const hasEditable = editable.length > 0;
-    [bulkInviteBtn, bulkCategoryBtn, bulkMoveBtn, bulkStatusBtn, bulkDeleteBtn].forEach(btn => { if (btn) btn.disabled = !hasEditable; });
+    [bulkInviteBtn, bulkDeleteBtn].forEach(btn => { if (btn) btn.disabled = !hasEditable; });
   }
 
   function parseBulkInviteEmails() {
@@ -1197,6 +1201,7 @@
     if (!editable.length) return alert('In der Auswahl gibt es keine bearbeitbaren Termine.');
     bulkActionType = type;
     [bulkInviteSection, bulkCategorySection, bulkMoveSection, bulkStatusSection].forEach(section => { if (section) section.style.display = 'none'; });
+    if (type !== 'invite') return;
     setBulkActionStatus('', '');
     if (bulkActionSubtitle) bulkActionSubtitle.textContent = `${editable.length} von ${selectedEvents().length} ausgewählten Terminen können bearbeitet werden.`;
     if (bulkActionModalBackdrop) bulkActionModalBackdrop.style.display = 'flex';
@@ -1276,6 +1281,10 @@
     if (!editable.length) throw new Error('Keine ausgewählten Termine können eingeladen werden.');
     const emails = parseBulkInviteEmails();
     const message = bulkInviteMessage?.value || '';
+    const routineEditable = editable.filter(routineParticipantScopeEligible);
+    const applyFutureRoutines = routineEditable.length
+      ? confirm(`${routineEditable.length} Routine-/Habit-Termine sind ausgewählt.\n\nOK = Teilnehmer zusätzlich für alle zukünftigen Termine dieser Routine übernehmen\nAbbrechen = Nur ausgewählte Instanzen einladen`)
+      : false;
     if (!cloudUser || !supabaseClient) throw new Error('Bitte einloggen, um Einladungen zu senden.');
     editable.forEach(ev => {
       const participants = eventParticipantList(ev);
@@ -1286,6 +1295,14 @@
       if (!ev.invitationUid) ev.invitationUid = invitationUidForEvent(ev);
       if (!Number.isInteger(Number(ev.invitationSequence))) ev.invitationSequence = 0;
       ev.updatedAt = new Date().toISOString();
+      if (applyFutureRoutines && routineParticipantScopeEligible(ev)) {
+        const templateEv = state.templateEvents.find(item => item.id === ev.templateEventId);
+        if (templateEv) {
+          syncParticipantsToEvent(templateEv, eventParticipantList(ev));
+          templateEv.inviteMessage = message;
+          touchEvent(templateEv);
+        }
+      }
     });
     saveState();
     await saveCloudState(state, { throwOnError: true });
@@ -3529,13 +3546,19 @@
     });
     div.querySelector('.event-bulk-select')?.addEventListener('click', e => {
       e.preventDefault();
-      e.stopPropagation();
+      e.stopImmediatePropagation();
       toggleBulkEventSelection(ev.id);
     });
     div.querySelector('.event-title')?.addEventListener('click', e => {
       if (!isMobileViewport() || bulkSelectionMode) return;
       e.stopPropagation();
       showEventTitlePopup(ev, e.currentTarget);
+    });
+    div.addEventListener('click', e => {
+      if (!bulkSelectionMode || !isBulkSelectableEvent(ev) || e.target.closest('input, button, select, textarea, a, .event-resize-handle')) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      toggleBulkEventSelection(ev.id);
     });
     div.querySelector('.event-resize-start')?.addEventListener('mousedown', e => startEventResize(ev, div, 'start', e));
     div.querySelector('.event-resize-end')?.addEventListener('mousedown', e => startEventResize(ev, div, 'end', e));
@@ -3546,7 +3569,12 @@
 
     div.addEventListener('mousedown', e => e.stopPropagation());
     div.addEventListener('click', e => e.stopPropagation());
-    div.addEventListener('dblclick', e => { e.preventDefault(); e.stopPropagation(); openEditor(ev.id); });
+    div.addEventListener('dblclick', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (bulkSelectionMode) return;
+      openEditor(ev.id);
+    });
     bindMobileEventDoubleTap(div, ev);
     bindBulkLongPress(div, ev);
     div.addEventListener('dragstart', e => {
@@ -5876,11 +5904,9 @@ function toggleMissed(eventId) {
   if (modalAddSubtaskBtn) modalAddSubtaskBtn.onclick = addEventDraftSubtask;
   if (modalSubtaskInput) modalSubtaskInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addEventDraftSubtask(); } });
   if (bulkSelectModeBtn) bulkSelectModeBtn.onclick = () => setBulkSelectionMode(!bulkSelectionMode);
-  if (bulkClearBtn) bulkClearBtn.onclick = () => setBulkSelectionMode(false);
+  if (bulkClearBtn) bulkClearBtn.onclick = () => { selectedEventIds.clear(); renderCalendar(); renderBulkActionBar(); };
+  if (bulkExitBtn) bulkExitBtn.onclick = () => setBulkSelectionMode(false);
   if (bulkInviteBtn) bulkInviteBtn.onclick = () => openBulkActionModal('invite');
-  if (bulkCategoryBtn) bulkCategoryBtn.onclick = () => openBulkActionModal('category');
-  if (bulkMoveBtn) bulkMoveBtn.onclick = () => openBulkActionModal('move');
-  if (bulkStatusBtn) bulkStatusBtn.onclick = () => openBulkActionModal('status');
   if (bulkDeleteBtn) bulkDeleteBtn.onclick = deleteBulkSelectedEvents;
   if (closeBulkActionModalBtn) closeBulkActionModalBtn.onclick = closeBulkActionModal;
   if (cancelBulkActionBtn) cancelBulkActionBtn.onclick = closeBulkActionModal;

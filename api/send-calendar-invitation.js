@@ -18,11 +18,20 @@ function supabaseConfig() {
 
 function emailConfig() {
   return {
+    provider: 'resend',
     resendApiKey: process.env.RESEND_API_KEY || '',
     fromEmail: process.env.CALENDAR_FROM_EMAIL || '',
     organizerName: process.env.CALENDAR_ORGANIZER_NAME || 'Wochenplaner',
     organizerEmail: process.env.CALENDAR_ORGANIZER_EMAIL || process.env.CALENDAR_FROM_EMAIL || ''
   };
+}
+
+function missingEmailConfig(email) {
+  const missing = [];
+  if (!email.resendApiKey) missing.push('RESEND_API_KEY');
+  if (!email.fromEmail) missing.push('CALENDAR_FROM_EMAIL');
+  if (!email.organizerEmail) missing.push('CALENDAR_ORGANIZER_EMAIL oder CALENDAR_FROM_EMAIL');
+  return missing;
 }
 
 function pad2(value) {
@@ -180,7 +189,7 @@ function buildInviteIcs({ event, weekKey, method, sequence, uid, message, organi
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Perfekte Woche Planer//Calendar Invitation//DE',
+    'PRODID:-//Wochenplaner//Calendar Invitation//DE',
     'CALSCALE:GREGORIAN',
     `METHOD:${method}`,
     `X-WR-CALNAME:${escapeIcsText('Wochenplaner')}`,
@@ -284,8 +293,13 @@ function findEventRecord(state, eventId, preferredWeekKey) {
 }
 
 async function sendViaResend({ to, subject, text, html, ics, method, email }) {
-  if (!email.resendApiKey || !email.fromEmail || !email.organizerEmail) {
-    throw Object.assign(new Error('Mailversand ist serverseitig nicht konfiguriert.'), { statusCode: 500 });
+  const missing = missingEmailConfig(email);
+  if (missing.length) {
+    throw Object.assign(new Error(`Mailversand ist serverseitig nicht konfiguriert. Fehlende Environment Variables: ${missing.join(', ')}.`), {
+      statusCode: 500,
+      code: 'MAIL_CONFIG_MISSING',
+      missingConfig: missing
+    });
   }
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -405,8 +419,14 @@ async function sendCalendarInvitationHandler(req, res) {
     });
   } catch (error) {
     const status = error.statusCode || 500;
-    if (status >= 500) console.error('[CalendarInvite] failed', { status, message: error.message, providerBody: error.providerBody });
-    return json(res, status, { error: status >= 500 ? (error.message || 'Einladung konnte nicht gesendet werden.') : error.message });
+    if (status >= 500) console.error('[CalendarInvite] failed', { status, message: error.message, code: error.code, providerBody: error.providerBody });
+    const payload = { error: status >= 500 ? (error.message || 'Einladung konnte nicht gesendet werden.') : error.message };
+    if (error.code === 'MAIL_CONFIG_MISSING') {
+      payload.code = error.code;
+      payload.provider = 'resend';
+      payload.missingConfig = error.missingConfig || [];
+    }
+    return json(res, status, payload);
   }
 }
 
@@ -416,6 +436,7 @@ module.exports._test = {
   validateAttendees,
   findEventRecord,
   isUnsupportedEvent,
+  missingEmailConfig,
   escapeIcsText,
   escapeHtml,
   foldLine
