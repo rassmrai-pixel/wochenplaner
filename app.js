@@ -2409,6 +2409,29 @@
     return Boolean(ev?.stackedIntoId || ev?.parentId);
   }
 
+  function logIcsBlockViewEvent(block, event, foundInChildren, foundInSubtasks) {
+    if (!icsSyncDebugMatches(event)) return;
+    console.log('[ICS VIEW DEBUG] block-view-event', JSON.stringify({
+      id: event?.id,
+      uid: event?.uid || event?.sourceUid || event?.externalUid || null,
+      title: event?.title || event?.label,
+      date: event?.date,
+      day: event?.day,
+      start: event?.start,
+      end: event?.end,
+      source: event?.source,
+      importSource: event?.importSource,
+      parentId: event?.parentId,
+      stackedIntoId: event?.stackedIntoId,
+      hidden: event?.hidden,
+      localHidden: event?.localOverrides?.hidden,
+      isSubtask: event?.isSubtask,
+      blockId: block?.id,
+      foundInChildren: Boolean(foundInChildren),
+      foundInSubtasks: Boolean(foundInSubtasks)
+    }, null, 2));
+  }
+
   function hasScheduledTime(ev) {
     const start = Number(ev?.start);
     const end = Number(ev?.end);
@@ -2564,6 +2587,12 @@
     const ev = eventId ? currentEvents().find(item => item.id === eventId) : null;
     const children = integratedEventsForEvent(eventId);
     const subtasks = eventId === editingId ? eventDraftSubtasks : cloneEventSubtasks(ev);
+    children.forEach(child => logIcsBlockViewEvent(
+      ev,
+      child,
+      true,
+      subtasks.some(subtask => subtask.id === child.id)
+    ));
     const progress = blockFulfillmentStats(ev, subtasks);
     if (!eventId || !ev || !progress.containedTotal) {
       modalIntegratedEvents.innerHTML = '';
@@ -3727,6 +3756,34 @@
     const fulfillmentBadge = fulfillment.containedTotal ? `<div class="event-fulfillment-badge">${fulfillment.done}/${fulfillment.total}</div>` : '';
     const integratedBadge = integratedCount ? `<div class="event-integrated-badge">+${integratedCount} im Block</div>` : '';
     const scheduledChildren = layoutEmbeddedChildren(scheduledIntegratedEventsForEvent(ev));
+    integratedEventsForEvent(ev.id).filter(icsSyncDebugMatches).forEach(child => {
+      const foundInLayout = scheduledChildren.some(layoutChild => layoutChild.id === child.id);
+      console.log('[ICS VIEW DEBUG] week-view-event', JSON.stringify({
+        id: child.id,
+        uid: child.uid || child.sourceUid || child.externalUid || null,
+        title: child.title || child.label,
+        date: child.date,
+        day: child.day,
+        start: child.start,
+        end: child.end,
+        source: child.source,
+        importSource: child.importSource,
+        parentId: child.parentId || null,
+        stackedIntoId: child.stackedIntoId || null,
+        localHidden: child.localOverrides?.hidden || false,
+        blockId: ev.id,
+        blockDay: ev.day,
+        blockStart: ev.start,
+        blockEnd: ev.end,
+        hasScheduledTime: hasScheduledTime(child),
+        sameDayAsBlock: Number(child.day) === Number(ev.day),
+        startsInsideBlock: Number(child.start) >= Number(ev.start),
+        endsInsideBlock: Number(child.end) <= Number(ev.end),
+        foundInLayout,
+        renderedAsTopLevel: false,
+        exclusionReason: foundInLayout ? null : 'integrated child outside parent day/time bounds'
+      }, null, 2));
+    });
     const sameStartChildren = scheduledChildren.filter(child => Number(child.start) === Number(ev.start));
     const hasStartAlignedChild = sameStartChildren.length > 0;
     const compactDetailsOpen = hasStartAlignedChild && openCompactEventIds.has(ev.id);
@@ -4348,6 +4405,12 @@ return div;
           </div>`).join('')}
       </div>` : '';
     const integratedChildren = integratedEventsForEvent(ev.id);
+    integratedChildren.forEach(child => logIcsBlockViewEvent(
+      ev,
+      child,
+      true,
+      Array.isArray(ev.subtasks) && ev.subtasks.some(subtask => subtask.id === child.id)
+    ));
     const integratedHtml = integratedChildren.length ? `
       <div class="habit-integrated-list">
         <div class="habit-integrated-title">Im Block · ${integratedChildren.length}</div>
