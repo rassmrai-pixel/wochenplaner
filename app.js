@@ -1071,7 +1071,9 @@
 
   function normalizeExternalLocalOverrides(overrides = {}) {
     const raw = overrides && typeof overrides === 'object' ? overrides : {};
-    const numberOrNull = value => Number.isFinite(Number(value)) ? Number(value) : null;
+    const numberOrNull = value => value === null || value === undefined || value === ''
+      ? null
+      : (Number.isFinite(Number(value)) ? Number(value) : null);
     return {
       title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim() : null,
       label: typeof raw.label === 'string' && raw.label.trim() ? raw.label.trim() : null,
