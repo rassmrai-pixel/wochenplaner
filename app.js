@@ -6636,16 +6636,7 @@ function findRoundtripLocalEvent(plannerEvent, icsEvent, invitationUidIndex) {
   const uid = String(plannerEvent.sourceUid || plannerEvent.externalUid || icsEvent.sourceUid || icsEvent.uid || '').trim().toLowerCase();
   if (uid && invitationUidIndex.has(uid)) return { event: invitationUidIndex.get(uid), reason: 'uid' };
 
-  let best = null;
-  ownRoundtripCandidateEvents().forEach(localEv => {
-    if (!roundtripTimesMatch(localEv, plannerEvent)) return;
-    const evidence = roundtripFallbackEvidence(localEv, plannerEvent, icsEvent);
-    const hasStrongIdentity = evidence.organizerMatches || (evidence.participantMatches && evidence.locationMatches);
-    if (evidence.score >= 7 && evidence.titleMatches && evidence.timeMatches && hasStrongIdentity && (!best || evidence.score > best.score)) {
-      best = { event: localEv, reason: 'fallback', score: evidence.score };
-    }
-  });
-  return best;
+  return null;
 }
 
 function markLocalEventMirrored(localEv, plannerEvent, icsEvent, reason) {
@@ -7069,23 +7060,19 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
   console.log('[ICS] Client missing events:', missingCount);
   console.log('[ICS] Client skipped events:', skippedEvents.length);
   console.table(skipReasonsSummary);
+  const hiddenImportedCount = allImportedStateEvents.filter(({ ev }) => isEventLocallyHidden(ev)).length;
+  const currentWeekImportedCount = allImportedStateEvents.filter(({ weekKey }) => weekKey === state.currentWeekStart).length;
+  const currentWeekHiddenImportedCount = allImportedStateEvents.filter(({ weekKey, ev }) => weekKey === state.currentWeekStart && isEventLocallyHidden(ev)).length;
   console.log('[ICS] Imported ICS state events:', allImportedStateEvents.length);
   console.log('[ICS] Visible ICS events in current week:', visibleImportedStateEvents.length);
   console.log('[ICS] Current visible week:', state.currentWeekStart);
-  console.log('[ICS] Imported ICS state sample:', allImportedStateEvents.slice(0, 10).map(({ weekKey, ev }) => ({
-    weekKey,
-    id: ev.id,
-    title: ev.label,
-    day: ev.day,
-    start: ev.start,
-    end: ev.end,
-    categoryId: ev.categoryId,
-    importSource: ev.importSource,
-    provider: ev.provider,
-    externalId: ev.externalId,
-    sourceId: ev.sourceId || null,
-    visibleInCurrentWeek: weekKey === state.currentWeekStart
-  })));
+  console.log('[ICS] External visibility diagnostics', {
+    importedTotal: allImportedStateEvents.length,
+    importedCurrentWeek: currentWeekImportedCount,
+    visibleCurrentWeek: visibleImportedStateEvents.length,
+    hiddenTotal: hiddenImportedCount,
+    hiddenCurrentWeek: currentWeekHiddenImportedCount
+  });
 
   return {
     importedCount: createdCount,
