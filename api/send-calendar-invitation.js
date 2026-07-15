@@ -131,10 +131,22 @@ function stableUid(event, host) {
 }
 
 function validateAttendees(event) {
-  const attendees = Array.isArray(event.attendees) ? event.attendees : [];
+  const rawParticipants = Array.isArray(event.participants) ? event.participants : event.attendees;
+  const attendees = Array.isArray(rawParticipants) ? rawParticipants : [];
+  const seen = new Set();
   return attendees
-    .map(att => ({ ...att, email: normalizeEmail(att.email), name: String(att.name || '').trim() }))
-    .filter(att => isValidEmail(att.email))
+    .map(att => ({
+      ...att,
+      email: normalizeEmail(att.email),
+      name: String(att.name || '').trim(),
+      status: att.status || att.invitationStatus || 'pending',
+      invitationStatus: att.invitationStatus || att.status || 'pending'
+    }))
+    .filter(att => {
+      if (!isValidEmail(att.email) || seen.has(att.email)) return false;
+      seen.add(att.email);
+      return true;
+    })
     .slice(0, MAX_ATTENDEES);
 }
 
@@ -144,9 +156,6 @@ function eventDateKey(event, weekKey) {
 
 function isUnsupportedEvent(event) {
   return Boolean(
-    event.source === 'routine' ||
-    event.stackedIntoId ||
-    event.parentId ||
     event.allDay ||
     event.isExternal ||
     event.importSource === 'ics' ||
@@ -327,12 +336,13 @@ async function sendCalendarInvitationHandler(req, res) {
     const record = findEventRecord(state, eventId, weekKey);
     if (!record) throw Object.assign(new Error('Termin nicht gefunden.'), { statusCode: 404 });
     const event = record.event;
-    if (isUnsupportedEvent(event)) throw Object.assign(new Error('Einladungen sind nur für normale einzelne Kalendertermine verfügbar.'), { statusCode: 400 });
+    if (isUnsupportedEvent(event)) throw Object.assign(new Error('Einladungen sind für eigene Termine mit Uhrzeit verfügbar.'), { statusCode: 400 });
     const attendees = validateAttendees(event);
     if (!attendees.length) throw Object.assign(new Error('Keine gültigen Teilnehmer.'), { statusCode: 400 });
-    if ((Array.isArray(event.attendees) ? event.attendees.length : 0) > MAX_ATTENDEES) throw Object.assign(new Error(`Maximal ${MAX_ATTENDEES} Teilnehmer pro Termin.`), { statusCode: 400 });
+    if ((Array.isArray(event.participants || event.attendees) ? (event.participants || event.attendees).length : 0) > MAX_ATTENDEES) throw Object.assign(new Error(`Maximal ${MAX_ATTENDEES} Teilnehmer pro Termin.`), { statusCode: 400 });
 
-    event.attendees = attendees;
+    event.participants = attendees.map(att => ({ ...att }));
+    event.attendees = attendees.map(att => ({ ...att }));
     const email = emailConfig();
     const now = new Date().toISOString();
     const previousSequence = Number(event.invitationSequence || 0);
@@ -377,10 +387,12 @@ async function sendCalendarInvitationHandler(req, res) {
     event.invitationError = null;
     event.attendees = attendees.map(att => ({
       ...att,
+      status: method === 'CANCEL' ? 'cancelled' : 'sent',
       invitationStatus: method === 'CANCEL' ? 'cancelled' : 'sent',
       invitationError: null,
       invitationSentAt: now
     }));
+    event.participants = event.attendees.map(att => ({ ...att }));
     record.events[record.index] = event;
     await savePlannerState(user.id, state, config);
 

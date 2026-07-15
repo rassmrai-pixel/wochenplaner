@@ -327,22 +327,26 @@
       </div>
       <div class="footer-note" id="modalInfo">Zeiten werden in 15-Minuten-Schritten gespeichert.</div>
 
-      <section class="event-invite-panel" id="eventInvitePanel">
-        <div class="event-invite-head">
-          <div>
-            <strong>Teilnehmer einladen</strong>
-            <span id="eventInviteSummary">Noch keine Teilnehmer</span>
+      <section class="event-invite-panel collapsed" id="eventInvitePanel">
+        <button class="event-invite-toggle" id="eventInviteToggle" type="button" aria-expanded="false">
+          <span class="event-invite-toggle-icon" aria-hidden="true">▶</span>
+          <span>Teilnehmer &amp; Einladungen</span>
+          <small id="eventInviteSummary">Noch keine Teilnehmer</small>
+        </button>
+        <div class="event-invite-content" id="eventInviteContent">
+          <div class="event-invite-readonly-note" id="eventInviteReadonlyNote" hidden>Teilnehmer können für importierte Kalender nicht bearbeitet werden.</div>
+          <div class="event-invite-input-row">
+            <input id="eventInviteEmailInput" type="text" inputmode="email" placeholder="E-Mail-Adresse eingeben" />
+            <button class="small ghost" id="addInviteEmailBtn" type="button">Teilnehmer hinzufügen</button>
           </div>
-          <button class="small ghost" id="sendInviteBtn" type="button">Einladung senden</button>
+          <div class="event-invite-chips" id="eventInviteChips"></div>
+          <label for="eventInviteMessage">Nachricht an Teilnehmer optional</label>
+          <textarea id="eventInviteMessage" rows="2" placeholder="Hier ist die Einladung zu unserem Termin."></textarea>
+          <div class="event-invite-actions">
+            <button class="small ghost" id="sendInviteBtn" type="button">Einladung senden</button>
+          </div>
+          <div class="event-invite-status" id="eventInviteStatus"></div>
         </div>
-        <div class="event-invite-input-row">
-          <input id="eventInviteEmailInput" type="text" inputmode="email" placeholder="E-Mail-Adresse eingeben" />
-          <button class="small ghost" id="addInviteEmailBtn" type="button">Hinzufügen</button>
-        </div>
-        <div class="event-invite-chips" id="eventInviteChips"></div>
-        <label for="eventInviteMessage">Nachricht an Teilnehmer optional</label>
-        <textarea id="eventInviteMessage" rows="2" placeholder="Hier ist die Einladung zu unserem Termin."></textarea>
-        <div class="event-invite-status" id="eventInviteStatus"></div>
       </section>
 
       <label for="modalStackedInto">In bestehenden Block integrieren</label>

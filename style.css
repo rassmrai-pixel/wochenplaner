@@ -3347,35 +3347,61 @@ body:not(.todo-drawer-open) #todoDrawerBackdrop {
 
 .event-invite-panel {
   margin-top: 14px;
-  padding: 12px;
+  padding: 0;
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 14px;
   background: rgba(15, 23, 42, 0.48);
-  display: grid;
-  gap: 10px;
+  overflow: hidden;
 }
 
-.event-invite-head {
-  display: flex;
+.event-invite-toggle {
+  width: 100%;
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.event-invite-head > div {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.event-invite-head strong {
-  font-size: 13px;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--text);
+  text-align: left;
+  font-weight: 850;
 }
 
-.event-invite-head span,
+.event-invite-toggle:hover {
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.event-invite-toggle-icon {
+  width: 18px;
+  color: var(--muted);
+}
+
+.event-invite-toggle small,
 .event-invite-status {
   color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.event-invite-content {
+  display: grid;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.event-invite-content[hidden] {
+  display: none !important;
+}
+
+.event-invite-readonly-note {
+  padding: 9px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 10px;
+  color: var(--muted);
+  background: rgba(2, 6, 23, 0.28);
   font-size: 12px;
 }
 
@@ -3443,6 +3469,11 @@ body:not(.todo-drawer-open) #todoDrawerBackdrop {
   color: #93c5fd;
 }
 
+.event-invite-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .event-invite-panel textarea {
   width: 100%;
   min-height: 64px;
@@ -3463,17 +3494,12 @@ body:not(.todo-drawer-open) #todoDrawerBackdrop {
 }
 
 @media (max-width: 520px) {
-  .event-invite-head,
   .event-invite-input-row {
     grid-template-columns: 1fr;
   }
 
-  .event-invite-head {
-    display: grid;
-  }
-
-  .event-invite-head button,
-  .event-invite-input-row button {
+  .event-invite-input-row button,
+  .event-invite-actions button {
     width: 100%;
   }
 }

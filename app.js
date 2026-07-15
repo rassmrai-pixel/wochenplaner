@@ -120,6 +120,7 @@
   let dayTodoDraftSubtasks = [];
   let eventDraftSubtasks = [];
   let inviteDraftAttendees = [];
+  let invitePanelExpanded = false;
   let bulkSelectionMode = false;
   const selectedEventIds = new Set();
   let bulkActionType = null;
@@ -173,6 +174,9 @@
   const modalStackedInto = document.getElementById('modalStackedInto');
   const modalIntegratedEvents = document.getElementById('modalIntegratedEvents');
   const eventInvitePanel = document.getElementById('eventInvitePanel');
+  const eventInviteToggle = document.getElementById('eventInviteToggle');
+  const eventInviteContent = document.getElementById('eventInviteContent');
+  const eventInviteReadonlyNote = document.getElementById('eventInviteReadonlyNote');
   const eventInviteSummary = document.getElementById('eventInviteSummary');
   const eventInviteEmailInput = document.getElementById('eventInviteEmailInput');
   const addInviteEmailBtn = document.getElementById('addInviteEmailBtn');
@@ -390,6 +394,46 @@
     }
   }
 
+  function normalizeParticipant(att) {
+    const email = normalizeInviteEmail(att?.email || att);
+    if (!isValidInviteEmail(email)) return null;
+    return {
+      email,
+      name: String(att?.name || '').trim(),
+      status: att?.status || att?.invitationStatus || 'pending',
+      invitationStatus: att?.invitationStatus || att?.status || 'pending',
+      invitationError: att?.invitationError || null,
+      invitationSentAt: att?.invitationSentAt || null
+    };
+  }
+
+  function normalizeParticipantList(value) {
+    const seen = new Set();
+    const list = Array.isArray(value) ? value : [];
+    return list.map(normalizeParticipant).filter(Boolean).filter(att => {
+      if (seen.has(att.email)) return false;
+      seen.add(att.email);
+      return true;
+    }).slice(0, MAX_INVITE_ATTENDEES);
+  }
+
+  function eventParticipantList(ev) {
+    return normalizeParticipantList(Array.isArray(ev?.participants) ? ev.participants : ev?.attendees);
+  }
+
+  function syncParticipantsToEvent(ev, participants = inviteDraftAttendees) {
+    if (!ev) return;
+    const normalized = normalizeParticipantList(participants);
+    ev.participants = normalized.map(att => ({ ...att }));
+    ev.attendees = normalized.map(att => ({ ...att }));
+  }
+
+  function participantSignature(participants) {
+    return normalizeParticipantList(participants)
+      .map(att => `${att.email}|${att.name || ''}|${att.status || att.invitationStatus || 'pending'}`)
+      .join('\n');
+  }
+
   function normalizeState(input) {
     const shouldMigrateHomeView = input.uiHomeVersion !== 'calendar-main-v1';
     const s = { ...clone(defaults), ...input };
@@ -460,13 +504,8 @@
         isExternal: ev.isExternal ?? (ev.importSource === 'ics' || ev.provider === 'ics'),
         autoComplete: Boolean(ev.autoComplete || ev.autoCompleteFromSubtasks),
         autoCompleteFromSubtasks: Boolean(ev.autoCompleteFromSubtasks),
-        attendees: Array.isArray(ev.attendees) ? ev.attendees.map(att => ({
-          email: String(att.email || '').trim().toLowerCase(),
-          name: String(att.name || '').trim(),
-          invitationStatus: att.invitationStatus || 'pending',
-          invitationError: att.invitationError || null,
-          invitationSentAt: att.invitationSentAt || null
-        })).filter(att => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(att.email)).slice(0, MAX_INVITE_ATTENDEES) : [],
+        participants: normalizeParticipantList(Array.isArray(ev.participants) ? ev.participants : ev.attendees),
+        attendees: normalizeParticipantList(Array.isArray(ev.participants) ? ev.participants : ev.attendees),
         inviteMessage: ev.inviteMessage || '',
         invitationUid: ev.invitationUid || null,
         invitationSequence: Number.isInteger(Number(ev.invitationSequence)) ? Number(ev.invitationSequence) : 0,
@@ -1239,9 +1278,10 @@
     const message = bulkInviteMessage?.value || '';
     if (!cloudUser || !supabaseClient) throw new Error('Bitte einloggen, um Einladungen zu senden.');
     editable.forEach(ev => {
-      if (!Array.isArray(ev.attendees)) ev.attendees = [];
-      const existing = new Set((ev.attendees || []).map(att => att.email));
-      emails.forEach(email => { if (!existing.has(email)) ev.attendees.push({ email, name: '', invitationStatus: 'pending' }); });
+      const participants = eventParticipantList(ev);
+      const existing = new Set(participants.map(att => att.email));
+      emails.forEach(email => { if (!existing.has(email)) participants.push({ email, name: '', status: 'pending', invitationStatus: 'pending' }); });
+      syncParticipantsToEvent(ev, participants);
       ev.inviteMessage = message;
       if (!ev.invitationUid) ev.invitationUid = invitationUidForEvent(ev);
       if (!Number.isInteger(Number(ev.invitationSequence))) ev.invitationSequence = 0;
@@ -1269,7 +1309,8 @@
         ev.invitationSentAt = ev.invitationSentAt || new Date().toISOString();
         ev.invitationUpdatedAt = new Date().toISOString();
         ev.invitationError = null;
-        ev.attendees = ev.attendees.map(att => emails.includes(att.email) ? { ...att, invitationStatus: 'sent', invitationError: null, invitationSentAt: new Date().toISOString() } : att);
+        ev.attendees = eventParticipantList(ev).map(att => emails.includes(att.email) ? { ...att, status: 'sent', invitationStatus: 'sent', invitationError: null, invitationSentAt: new Date().toISOString() } : att);
+        ev.participants = ev.attendees.map(att => ({ ...att }));
         ok += 1;
       } catch (error) {
         ev.invitationStatus = 'failed';
@@ -1305,7 +1346,7 @@
     if (!editable.length) return alert('In der Auswahl gibt es keine löschbaren Termine.');
     const readOnly = selectedReadOnlyEvents().length;
     if (!confirm(`Möchtest du wirklich ${editable.length} ${editable.length === 1 ? 'Termin' : 'Termine'} löschen?${readOnly ? ` ${readOnly} schreibgeschützte Termine bleiben erhalten.` : ''}`)) return;
-    const invited = editable.filter(ev => ev.attendees?.length && ev.invitationSentAt);
+    const invited = editable.filter(ev => eventParticipantList(ev).length && ev.invitationSentAt);
     if (invited.length) {
       const sendCancel = confirm(`${invited.length} Termine haben bereits versendete Einladungen. OK = Absagen senden und löschen. Abbrechen = nur in meiner App löschen oder im nächsten Dialog abbrechen.`);
       if (!sendCancel && !confirm('Nur in meiner App löschen?')) return;
@@ -1315,7 +1356,7 @@
         const previousInviteMessage = eventInviteMessage?.value || '';
         for (const ev of invited) {
           editingId = ev.id;
-          inviteDraftAttendees = Array.isArray(ev.attendees) ? ev.attendees.map(att => ({ ...att })) : [];
+          inviteDraftAttendees = eventParticipantList(ev).map(att => ({ ...att }));
           if (eventInviteMessage) eventInviteMessage.value = ev.inviteMessage || '';
           await sendCalendarInvitationForCurrentEvent('CANCEL');
         }
@@ -3505,7 +3546,7 @@
 
     div.addEventListener('mousedown', e => e.stopPropagation());
     div.addEventListener('click', e => e.stopPropagation());
-    div.addEventListener('dblclick', e => { e.preventDefault(); e.stopPropagation(); if (ev.editable !== false) openEditor(ev.id); });
+    div.addEventListener('dblclick', e => { e.preventDefault(); e.stopPropagation(); openEditor(ev.id); });
     bindMobileEventDoubleTap(div, ev);
     bindBulkLongPress(div, ev);
     div.addEventListener('dragstart', e => {
@@ -3597,8 +3638,36 @@ return div;
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeInviteEmail(value));
   }
 
+  function canManageParticipants(ev) {
+    return Boolean(ev && !ev.allDay && hasScheduledTime(ev) && !isExternalReadOnlyEvent(ev));
+  }
+
   function canInviteEvent(ev) {
-    return Boolean(ev && isWeekMode() && !ev.stackedIntoId && !ev.parentId && ev.source !== 'routine' && !ev.isExternal && ev.importSource !== 'ics' && !ev.allDay);
+    return Boolean(ev && isWeekMode() && canManageParticipants(ev));
+  }
+
+  function routineParticipantScopeEligible(ev) {
+    return Boolean(ev?.source === 'routine' && ev.templateEventId && !isTemplateMode());
+  }
+
+  function applyParticipantsToRoutineTemplate(instanceEv) {
+    if (!routineParticipantScopeEligible(instanceEv)) return false;
+    const templateEv = state.templateEvents.find(item => item.id === instanceEv.templateEventId);
+    if (!templateEv) return false;
+    syncParticipantsToEvent(templateEv, inviteDraftAttendees);
+    templateEv.inviteMessage = eventInviteMessage?.value || '';
+    touchEvent(templateEv);
+    return true;
+  }
+
+  function renderInvitePanelState() {
+    if (!eventInvitePanel || !eventInviteToggle) return;
+    eventInvitePanel.classList.toggle('collapsed', !invitePanelExpanded);
+    eventInvitePanel.classList.toggle('expanded', invitePanelExpanded);
+    eventInviteToggle.setAttribute('aria-expanded', String(invitePanelExpanded));
+    const icon = eventInviteToggle.querySelector('.event-invite-toggle-icon');
+    if (icon) icon.textContent = invitePanelExpanded ? '▼' : '▶';
+    if (eventInviteContent) eventInviteContent.hidden = !invitePanelExpanded;
   }
 
   function invitationUidForEvent(ev) {
@@ -3615,30 +3684,52 @@ return div;
 
   function renderInviteAttendees(ev = currentEvents().find(item => item.id === editingId)) {
     if (!eventInviteChips) return;
+    const inviteAllowed = ev ? canManageParticipants(ev) : isWeekMode();
+    const readOnlyExternal = Boolean(ev && isExternalReadOnlyEvent(ev));
     eventInviteChips.innerHTML = '';
     inviteDraftAttendees.forEach((att, index) => {
       const chip = document.createElement('span');
-      chip.className = `event-invite-chip status-${att.invitationStatus || 'pending'}`;
-      chip.innerHTML = `<span>${escapeHtml(att.email)}</span><button type="button" title="Entfernen" aria-label="Teilnehmer entfernen">×</button>`;
-      chip.querySelector('button').onclick = () => {
-        inviteDraftAttendees.splice(index, 1);
-        renderInviteAttendees(ev);
-      };
+      chip.className = `event-invite-chip status-${att.invitationStatus || att.status || 'pending'}`;
+      const label = att.name ? `${att.name} · ${att.email}` : att.email;
+      chip.innerHTML = `<span>${escapeHtml(label)}</span>${inviteAllowed ? '<button type="button" title="Entfernen" aria-label="Teilnehmer entfernen">×</button>' : ''}`;
+      const removeBtn = chip.querySelector('button');
+      if (removeBtn) {
+        removeBtn.onclick = () => {
+          inviteDraftAttendees.splice(index, 1);
+          setInviteStatus('', '');
+          renderInviteAttendees(ev);
+        };
+      }
       eventInviteChips.appendChild(chip);
     });
     if (eventInviteSummary) {
       const count = inviteDraftAttendees.length;
       eventInviteSummary.textContent = count ? `${count} Teilnehmer` : 'Noch keine Teilnehmer';
     }
-    const inviteAllowed = ev ? canInviteEvent(ev) : isWeekMode();
-    if (eventInviteEmailInput) eventInviteEmailInput.disabled = !inviteAllowed;
+    if (eventInviteReadonlyNote) {
+      eventInviteReadonlyNote.hidden = !readOnlyExternal;
+      eventInviteReadonlyNote.textContent = readOnlyExternal
+        ? 'Teilnehmer können für importierte Kalender nicht bearbeitet werden.'
+        : '';
+    }
+    if (eventInviteEmailInput) {
+      eventInviteEmailInput.disabled = !inviteAllowed;
+      eventInviteEmailInput.parentElement.style.display = inviteAllowed ? '' : 'none';
+    }
     if (addInviteEmailBtn) addInviteEmailBtn.disabled = !inviteAllowed;
-    if (eventInviteMessage) eventInviteMessage.disabled = !inviteAllowed;
+    if (eventInviteMessage) {
+      eventInviteMessage.disabled = !inviteAllowed;
+      eventInviteMessage.previousElementSibling.style.display = inviteAllowed ? '' : 'none';
+      eventInviteMessage.style.display = inviteAllowed ? '' : 'none';
+    }
     if (sendInviteBtn) {
       sendInviteBtn.textContent = ev?.invitationSentAt ? 'Aktualisierung senden' : 'Einladung senden';
-      sendInviteBtn.disabled = !editingId || !inviteAllowed || !inviteDraftAttendees.length;
+      sendInviteBtn.disabled = !editingId || !canInviteEvent(ev) || !inviteDraftAttendees.length;
+      sendInviteBtn.parentElement.style.display = inviteAllowed ? '' : 'none';
     }
+    renderInvitePanelState();
   }
+
 
   function addInviteEmailFromInput() {
     if (!eventInviteEmailInput) return true;
@@ -3651,13 +3742,14 @@ return div;
       }
       if (inviteDraftAttendees.some(att => att.email === email)) {
         setInviteStatus(`Diese Adresse ist bereits hinzugefügt: ${email}`, 'error');
+        if (eventInviteEmailInput) eventInviteEmailInput.value = '';
         return false;
       }
       if (inviteDraftAttendees.length >= MAX_INVITE_ATTENDEES) {
         setInviteStatus(`Maximal ${MAX_INVITE_ATTENDEES} Teilnehmer pro Termin.`, 'error');
         return false;
       }
-      inviteDraftAttendees.push({ email, name: '', invitationStatus: 'pending' });
+      inviteDraftAttendees.push({ email, name: '', status: 'pending', invitationStatus: 'pending' });
     }
     eventInviteEmailInput.value = '';
     setInviteStatus('', '');
@@ -3666,7 +3758,7 @@ return div;
   }
 
   function invitationSummary(ev) {
-    if (!ev?.attendees?.length) return 'Noch nicht gesendet';
+    if (!eventParticipantList(ev).length) return 'Noch nicht gesendet';
     if (ev.invitationStatus === 'cancelled') return 'Absage gesendet';
     if (ev.invitationStatus === 'sent' && ev.invitationSentAt) return `Einladung gesendet am ${new Date(ev.invitationSentAt).toLocaleString('de-DE')}`;
     if (ev.invitationStatus === 'updated' && ev.invitationUpdatedAt) return `Aktualisierte Einladung gesendet am ${new Date(ev.invitationUpdatedAt).toLocaleString('de-DE')}`;
@@ -3675,21 +3767,22 @@ return div;
   }
 
   function applyInviteDraftToEvent(ev) {
-    ev.attendees = inviteDraftAttendees.map(att => ({ ...att }));
+    syncParticipantsToEvent(ev, inviteDraftAttendees);
     ev.inviteMessage = eventInviteMessage?.value || '';
-    if (ev.attendees.length && !ev.invitationUid) ev.invitationUid = invitationUidForEvent(ev);
+    if (ev.participants.length && !ev.invitationUid) ev.invitationUid = invitationUidForEvent(ev);
     if (!Number.isInteger(Number(ev.invitationSequence))) ev.invitationSequence = 0;
     if (!ev.invitationStatus) ev.invitationStatus = 'not-sent';
   }
+
 
   async function sendCalendarInvitationForCurrentEvent(method = 'REQUEST') {
     if (!editingId) { setInviteStatus('Bitte speichere den Termin zuerst.', 'error'); return false; }
     if (!addInviteEmailFromInput()) return false;
     const ev = currentEvents().find(item => item.id === editingId);
     if (!ev) { setInviteStatus('Termin nicht gefunden.', 'error'); return false; }
-    if (!canInviteEvent(ev)) { setInviteStatus('Einladungen sind nur für normale einzelne Kalendertermine verfügbar.', 'error'); return false; }
+    if (!canInviteEvent(ev)) { setInviteStatus(isExternalReadOnlyEvent(ev) ? 'Teilnehmer können für importierte Kalender nicht bearbeitet werden.' : 'Einladungen sind für eigene Termine mit Uhrzeit verfügbar.', 'error'); return false; }
     applyInviteDraftToEvent(ev);
-    if (!ev.attendees.length) { setInviteStatus('Bitte mindestens einen Teilnehmer hinzufügen.', 'error'); return false; }
+    if (!eventParticipantList(ev).length) { setInviteStatus('Bitte mindestens einen Teilnehmer hinzufügen.', 'error'); return false; }
     if (!cloudUser || !supabaseClient) { setInviteStatus('Bitte einloggen, um Einladungen zu senden.', 'error'); return false; }
     saveState();
     try {
@@ -3717,8 +3810,9 @@ return div;
       ev.invitationSentAt = method === 'CANCEL' ? ev.invitationSentAt : (ev.invitationSentAt || new Date().toISOString());
       ev.invitationUpdatedAt = new Date().toISOString();
       ev.invitationError = null;
-      ev.attendees = ev.attendees.map(att => ({ ...att, invitationStatus: method === 'CANCEL' ? 'cancelled' : 'sent', invitationError: null, invitationSentAt: new Date().toISOString() }));
-      inviteDraftAttendees = ev.attendees.map(att => ({ ...att }));
+      ev.attendees = eventParticipantList(ev).map(att => ({ ...att, status: method === 'CANCEL' ? 'cancelled' : 'sent', invitationStatus: method === 'CANCEL' ? 'cancelled' : 'sent', invitationError: null, invitationSentAt: new Date().toISOString() }));
+      ev.participants = ev.attendees.map(att => ({ ...att }));
+      inviteDraftAttendees = ev.participants.map(att => ({ ...att }));
       saveState();
       renderInviteAttendees(ev);
       setInviteStatus(method === 'CANCEL' ? 'Absage gesendet.' : 'Einladung gesendet.', 'success');
@@ -3741,6 +3835,7 @@ return div;
   function openEditor(eventId = null, preset = null) {
     editingId = eventId;
     modalBlockTasksExpanded = false;
+    invitePanelExpanded = false;
     presetSource = preset?.source || null;
     const ev = eventId ? currentEvents().find(x => x.id === eventId) : {
       id: null,
@@ -3756,18 +3851,23 @@ return div;
       templateEventId: null,
       stackedIntoId: null,
       autoComplete: false,
+      participants: [],
+      attendees: [],
+      inviteMessage: '',
       subtasks: []
     };
     if (!ev) return;
 
-    modalTitle.textContent = eventId ? 'Block bearbeiten' : 'Neuen Block erstellen';
+    const readOnlyEvent = Boolean(eventId && isExternalReadOnlyEvent(ev));
+    modalTitle.textContent = readOnlyEvent ? 'Block ansehen' : (eventId ? 'Block bearbeiten' : 'Neuen Block erstellen');
     eventDraftSubtasks = cloneEventSubtasks(ev);
     if (modalAutoComplete) modalAutoComplete.checked = Boolean(ev.autoComplete);
     if (modalSubtaskInput) modalSubtaskInput.value = '';
-    inviteDraftAttendees = Array.isArray(ev.attendees) ? ev.attendees.map(att => ({ ...att })) : [];
+    inviteDraftAttendees = eventParticipantList(ev).map(att => ({ ...att }));
     if (eventInviteEmailInput) eventInviteEmailInput.value = '';
     if (eventInviteMessage) eventInviteMessage.value = ev.inviteMessage || '';
-    setInviteStatus(canInviteEvent(ev) || !eventId ? invitationSummary(ev) : 'Einladungen sind nur für normale einzelne Kalendertermine verfügbar.', canInviteEvent(ev) || !eventId ? '' : 'error');
+    const inviteAllowed = canManageParticipants(ev) || !eventId;
+    setInviteStatus(inviteAllowed ? invitationSummary(ev) : 'Teilnehmer können für importierte Kalender nicht bearbeitet werden.', inviteAllowed ? '' : 'error');
     renderInviteAttendees(ev);
     renderEventDraftSubtasks();
     modalLabel.value = ev.label;
@@ -3787,12 +3887,18 @@ return div;
     modalEnd.value = String(ev.end);
     fillModalStackedIntoSelect(ev, { preserveSelection: false });
     renderModalIntegratedEvents(ev.id);
-    deleteBlockBtn.style.display = eventId ? '' : 'none';
+    [modalLabel, modalCategory, modalDay, modalStart, modalEnd, modalStackedInto, modalAutoComplete, modalSubtaskInput].forEach(control => {
+      if (control) control.disabled = readOnlyEvent;
+    });
+    if (modalAddSubtaskBtn) modalAddSubtaskBtn.disabled = readOnlyEvent;
+    const saveModalBtn = document.getElementById('saveModalBtn');
+    if (saveModalBtn) saveModalBtn.disabled = readOnlyEvent;
+    deleteBlockBtn.style.display = eventId && !readOnlyEvent ? '' : 'none';
     updateModalInfo();
     modalBackdrop.style.display = 'flex';
   }
 
-  function closeModal() { modalBackdrop.style.display = 'none'; editingId = null; pendingTodoId = null; presetSource = null; eventDraftSubtasks = []; inviteDraftAttendees = []; setInviteStatus('', ''); }
+  function closeModal() { modalBackdrop.style.display = 'none'; editingId = null; pendingTodoId = null; presetSource = null; eventDraftSubtasks = []; inviteDraftAttendees = []; invitePanelExpanded = false; setInviteStatus('', ''); renderInvitePanelState(); }
 
   function openHelpModal() {
     if (!helpModalBackdrop) return;
@@ -5037,6 +5143,13 @@ return div;
       autoComplete: Boolean(templateEv.autoComplete),
       autoCompleteFromSubtasks: Boolean(templateEv.autoCompleteFromSubtasks || templateEv.autoComplete),
       subtasks: cloneEventSubtasks(templateEv).map(sub => ({ ...sub, done: false })),
+      participants: eventParticipantList(templateEv),
+      attendees: eventParticipantList(templateEv),
+      inviteMessage: templateEv.inviteMessage || '',
+      invitationUid: null,
+      invitationSequence: 0,
+      invitationStatus: 'not-sent',
+      invitationError: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     }));
@@ -5773,6 +5886,7 @@ function toggleMissed(eventId) {
   if (cancelBulkActionBtn) cancelBulkActionBtn.onclick = closeBulkActionModal;
   if (confirmBulkActionBtn) confirmBulkActionBtn.onclick = applyBulkAction;
   if (bulkActionModalBackdrop) bulkActionModalBackdrop.addEventListener('click', e => { if (e.target === bulkActionModalBackdrop) closeBulkActionModal(); });
+  if (eventInviteToggle) eventInviteToggle.onclick = () => { invitePanelExpanded = !invitePanelExpanded; renderInvitePanelState(); };
   if (addInviteEmailBtn) addInviteEmailBtn.onclick = addInviteEmailFromInput;
   if (eventInviteEmailInput) eventInviteEmailInput.addEventListener('keydown', e => {
     if (e.key === 'Enter' || e.key === ',') {
@@ -5795,13 +5909,14 @@ function toggleMissed(eventId) {
       return;
     }
     if (!addInviteEmailFromInput()) return;
-    if (inviteDraftAttendees.length && (stackedIntoId || isTemplateMode())) {
-      alert('Einladungen sind nur für normale einzelne Kalendertermine verfügbar.');
-      return;
-    }
     if (editingId) {
       const ev = currentEvents().find(x => x.id === editingId);
       if (ev) {
+        if (!canManageParticipants(ev) && inviteDraftAttendees.length) {
+          alert('Teilnehmer können für importierte Kalender nicht bearbeitet werden.');
+          return;
+        }
+        const participantsBefore = participantSignature(eventParticipantList(ev));
         const autoComplete = Boolean(modalAutoComplete?.checked);
         Object.assign(ev, {
           day,
@@ -5817,6 +5932,11 @@ function toggleMissed(eventId) {
           updatedAt: new Date().toISOString()
         });
         applyInviteDraftToEvent(ev);
+        const participantsAfter = participantSignature(eventParticipantList(ev));
+        if (participantsBefore !== participantsAfter && routineParticipantScopeEligible(ev)) {
+          const applyFuture = confirm('Diese Teilnehmeränderung gilt für:\n\nOK = Alle zukünftigen Termine dieser Routine\nAbbrechen = Nur diesen Termin');
+          if (applyFuture) applyParticipantsToRoutineTemplate(ev);
+        }
         syncEventAutoComplete(ev);
         syncParentAutoCompleteForChild(ev);
       }
@@ -5839,6 +5959,7 @@ function toggleMissed(eventId) {
     autoComplete: Boolean(modalAutoComplete?.checked),
     autoCompleteFromSubtasks: Boolean(modalAutoComplete?.checked),
     subtasks: cloneEventSubtasks({ subtasks: eventDraftSubtasks }),
+    participants: [],
     attendees: [],
     inviteMessage: '',
     invitationUid: null,
@@ -5870,7 +5991,7 @@ function toggleMissed(eventId) {
   document.getElementById('deleteBlockBtn').onclick = async () => {
     if (!editingId) return;
     const ev = currentEvents().find(item => item.id === editingId);
-    if (ev?.attendees?.length && ev.invitationSentAt) {
+    if (eventParticipantList(ev).length && ev.invitationSentAt) {
       const sendCancel = confirm('Für diesen Termin wurden Einladungen gesendet. Auch eine Absage an die Teilnehmer senden?');
       if (sendCancel) {
         const sent = await sendCalendarInvitationForCurrentEvent('CANCEL');
