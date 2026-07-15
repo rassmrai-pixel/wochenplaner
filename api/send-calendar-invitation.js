@@ -482,11 +482,14 @@ async function sendCalendarInvitationHandler(req, res) {
     const previousSequence = Number(event.invitationSequence || 0);
     const sequence = method === 'CANCEL' || event.invitationSentAt || event.invitationUpdatedAt ? previousSequence + 1 : previousSequence;
     const fromDomain = normalizeEmail(email.fromEmail).split('@')[1] || req.headers.host;
-    const invitationUid = event.invitationUid || stableUid(event, fromDomain);
+    const hasSentInvitation = Boolean(event.invitationSentAt || event.invitationUpdatedAt);
+    const invitationUid = hasSentInvitation && event.invitationUid ? event.invitationUid : stableUid(event, fromDomain);
     const message = String(body.message || event.inviteMessage || '').trim();
     event.inviteMessage = message;
     event.invitationUid = invitationUid;
     event.invitationSequence = sequence;
+    event.organizerEmail = email.fromEmail;
+    event.organizerName = email.organizerName;
 
     const ics = buildInviteIcs({
       event,
@@ -536,6 +539,8 @@ async function sendCalendarInvitationHandler(req, res) {
       method,
       invitationUid,
       sequence,
+      organizerEmail: event.organizerEmail,
+      organizerName: event.organizerName,
       status: event.invitationStatus
     });
   } catch (error) {

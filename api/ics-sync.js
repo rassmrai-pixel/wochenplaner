@@ -52,6 +52,23 @@ function parseIcsProperty(line) {
   return { name, params, value: value.trim(), raw: line };
 }
 
+function mailtoValue(value) {
+  return String(value || "").replace(/^mailto:/i, "").trim().toLowerCase();
+}
+
+function parseIcsPersonProperty(property) {
+  if (!property) return null;
+  const email = mailtoValue(property.value);
+  if (!email) return null;
+  return {
+    email,
+    name: decodeIcsText(property.params?.CN || email),
+    role: property.params?.ROLE || null,
+    partstat: property.params?.PARTSTAT || null,
+    rsvp: property.params?.RSVP || null
+  };
+}
+
 function extractVEvents(icsText) {
   const unfolded = unfoldIcsLines(icsText);
   return unfolded.match(/BEGIN:VEVENT[\s\S]*?END:VEVENT/g) || [];
@@ -71,6 +88,8 @@ function parseEventBlock(block, index) {
   const first = name => properties[name]?.[0] || null;
   const values = name => properties[name] || [];
   const uid = first("UID")?.value || `event_${index}`;
+  const organizer = parseIcsPersonProperty(first("ORGANIZER"));
+  const attendees = values("ATTENDEE").map(parseIcsPersonProperty).filter(Boolean);
   return {
     index,
     raw: block,
@@ -79,6 +98,10 @@ function parseEventBlock(block, index) {
     summary: decodeIcsText(first("SUMMARY")?.value || "Ohne Titel"),
     description: decodeIcsText(first("DESCRIPTION")?.value || ""),
     location: decodeIcsText(first("LOCATION")?.value || ""),
+    organizer,
+    organizerEmail: organizer?.email || null,
+    organizerName: organizer?.name || null,
+    attendees,
     status: String(first("STATUS")?.value || "").toUpperCase(),
     dtStart: first("DTSTART"),
     dtEnd: first("DTEND"),
@@ -613,6 +636,9 @@ function expandMultiDayEventForDisplay(item) {
     title: event.summary,
     location: event.location,
     description: null,
+    organizerEmail: event.organizerEmail || null,
+    organizerName: event.organizerName || null,
+    attendees: Array.isArray(event.attendees) ? event.attendees : [],
     status: event.status || null,
     sequence: event.sequence || null,
     dtstamp: event.dtstamp || null,

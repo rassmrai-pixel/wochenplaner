@@ -483,8 +483,17 @@
         provider: ev.provider || null,
         externalId: ev.externalId || null,
         externalCalendarId: ev.externalCalendarId || null,
-        sourceUid: ev.sourceUid || ev.uid || null,
+        externalSourceId: ev.externalSourceId || ev.sourceId || ev.externalCalendarId || null,
+        externalUid: ev.externalUid || ev.sourceUid || ev.uid || null,
+        sourceUid: ev.sourceUid || ev.uid || ev.externalUid || null,
         sourceKey: ev.sourceKey || null,
+        externalSourceKey: ev.externalSourceKey || ev.sourceKey || null,
+        mirroredInExternalCalendar: Boolean(ev.mirroredInExternalCalendar),
+        externalMirrorLastSeenAt: ev.externalMirrorLastSeenAt || null,
+        externalMirrorLastMissingAt: ev.externalMirrorLastMissingAt || null,
+        externalMirrorConflict: ev.externalMirrorConflict || null,
+        organizerEmail: ev.organizerEmail || null,
+        organizerName: ev.organizerName || null,
         recurrenceId: ev.recurrenceId || null,
         occurrenceStart: ev.occurrenceStart || null,
         originalStart: ev.originalStart || null,
@@ -1322,6 +1331,8 @@
         if (!response.ok) throw new Error(result.error || 'Versand fehlgeschlagen');
         ev.invitationUid = result.invitationUid || ev.invitationUid || invitationUidForEvent(ev);
         ev.invitationSequence = Number(result.sequence ?? ev.invitationSequence ?? 0);
+        ev.organizerEmail = result.organizerEmail || ev.organizerEmail || null;
+        ev.organizerName = result.organizerName || ev.organizerName || null;
         ev.invitationStatus = ev.invitationSentAt ? 'updated' : 'sent';
         ev.invitationSentAt = ev.invitationSentAt || new Date().toISOString();
         ev.invitationUpdatedAt = new Date().toISOString();
@@ -3834,6 +3845,8 @@ return div;
       if (!response.ok) throw new Error(result.error || 'Einladung konnte nicht gesendet werden.');
       ev.invitationUid = result.invitationUid || ev.invitationUid || invitationUidForEvent(ev);
       ev.invitationSequence = Number(result.sequence ?? ev.invitationSequence ?? 0);
+      ev.organizerEmail = result.organizerEmail || ev.organizerEmail || null;
+      ev.organizerName = result.organizerName || ev.organizerName || null;
       ev.invitationStatus = method === 'CANCEL' ? 'cancelled' : (ev.invitationSentAt ? 'updated' : 'sent');
       ev.invitationSentAt = method === 'CANCEL' ? ev.invitationSentAt : (ev.invitationSentAt || new Date().toISOString());
       ev.invitationUpdatedAt = new Date().toISOString();
@@ -6364,6 +6377,154 @@ function collectSpecialEventSuggestions(icsEvents) {
   return created;
 }
 
+function normalizeRoundtripText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function normalizeRoundtripEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function eventInviteUidCandidates(ev) {
+  return [ev?.invitationUid, ev?.sourceUid, ev?.externalUid, ev?.uid]
+    .map(value => String(value || '').trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function ownRoundtripCandidateEvents() {
+  const events = [];
+  Object.values(state.weekEventsByWeek || {}).forEach(weekEvents => {
+    (Array.isArray(weekEvents) ? weekEvents : []).forEach(ev => {
+      if (!ev || isImportedIcsEvent(ev) || isIntegratedChild(ev)) return;
+      events.push(ev);
+    });
+  });
+  return events;
+}
+
+function buildOwnInvitationUidIndex() {
+  const byUid = new Map();
+  ownRoundtripCandidateEvents().forEach(ev => {
+    eventInviteUidCandidates(ev).forEach(uid => {
+      if (!byUid.has(uid)) byUid.set(uid, ev);
+    });
+  });
+  return byUid;
+}
+
+function participantEmailsForEvent(ev) {
+  const raw = Array.isArray(ev?.participants) ? ev.participants : ev?.attendees;
+  return (Array.isArray(raw) ? raw : [])
+    .map(att => normalizeRoundtripEmail(att?.email || att))
+    .filter(Boolean);
+}
+
+function externalAttendeeEmails(icsEvent) {
+  const raw = Array.isArray(icsEvent?.attendees) ? icsEvent.attendees : [];
+  return raw.map(att => normalizeRoundtripEmail(att?.email || att)).filter(Boolean);
+}
+
+function hasEmailOverlap(a, b) {
+  const set = new Set(a.filter(Boolean));
+  return b.some(email => set.has(email));
+}
+
+function titleForRoundtrip(ev) {
+  return normalizeRoundtripText(ev?.label || ev?.title || ev?.summary || '');
+}
+
+function dateKeyForLocalRoundtripEvent(localEv) {
+  if (localEv?.date || localEv?.displayDate) return localEv.date || localEv.displayDate;
+  for (const [weekKey, weekEvents] of Object.entries(state.weekEventsByWeek || {})) {
+    if (!Array.isArray(weekEvents)) continue;
+    if (weekEvents.some(ev => ev === localEv || ev.id === localEv?.id)) {
+      return dateForWeekDay(weekKey, localEv.day);
+    }
+  }
+  return '';
+}
+
+function roundtripTimesMatch(localEv, plannerEvent) {
+  if (Boolean(localEv?.allDay) !== Boolean(plannerEvent?.allDay)) return false;
+  if (String(dateKeyForLocalRoundtripEvent(localEv) || '') !== String(plannerEvent?.date || '')) return false;
+  if (localEv?.allDay) return true;
+  return Number(localEv?.start) === Number(plannerEvent?.start)
+    && Number(localEv?.end) === Number(plannerEvent?.end);
+}
+
+function roundtripFallbackEvidence(localEv, plannerEvent, icsEvent) {
+  let score = 0;
+  const titleMatches = Boolean(titleForRoundtrip(localEv) && titleForRoundtrip(localEv) === titleForRoundtrip(plannerEvent));
+  const timeMatches = roundtripTimesMatch(localEv, plannerEvent);
+  if (titleMatches) score += 2;
+  if (timeMatches) score += 3;
+  const localOrganizer = normalizeRoundtripEmail(localEv.organizerEmail || '');
+  const externalOrganizer = normalizeRoundtripEmail(icsEvent.organizerEmail || plannerEvent.organizerEmail || '');
+  const organizerMatches = Boolean(localOrganizer && externalOrganizer && localOrganizer === externalOrganizer);
+  if (organizerMatches) score += 2;
+  const localParticipants = participantEmailsForEvent(localEv);
+  const externalParticipants = externalAttendeeEmails(icsEvent);
+  const participantMatches = Boolean(localParticipants.length && externalParticipants.length && hasEmailOverlap(localParticipants, externalParticipants));
+  if (participantMatches) score += 2;
+  const localLocation = normalizeRoundtripText(localEv.location || '');
+  const externalLocation = normalizeRoundtripText(plannerEvent.location || icsEvent.location || '');
+  const locationMatches = Boolean(localLocation && externalLocation && localLocation === externalLocation);
+  if (locationMatches) score += 1;
+  return { score, titleMatches, timeMatches, organizerMatches, participantMatches, locationMatches };
+}
+
+function findRoundtripLocalEvent(plannerEvent, icsEvent, invitationUidIndex) {
+  const uid = String(plannerEvent.sourceUid || plannerEvent.externalUid || icsEvent.sourceUid || icsEvent.uid || '').trim().toLowerCase();
+  if (uid && invitationUidIndex.has(uid)) return { event: invitationUidIndex.get(uid), reason: 'uid' };
+
+  let best = null;
+  ownRoundtripCandidateEvents().forEach(localEv => {
+    if (!roundtripTimesMatch(localEv, plannerEvent)) return;
+    const evidence = roundtripFallbackEvidence(localEv, plannerEvent, icsEvent);
+    const hasStrongIdentity = evidence.organizerMatches || (evidence.participantMatches && evidence.locationMatches);
+    if (evidence.score >= 7 && evidence.titleMatches && evidence.timeMatches && hasStrongIdentity && (!best || evidence.score > best.score)) {
+      best = { event: localEv, reason: 'fallback', score: evidence.score };
+    }
+  });
+  return best;
+}
+
+function markLocalEventMirrored(localEv, plannerEvent, icsEvent, reason) {
+  if (!localEv) return;
+  const now = new Date().toISOString();
+  localEv.source = localEv.source || 'local';
+  localEv.mirroredInExternalCalendar = true;
+  localEv.externalUid = plannerEvent.sourceUid || plannerEvent.externalUid || icsEvent.sourceUid || icsEvent.uid || localEv.externalUid || null;
+  localEv.externalSourceId = plannerEvent.sourceId || plannerEvent.externalCalendarId || DEFAULT_ICS_SOURCE_ID;
+  localEv.externalSourceKey = plannerEvent.sourceKey || localEv.externalSourceKey || null;
+  localEv.externalMirrorLastSeenAt = now;
+  localEv.externalMirrorReason = reason;
+  const conflict = !roundtripTimesMatch(localEv, plannerEvent)
+    || (titleForRoundtrip(localEv) && titleForRoundtrip(plannerEvent) && titleForRoundtrip(localEv) !== titleForRoundtrip(plannerEvent));
+  localEv.externalMirrorConflict = conflict ? {
+    detectedAt: now,
+    externalTitle: plannerEvent.label || plannerEvent.title || null,
+    externalDate: plannerEvent.date || null,
+    externalStart: plannerEvent.start,
+    externalEnd: plannerEvent.end
+  } : null;
+  touchEvent(localEv);
+}
+
+function removeExistingIcsMirror(existingEntry) {
+  if (!existingEntry?.ev || !existingEntry.weekKey) return false;
+  const events = state.weekEventsByWeek[existingEntry.weekKey] || [];
+  const next = events.filter(ev => ev.id !== existingEntry.ev.id);
+  const removed = next.length !== events.length;
+  if (removed) state.weekEventsByWeek[existingEntry.weekKey] = next;
+  return removed;
+}
+
 function removeImportedSeriesBySourceKey(sourceKey, externalUid = null) {
   if ((!sourceKey && !externalUid) || !state.weekEventsByWeek) return;
   Object.keys(state.weekEventsByWeek).forEach(weekKey => {
@@ -6432,8 +6593,14 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
     externalId: plannerEvent.externalId,
     externalCalendarId: plannerEvent.externalCalendarId,
     sourceId: plannerEvent.sourceId,
+    externalSourceId: plannerEvent.externalSourceId || plannerEvent.sourceId || plannerEvent.externalCalendarId,
+    externalUid: plannerEvent.externalUid || plannerEvent.sourceUid || null,
     sourceUid: plannerEvent.sourceUid,
     sourceKey: plannerEvent.sourceKey,
+    externalSourceKey: plannerEvent.externalSourceKey || plannerEvent.sourceKey || null,
+    organizerEmail: plannerEvent.organizerEmail || null,
+    organizerName: plannerEvent.organizerName || null,
+    attendees: Array.isArray(plannerEvent.attendees) ? plannerEvent.attendees : [],
     recurrenceId: plannerEvent.recurrenceId,
     occurrenceStart: plannerEvent.occurrenceStart,
     originalStart: plannerEvent.originalStart,
@@ -6498,8 +6665,14 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
   externalId,
   externalCalendarId: icsEvent.externalCalendarId || sourceId,
   sourceId,
+  externalSourceId: sourceId,
+  externalUid: icsEvent.sourceUid || icsEvent.uid || null,
   sourceUid: icsEvent.sourceUid || icsEvent.uid || null,
   sourceKey: icsEvent.sourceKey || null,
+  externalSourceKey: icsEvent.sourceKey || null,
+  organizerEmail: icsEvent.organizerEmail || null,
+  organizerName: icsEvent.organizerName || null,
+  attendees: Array.isArray(icsEvent.attendees) ? icsEvent.attendees : [],
   recurrenceRule: icsEvent.recurrenceRule || null,
   recurrenceFrequency: icsEvent.recurrenceFrequency || null,
   recurringSeries: Boolean(icsEvent.recurringSeries),
@@ -6561,12 +6734,14 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
 
   console.log('[ICS] Upserting ICS events');
 
+  const invitationUidIndex = buildOwnInvitationUidIndex();
   const importedExternalIds = new Set();
   const skippedEvents = [];
   const processedKeys = new Set();
   let processedCount = 0;
   let createdCount = 0;
   let updatedCount = 0;
+  const seenRoundtripLocalEventIds = new Set();
 
 (icsEvents || []).forEach((icsEvent, index) => {
   if (isAcceptedSpecialExternalSeries(icsEvent)) return;
@@ -6604,6 +6779,21 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
   const existingEntry = existingByExternalKey.get(externalKey)
     || existingByExternalKey.get(icsExternalKey(DEFAULT_ICS_SOURCE_ID, plannerEvent.externalId));
 
+  const roundtripMatch = findRoundtripLocalEvent(plannerEvent, icsEvent, invitationUidIndex);
+  if (roundtripMatch?.event) {
+    markLocalEventMirrored(roundtripMatch.event, plannerEvent, icsEvent, roundtripMatch.reason);
+    seenRoundtripLocalEventIds.add(roundtripMatch.event.id);
+    if (existingEntry) removeExistingIcsMirror(existingEntry);
+    skippedEvents.push({
+      reason: `roundtrip mirror ${roundtripMatch.reason}`,
+      title: plannerEvent.title || plannerEvent.label || icsEvent.title || icsEvent.summary || 'Kalendertermin',
+      externalId: plannerEvent.externalId,
+      sourceId: plannerEvent.sourceId,
+      matchedEventId: roundtripMatch.event.id
+    });
+    return;
+  }
+
   if (existingEntry) {
     const existing = existingEntry.ev;
     const updatedEvent = compactIcsPlannerEvent({ ...plannerEvent, syncStatus: 'updated' }, existing);
@@ -6624,6 +6814,13 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
     createdCount++;
   }
 });
+
+  ownRoundtripCandidateEvents().forEach(localEv => {
+    if (!localEv.mirroredInExternalCalendar || seenRoundtripLocalEventIds.has(localEv.id)) return;
+    localEv.mirroredInExternalCalendar = false;
+    localEv.externalMirrorLastMissingAt = new Date().toISOString();
+    touchEvent(localEv);
+  });
 
   let missingCount = 0;
   existingIcsEvents.forEach(({ ev }) => {
