@@ -1,5 +1,3 @@
-const tls = require('tls');
-
 const DEFAULT_TIMEZONE = 'Europe/Berlin';
 const SLOTS_PER_DAY = 96;
 const MAX_ATTENDEES = 10;
@@ -19,22 +17,20 @@ function supabaseConfig() {
 }
 
 function emailConfig() {
+  const organizerEmail = process.env.CALENDAR_ORGANIZER_EMAIL || process.env.CALENDAR_FROM_EMAIL || '';
   return {
-    provider: 'resend-smtp',
+    provider: 'resend-http',
     resendApiKey: process.env.RESEND_API_KEY || '',
-    fromEmail: process.env.CALENDAR_FROM_EMAIL || '',
+    fromEmail: organizerEmail,
     organizerName: process.env.CALENDAR_ORGANIZER_NAME || 'Wochenplaner',
-    organizerEmail: process.env.CALENDAR_FROM_EMAIL || '',
-    smtpHost: process.env.CALENDAR_SMTP_HOST || 'smtp.resend.com',
-    smtpPort: Number(process.env.CALENDAR_SMTP_PORT || 465),
-    smtpUser: process.env.CALENDAR_SMTP_USER || 'resend'
+    organizerEmail
   };
 }
 
 function missingEmailConfig(email) {
   const missing = [];
   if (!email.resendApiKey) missing.push('RESEND_API_KEY');
-  if (!email.fromEmail) missing.push('CALENDAR_FROM_EMAIL');
+  if (!email.fromEmail) missing.push('CALENDAR_ORGANIZER_EMAIL oder CALENDAR_FROM_EMAIL');
   return missing;
 }
 
@@ -120,109 +116,30 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
-function stripHeaderValue(value) {
-  return String(value || '').replace(/[\r\n]+/g, ' ').trim();
+function resendCalendarContentType(method) {
+  return `text/calendar; charset=utf-8; method=${method}`;
 }
 
-function formatMailbox(name, email) {
-  const safeEmail = normalizeEmail(email);
-  const safeName = stripHeaderValue(name).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-  return safeName ? `"${safeName}" <${safeEmail}>` : safeEmail;
-}
-
-function encodeMimeWord(value) {
-  const text = stripHeaderValue(value);
-  if (!/[^\x20-\x7E]/.test(text)) return text;
-  return `=?UTF-8?B?${Buffer.from(text, 'utf8').toString('base64')}?=`;
-}
-
-function base64Mime(value) {
-  return Buffer.from(String(value || ''), 'utf8')
-    .toString('base64')
-    .replace(/.{1,76}/g, '$&\r\n')
-    .trimEnd();
-}
-
-function dotStuff(message) {
-  return String(message).replace(/\r?\n/g, '\r\n').replace(/^\./gm, '..');
-}
-
-function smtpRead(socket) {
-  return new Promise((resolve, reject) => {
-    let buffer = '';
-    const onData = chunk => {
-      buffer += chunk.toString('utf8');
-      const lines = buffer.split(/\r?\n/).filter(Boolean);
-      if (!lines.length) return;
-      const last = lines[lines.length - 1];
-      if (/^\d{3} /.test(last)) {
-        socket.off('data', onData);
-        socket.off('error', onError);
-        resolve({ code: Number(last.slice(0, 3)), message: buffer });
-      }
-    };
-    const onError = error => {
-      socket.off('data', onData);
-      reject(error);
-    };
-    socket.on('data', onData);
-    socket.once('error', onError);
-  });
-}
-
-async function smtpCommand(socket, command, expected) {
-  if (command) socket.write(`${command}\r\n`);
-  const response = await smtpRead(socket);
-  const expectedCodes = Array.isArray(expected) ? expected : [expected];
-  if (!expectedCodes.includes(response.code)) {
-    throw Object.assign(new Error(`SMTP-Antwort unerwartet (${response.code}).`), { statusCode: 502, providerBody: response.message.slice(0, 300) });
-  }
-  return response;
-}
-
-function buildCalendarMimeMessage({ to, subject, text, html, ics, method, email }) {
-  const alternativeBoundary = `alt-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const from = formatMailbox(email.organizerName, email.fromEmail);
-  const messageIdDomain = normalizeEmail(email.fromEmail).split('@')[1] || 'wochenplaner.local';
-  const encodedSubject = encodeMimeWord(subject);
-  const headerLines = [
-    `From: ${from}`,
-    `To: ${to.map(addr => formatMailbox('', addr)).join(', ')}`,
-    `Subject: ${encodedSubject}`,
-    `Date: ${new Date().toUTCString()}`,
-    `Message-ID: <${Date.now()}.${Math.random().toString(16).slice(2)}@${messageIdDomain}>`,
-    'MIME-Version: 1.0',
-    'Content-Class: urn:content-classes:calendarmessage',
-    `Content-Type: multipart/alternative; boundary="${alternativeBoundary}"`
-  ];
-
+function buildResendEmailPayload({ to, subject, text, html, ics, method, email }) {
   const filename = method === 'CANCEL' ? 'absage.ics' : 'einladung.ics';
-  const calendarContentType = `text/calendar; method=${method}; charset=UTF-8`;
-  const parts = [
-    ...headerLines,
-    '',
-    `--${alternativeBoundary}`,
-    'Content-Type: text/plain; charset=UTF-8',
-    'Content-Transfer-Encoding: base64',
-    '',
-    base64Mime(text),
-    `--${alternativeBoundary}`,
-    'Content-Type: text/html; charset=UTF-8',
-    'Content-Transfer-Encoding: base64',
-    '',
-    base64Mime(html),
-    `--${alternativeBoundary}`,
-    `Content-Type: ${calendarContentType}; name="${filename}"`,
-    'Content-Class: urn:content-classes:calendarmessage',
-    'Content-Transfer-Encoding: base64',
-    `Content-Disposition: inline; filename="${filename}"`,
-    '',
-    base64Mime(ics),
-    `--${alternativeBoundary}--`,
-    ''
-  ];
-  return parts.join('\r\n');
+  return {
+    from: `${email.organizerName} <${email.fromEmail}>`,
+    to,
+    subject,
+    text,
+    html,
+    attachments: [{
+      filename,
+      content: Buffer.from(ics, 'utf8').toString('base64'),
+      contentType: resendCalendarContentType(method),
+      content_type: resendCalendarContentType(method)
+    }],
+    headers: {
+      'Content-Class': 'urn:content-classes:calendarmessage'
+    }
+  };
 }
+
 
 function foldLine(line) {
   const chars = Array.from(String(line));
@@ -412,50 +329,30 @@ async function sendViaResend({ to, subject, text, html, ics, method, email }) {
     });
   }
 
-  const message = buildCalendarMimeMessage({ to, subject, text, html, ics, method, email });
-  const socket = tls.connect({
-    host: email.smtpHost,
-    port: email.smtpPort,
-    servername: email.smtpHost,
-    timeout: 15000
+  const payload = buildResendEmailPayload({ to, subject, text, html, ics, method, email });
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${email.resendApiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
   });
-
-  try {
-    await new Promise((resolve, reject) => {
-      socket.once('secureConnect', resolve);
-      socket.once('error', reject);
-      socket.once('timeout', () => reject(new Error('SMTP-Verbindung hat zu lange gedauert.')));
+  const body = await response.text().catch(() => '');
+  if (!response.ok) {
+    throw Object.assign(new Error(`Mailanbieter hat den Versand abgelehnt (${response.status}).`), {
+      statusCode: 502,
+      providerBody: body.slice(0, 300)
     });
-    await smtpCommand(socket, null, 220);
-    await smtpCommand(socket, `EHLO ${email.smtpHost}`, 250);
-    await smtpCommand(socket, 'AUTH LOGIN', 334);
-    await smtpCommand(socket, Buffer.from(email.smtpUser, 'utf8').toString('base64'), 334);
-    await smtpCommand(socket, Buffer.from(email.resendApiKey, 'utf8').toString('base64'), 235);
-    await smtpCommand(socket, `MAIL FROM:<${normalizeEmail(email.fromEmail)}>`, 250);
-    for (const recipient of to) {
-      await smtpCommand(socket, `RCPT TO:<${normalizeEmail(recipient)}>`, [250, 251]);
-    }
-    await smtpCommand(socket, 'DATA', 354);
-    socket.write(`${dotStuff(message)}\r\n.\r\n`);
-    await smtpCommand(socket, null, 250);
-    await smtpCommand(socket, 'QUIT', 221);
-  } catch (error) {
-    throw Object.assign(new Error(error.message || 'Mailanbieter hat den Versand abgelehnt.'), {
-      statusCode: error.statusCode || 502,
-      providerBody: error.providerBody
-    });
-  } finally {
-    socket.destroy();
   }
 }
+
 
 async function sendCalendarInvitationHandler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return json(res, 405, { error: 'Method not allowed' });
   }
-  const config = supabaseConfig();
-  if (!config.url || !config.key) return json(res, 500, { error: 'Supabase ist serverseitig nicht konfiguriert.' });
 
   try {
     const body = await readJsonBody(req);
@@ -464,6 +361,9 @@ async function sendCalendarInvitationHandler(req, res) {
     const eventId = String(body.eventId || '').trim();
     const weekKey = String(body.weekKey || '').trim();
     if (!eventId) throw Object.assign(new Error('Termin fehlt.'), { statusCode: 400 });
+
+    const config = supabaseConfig();
+    if (!config.url || !config.key) throw Object.assign(new Error('Supabase ist serverseitig nicht konfiguriert.'), { statusCode: 500 });
 
     const user = await requireUser(req, config);
     const state = await loadPlannerState(user.id, config);
@@ -549,7 +449,7 @@ async function sendCalendarInvitationHandler(req, res) {
     const payload = { error: status >= 500 ? (error.message || 'Einladung konnte nicht gesendet werden.') : error.message };
     if (error.code === 'MAIL_CONFIG_MISSING') {
       payload.code = error.code;
-      payload.provider = 'resend-smtp';
+      payload.provider = 'resend-http';
       payload.missingConfig = error.missingConfig || [];
     }
     return json(res, status, payload);
@@ -566,5 +466,6 @@ module.exports._test = {
   escapeIcsText,
   escapeHtml,
   foldLine,
-  buildCalendarMimeMessage
+  resendCalendarContentType,
+  buildResendEmailPayload
 };
