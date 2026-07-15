@@ -2965,9 +2965,61 @@
           included,
           exclusionReason
         });
+        console.log('[ICS SYNC DEBUG] visibility-json', JSON.stringify({
+          id: event.id,
+          uid: event.uid || event.sourceUid || event.externalUid || null,
+          title: event.title || event.label,
+          source: event.source,
+          importSource: event.importSource,
+          date: event.date,
+          day: event.day,
+          renderedDay: d,
+          start: event.start,
+          end: event.end,
+          startTime: event.startTime || null,
+          endTime: event.endTime || null,
+          hidden: event.hidden || false,
+          localHidden: event.localOverrides?.hidden || false,
+          stackedIntoId: event.stackedIntoId || null,
+          parentId: event.parentId || null,
+          isSubtask: event.isSubtask || false,
+          visibleDateRange: { weekStart: state.currentWeekStart, dayDate: dayDateKey },
+          included,
+          exclusionReason
+        }, null, 2));
       });
       const events = visibleEvents().filter(ev => ev.day === d && !isIntegratedChild(ev) && !ev.allDay);
-      layoutDayEvents(events).forEach(ev => col.appendChild(eventEl(ev)));
+      layoutDayEvents(events).forEach(ev => {
+        const element = eventEl(ev);
+        col.appendChild(element);
+        if (icsSyncDebugMatches(ev)) {
+          const computed = window.getComputedStyle(element);
+          const startMinutes = Number(ev.start) * 15;
+          const endMinutes = Number(ev.end) * 15;
+          console.log('[ICS SYNC DEBUG] block-render-json', JSON.stringify({
+            id: ev.id,
+            title: ev.title || ev.label,
+            rendered: Boolean(element),
+            dayKey: dayDateKey,
+            renderedDay: d,
+            eventDay: ev.day,
+            startSlot: ev.start,
+            endSlot: ev.end,
+            startMinutes,
+            endMinutes,
+            durationMinutes: endMinutes - startMinutes,
+            top: element?.style?.top || null,
+            height: element?.style?.height || null,
+            computedDisplay: computed.display,
+            computedVisibility: computed.visibility,
+            computedOpacity: computed.opacity,
+            computedZIndex: computed.zIndex,
+            className: element?.className || null,
+            parentAttached: Boolean(element?.parentElement),
+            parentClassName: element?.parentElement?.className || null
+          }, null, 2));
+        }
+      });
       renderCurrentTimeLine(col, d, today);
       calendar.appendChild(col);
     });
