@@ -218,8 +218,13 @@ function isDone(ev) {
 }
 
 function stableUid(id, domain) {
-  const safeId = String(id || `event-${Date.now()}`).replace(/[^a-zA-Z0-9_.-]/g, '-');
+  const safeId = String(id || `event-${Date.now()}`).replace(/[^a-zA-Z0-9_.@-]/g, '-');
+  if (safeId.includes('@')) return safeId;
   return `${safeId}@${domain}`;
+}
+
+function eventCalendarUid(ev, domain) {
+  return ev?.invitationUid || ev?.calendarUid || stableUid(ev?.id, domain);
 }
 
 function shouldExportEvent(ev, feed, timedTodoEventIds) {
@@ -242,7 +247,7 @@ function veventForPlannerEvent(ev, weekKey, feed, timedTodoEventIds, domain) {
   const updated = ev.updatedAt || ev.lastModified || ev.dtstamp || ev.createdAt || new Date().toISOString();
   const lines = [
     'BEGIN:VEVENT',
-    `UID:${stableUid(ev.id, domain)}`,
+    `UID:${eventCalendarUid(ev, domain)}`,
     `DTSTAMP:${compactUtcDateTime(updated)}`,
     `LAST-MODIFIED:${compactUtcDateTime(updated)}`,
     `SUMMARY:${escapeIcsText(ev.title || ev.label || 'Termin')}`

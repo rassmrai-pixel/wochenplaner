@@ -520,7 +520,7 @@
         participants: normalizeParticipantList(Array.isArray(ev.participants) ? ev.participants : ev.attendees),
         attendees: normalizeParticipantList(Array.isArray(ev.participants) ? ev.participants : ev.attendees),
         inviteMessage: ev.inviteMessage || '',
-        invitationUid: ev.invitationUid || null,
+        invitationUid: ev.invitationUid || (!ev.importSource && !ev.provider && !ev.isExternal ? invitationUidForEvent(ev) : null),
         invitationSequence: Number.isInteger(Number(ev.invitationSequence)) ? Number(ev.invitationSequence) : 0,
         invitationSentAt: ev.invitationSentAt || null,
         invitationUpdatedAt: ev.invitationUpdatedAt || null,
@@ -3892,10 +3892,25 @@ return div;
     if (eventInviteContent) eventInviteContent.hidden = !invitePanelExpanded;
   }
 
-  function invitationUidForEvent(ev) {
-    const domain = (window.location?.host || 'project-qk691.vercel.app').replace(/[^a-zA-Z0-9.-]/g, '') || 'project-qk691.vercel.app';
+  function invitationUidDomainCandidates() {
+    const host = (window.location?.host || '').replace(/[^a-zA-Z0-9.-]/g, '');
+    return [host, 'project-qk691.vercel.app']
+      .map(value => String(value || '').trim())
+      .filter((value, index, list) => value && list.indexOf(value) === index);
+  }
+
+  function invitationUidForEvent(ev, domainOverride = null) {
+    const domain = String(domainOverride || invitationUidDomainCandidates()[0] || 'project-qk691.vercel.app').replace(/[^a-zA-Z0-9.-]/g, '') || 'project-qk691.vercel.app';
     const safeId = String(ev?.id || id()).replace(/[^a-zA-Z0-9_.-]/g, '-');
     return `${safeId}@${domain}`;
+  }
+
+  function ensureOwnEventInvitationUid(ev) {
+    if (!ev || isExternalIcsEvent(ev)) return ev;
+    if (!ev.invitationUid) ev.invitationUid = invitationUidForEvent(ev);
+    if (!Number.isInteger(Number(ev.invitationSequence))) ev.invitationSequence = 0;
+    if (!ev.invitationStatus) ev.invitationStatus = 'not-sent';
+    return ev;
   }
 
   function setInviteStatus(message, mode = '') {
@@ -3991,9 +4006,7 @@ return div;
   function applyInviteDraftToEvent(ev) {
     syncParticipantsToEvent(ev, inviteDraftAttendees);
     ev.inviteMessage = eventInviteMessage?.value || '';
-    if (ev.participants.length && !ev.invitationUid) ev.invitationUid = invitationUidForEvent(ev);
-    if (!Number.isInteger(Number(ev.invitationSequence))) ev.invitationSequence = 0;
-    if (!ev.invitationStatus) ev.invitationStatus = 'not-sent';
+    ensureOwnEventInvitationUid(ev);
   }
 
 
@@ -5351,8 +5364,10 @@ return div;
     if (existingTemplateRoutineCount && !confirm(`Routine-Blöcke aus der Vorlage für KW ${weekInfo.week}/${weekInfo.year} ersetzen? ICS-Termine, manuelle Termine und Ganztagstermine bleiben erhalten.`)) return;
 
     const preservedEvents = existing.filter(ev => !isAppliedTemplateRoutine(ev));
-    const appliedTemplateEvents = state.templateEvents.map(templateEv => ({
-      id: id(),
+    const appliedTemplateEvents = state.templateEvents.map(templateEv => {
+      const instanceId = id();
+      return {
+      id: instanceId,
       day: templateEv.day,
       start: templateEv.start,
       end: templateEv.end,
@@ -5374,13 +5389,14 @@ return div;
       participants: eventParticipantList(templateEv),
       attendees: eventParticipantList(templateEv),
       inviteMessage: templateEv.inviteMessage || '',
-      invitationUid: null,
+      invitationUid: invitationUidForEvent({ id: instanceId }),
       invitationSequence: 0,
       invitationStatus: 'not-sent',
       invitationError: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
-    }));
+    };
+    });
 
     setCurrentWeekEvents([...preservedEvents, ...appliedTemplateEvents]);
     state.plannerMode = 'week';
@@ -6194,7 +6210,7 @@ function toggleMissed(eventId) {
     participants: [],
     attendees: [],
     inviteMessage: '',
-    invitationUid: null,
+    invitationUid: invitationUidForEvent({ id: newEventId }),
     invitationSequence: 0,
     invitationStatus: 'not-sent',
     invitationError: null,
@@ -6598,9 +6614,13 @@ function normalizeRoundtripEmail(value) {
 }
 
 function eventInviteUidCandidates(ev) {
-  return [ev?.invitationUid, ev?.sourceUid, ev?.externalUid, ev?.uid]
+  const candidates = [ev?.invitationUid, ev?.sourceUid, ev?.externalUid, ev?.uid];
+  if (ev?.id && !isImportedIcsEvent(ev)) {
+    invitationUidDomainCandidates().forEach(domain => candidates.push(invitationUidForEvent(ev, domain)));
+  }
+  return candidates
     .map(value => String(value || '').trim().toLowerCase())
-    .filter(Boolean);
+    .filter((value, index, list) => Boolean(value) && list.indexOf(value) === index);
 }
 
 function ownRoundtripCandidateEvents() {
