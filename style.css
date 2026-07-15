@@ -3038,6 +3038,8 @@
 
     .ics-modal-card {
       width: min(440px, 100%);
+      max-height: min(86vh, 760px);
+      overflow-y: auto;
       background: #ffffff;
       color: #111827;
       border-radius: 18px;
@@ -3098,6 +3100,60 @@
     .ics-secondary-btn {
       background: #e5e7eb;
       color: #111827;
+    }
+
+    .ics-hidden-events {
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid #e2e8f0;
+    }
+
+    .ics-hidden-events-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .ics-hidden-events-header h3 {
+      margin: 0 0 4px;
+      font-size: 15px;
+    }
+
+    .ics-hidden-events-header p,
+    .ics-hidden-empty {
+      margin: 0 !important;
+      font-size: 12px !important;
+    }
+
+    .ics-hidden-event {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 10px;
+      padding: 10px;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      background: #f8fafc;
+    }
+
+    .ics-hidden-event-copy {
+      min-width: 0;
+      display: grid;
+      gap: 3px;
+    }
+
+    .ics-hidden-event-copy strong {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+
+    .ics-hidden-event-copy span {
+      color: #64748b;
+      font-size: 12px;
     }
 
     .ics-modal-status {

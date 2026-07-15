@@ -1071,6 +1071,10 @@
 
   function normalizeExternalLocalOverrides(overrides = {}) {
     const raw = overrides && typeof overrides === 'object' ? overrides : {};
+    const legacyNullCoercion = !raw.updatedAt
+      && Number(raw.day) === 0
+      && Number(raw.start) === 0
+      && Number(raw.end) === 0;
     const numberOrNull = value => value === null || value === undefined || value === ''
       ? null
       : (Number.isFinite(Number(value)) ? Number(value) : null);
@@ -1078,9 +1082,9 @@
       title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim() : null,
       label: typeof raw.label === 'string' && raw.label.trim() ? raw.label.trim() : null,
       date: /^\d{4}-\d{2}-\d{2}$/.test(String(raw.date || '')) ? String(raw.date).slice(0, 10) : null,
-      day: numberOrNull(raw.day),
-      start: numberOrNull(raw.start),
-      end: numberOrNull(raw.end),
+      day: legacyNullCoercion ? null : numberOrNull(raw.day),
+      start: legacyNullCoercion ? null : numberOrNull(raw.start),
+      end: legacyNullCoercion ? null : numberOrNull(raw.end),
       categoryId: typeof raw.categoryId === 'string' && raw.categoryId ? raw.categoryId : null,
       stackedIntoId: typeof raw.stackedIntoId === 'string' && raw.stackedIntoId ? raw.stackedIntoId : null,
       parentId: typeof raw.parentId === 'string' && raw.parentId ? raw.parentId : null,
@@ -1128,6 +1132,37 @@
 
   function applyExternalLocalOverrides(ev) {
     if (!isExternalIcsEvent(ev)) return ev;
+    const rawOverrides = ev.localOverrides && typeof ev.localOverrides === 'object' ? ev.localOverrides : {};
+    const legacyNullCoercion = !rawOverrides.updatedAt
+      && Number(rawOverrides.day) === 0
+      && Number(rawOverrides.start) === 0
+      && Number(rawOverrides.end) === 0;
+    if (legacyNullCoercion && /deichbrand/i.test(ev.title || ev.label || '')) {
+      console.warn('[ICS ALLDAY DEBUG] fallback-used', JSON.stringify({
+        title: ev.title || ev.label,
+        uid: ev.sourceUid || ev.externalUid || ev.uid || null,
+        field: 'localOverrides.day/start/end',
+        rawValue: { day: rawOverrides.day, start: rawOverrides.start, end: rawOverrides.end },
+        calculatedValue: ev.externalOriginal ? {
+          date: ev.externalOriginal.date,
+          day: ev.externalOriginal.day,
+          start: ev.externalOriginal.start,
+          end: ev.externalOriginal.end
+        } : null,
+        fallbackValue: { day: 0, start: 0, end: 0 },
+        reason: 'legacy Number(null) coercion without updatedAt'
+      }, null, 2));
+    }
+    if (legacyNullCoercion && ev.externalOriginal && typeof ev.externalOriginal === 'object') {
+      const original = ev.externalOriginal;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(String(original.date || ''))) ev.date = original.date;
+      if (Number.isFinite(Number(original.day))) ev.day = clamp(Number(original.day), 0, 6);
+      ev.allDay = Boolean(original.allDay ?? ev.allDay);
+      if (!ev.allDay) {
+        if (Number.isFinite(Number(original.start))) ev.start = clamp(Number(original.start), 0, slotsPerDay - 1);
+        if (Number.isFinite(Number(original.end))) ev.end = clamp(Number(original.end), 1, slotsPerDay);
+      }
+    }
     const overrides = normalizeExternalLocalOverrides(ev.localOverrides);
     ev.localOverrides = overrides;
     ev.externalOriginal = externalOriginalFromEvent(ev);
@@ -3076,6 +3111,20 @@
       .sort((a, b) => Number(isTodoDone(a)) - Number(isTodoDone(b)) || String(a.createdAt).localeCompare(String(b.createdAt)));
     const allDayEvents = allDayEventsForDay(dayIndex)
       .sort((a, b) => String(a.label).localeCompare(String(b.label)));
+    allDayEvents.filter(event => /deichbrand/i.test(event.title || event.label || '')).forEach(event => {
+      console.log('[ICS ALLDAY DEBUG] rendered-day', JSON.stringify({
+        id: event.id,
+        uid: event.sourceUid || event.externalUid || event.uid || null,
+        sourceId: event.sourceId || event.externalCalendarId || null,
+        externalId: event.externalId || null,
+        title: event.title || event.label,
+        date: event.date,
+        day: event.day,
+        renderedDay: dayIndex,
+        renderedDate: dateKey(getDayDate(dayIndex)),
+        allDay: event.allDay
+      }, null, 2));
+    });
     currentEvents().filter(ev => Number(ev.day) === Number(dayIndex) && Boolean(ev.allDay) && icsSyncDebugMatches(ev)).forEach(event => {
       const hidden = isEventLocallyHidden(event);
       const child = isIntegratedChild(event);
@@ -6715,6 +6764,79 @@ function icsExternalKey(sourceId, externalId) {
   return `${String(sourceId)}:${String(externalId)}`;
 }
 
+function icsSourceUidKey(sourceId, uid) {
+  if (!sourceId || !uid) return null;
+  return `${String(sourceId)}:uid:${String(uid)}`;
+}
+
+function hiddenExternalEventKey(ev) {
+  return icsExternalKey(ev?.sourceId || ev?.externalCalendarId || DEFAULT_ICS_SOURCE_ID, ev?.externalId)
+    || icsSourceUidKey(ev?.sourceId || ev?.externalCalendarId || DEFAULT_ICS_SOURCE_ID, ev?.sourceUid || ev?.externalUid || ev?.uid)
+    || (ev?.id ? `id:${ev.id}` : null);
+}
+
+function hiddenExternalEvents() {
+  const unique = new Map();
+  Object.entries(state.weekEventsByWeek || {}).forEach(([weekKey, events]) => {
+    (Array.isArray(events) ? events : []).forEach(ev => {
+      if (!isImportedIcsEvent(ev) || !isEventLocallyHidden(ev)) return;
+      const key = hiddenExternalEventKey(ev);
+      if (!key || unique.has(key)) return;
+      unique.set(key, { key, weekKey, ev });
+    });
+  });
+  return [...unique.values()].sort((a, b) =>
+    String(a.ev.date || a.weekKey).localeCompare(String(b.ev.date || b.weekKey))
+    || String(a.ev.label || a.ev.title).localeCompare(String(b.ev.label || b.ev.title))
+  );
+}
+
+function restoreHiddenExternalEvents(keys) {
+  const wanted = new Set(keys);
+  if (!wanted.size) return;
+  Object.values(state.weekEventsByWeek || {}).forEach(events => {
+    (Array.isArray(events) ? events : []).forEach(ev => {
+      if (!wanted.has(hiddenExternalEventKey(ev)) || !isEventLocallyHidden(ev)) return;
+      recordExternalLocalOverrides(ev, { hidden: false });
+      ev.syncStatus = ev.missingFromLastSync ? 'external-missing-local-kept' : 'synced';
+      touchEvent(ev);
+    });
+  });
+  saveState();
+  renderAll();
+}
+
+function renderHiddenExternalEvents() {
+  const list = document.getElementById('icsHiddenEventsList');
+  const restoreAllButton = document.getElementById('restoreAllHiddenIcsBtn');
+  if (!list || !restoreAllButton) return;
+  const hiddenEvents = hiddenExternalEvents();
+  restoreAllButton.style.display = hiddenEvents.length ? '' : 'none';
+  if (!hiddenEvents.length) {
+    list.innerHTML = '<p class="ics-hidden-empty">Keine ausgeblendeten externen Termine.</p>';
+    return;
+  }
+  list.innerHTML = hiddenEvents.map((item, index) => {
+    const ev = item.ev;
+    const date = ev.date || item.weekKey || 'Datum unbekannt';
+    const source = String(ev.provider || '').toLowerCase() === 'outlook' ? 'Outlook' : 'Externer Kalender';
+    return `<div class="ics-hidden-event">
+      <div class="ics-hidden-event-copy">
+        <strong>${escapeHtml(ev.title || ev.label || 'Externer Termin')}</strong>
+        <span>${escapeHtml(date)} · ${escapeHtml(source)}</span>
+      </div>
+      <button type="button" class="ics-secondary-btn" data-hidden-event-index="${index}">Wieder einblenden</button>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('[data-hidden-event-index]').forEach(button => {
+    button.addEventListener('click', () => {
+      const item = hiddenEvents[Number(button.dataset.hiddenEventIndex)];
+      if (item) restoreHiddenExternalEvents([item.key]);
+    });
+  });
+  restoreAllButton.onclick = () => restoreHiddenExternalEvents(hiddenEvents.map(item => item.key));
+}
+
 function icsExternalIdAliases(externalId) {
   if (!externalId) return [];
   const raw = String(externalId);
@@ -7149,11 +7271,12 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
   };
 }
 
-  function importIcsEventsIntoPlanner(icsEvents) {
+function importIcsEventsIntoPlanner(icsEvents) {
   ensureExternalCalendarCategory();
   const createdSuggestions = collectSpecialEventSuggestions(icsEvents);
 
   const existingByExternalKey = new Map();
+  const existingBySourceUid = new Map();
   const existingIcsEvents = [];
   const previousWeekEventsByWeek = clone(state.weekEventsByWeek || {});
   const beforeSize = serializedSizeInfo(state);
@@ -7167,6 +7290,14 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
       if (ev.importSource === 'ics' && ev.externalId) {
         const entry = { ev, weekKey };
         existingIcsEvents.push(entry);
+        const sourceUidKey = icsSourceUidKey(
+          ev.sourceId || ev.externalCalendarId || DEFAULT_ICS_SOURCE_ID,
+          ev.sourceUid || ev.externalUid || ev.uid
+        );
+        if (sourceUidKey) {
+          if (!existingBySourceUid.has(sourceUidKey)) existingBySourceUid.set(sourceUidKey, []);
+          existingBySourceUid.get(sourceUidKey).push(entry);
+        }
         icsExternalIdAliases(ev.externalId).forEach((externalIdAlias) => {
           [
             icsExternalKey(ev.sourceId || DEFAULT_ICS_SOURCE_ID, externalIdAlias),
@@ -7182,6 +7313,26 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
   });
 
   console.log('[ICS] Upserting ICS events');
+  existingBySourceUid.forEach(entries => entries.sort((a, b) =>
+    String(a.ev.date || '').localeCompare(String(b.ev.date || ''))
+    || String(a.ev.externalId || '').localeCompare(String(b.ev.externalId || ''))
+  ));
+  const incomingBySourceUid = new Map();
+  const incomingUidPosition = new WeakMap();
+  (icsEvents || []).forEach(icsEvent => {
+    if (icsEvent.recurringSeries || icsEvent.recurrenceId) return;
+    const key = icsSourceUidKey(
+      icsEvent.sourceId || icsEvent.externalCalendarId || DEFAULT_ICS_SOURCE_ID,
+      icsEvent.sourceUid || icsEvent.uid
+    );
+    if (!key) return;
+    if (!incomingBySourceUid.has(key)) incomingBySourceUid.set(key, []);
+    incomingBySourceUid.get(key).push(icsEvent);
+  });
+  incomingBySourceUid.forEach(events => {
+    events.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || String(a.externalId || '').localeCompare(String(b.externalId || '')));
+    events.forEach((event, index) => incomingUidPosition.set(event, index));
+  });
   const totalBefore = Object.values(state.weekEventsByWeek || {}).reduce((total, weekEvents) => total + (Array.isArray(weekEvents) ? weekEvents.length : 0), 0);
 
   const invitationUidIndex = buildOwnInvitationUidIndex();
@@ -7192,6 +7343,7 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
   let createdCount = 0;
   let updatedCount = 0;
   const seenRoundtripLocalEventIds = new Set();
+  const matchedExistingEventIds = new Set();
 
 (icsEvents || []).forEach((icsEvent, index) => {
   if (isAcceptedSpecialExternalSeries(icsEvent)) {
@@ -7277,8 +7429,19 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
 
   if (!state.weekEventsByWeek[weekKey]) state.weekEventsByWeek[weekKey] = [];
 
-  const existingEntry = existingByExternalKey.get(externalKey)
+  let existingEntry = existingByExternalKey.get(externalKey)
     || existingByExternalKey.get(icsExternalKey(DEFAULT_ICS_SOURCE_ID, plannerEvent.externalId));
+  if (!existingEntry && !plannerEvent.recurringSeries && !plannerEvent.recurrenceId) {
+    const sourceUidKey = icsSourceUidKey(plannerEvent.sourceId, plannerEvent.sourceUid || plannerEvent.externalUid);
+    const incomingGroup = sourceUidKey ? incomingBySourceUid.get(sourceUidKey) || [] : [];
+    const existingGroup = sourceUidKey ? existingBySourceUid.get(sourceUidKey) || [] : [];
+    const position = incomingUidPosition.get(icsEvent);
+    if (incomingGroup.length && incomingGroup.length === existingGroup.length && Number.isInteger(position)) {
+      const candidate = existingGroup[position];
+      if (candidate && !matchedExistingEventIds.has(candidate.ev.id)) existingEntry = candidate;
+    }
+  }
+  if (existingEntry) matchedExistingEventIds.add(existingEntry.ev.id);
 
   const roundtripMatch = findRoundtripLocalEvent(plannerEvent, icsEvent, invitationUidIndex);
   if (icsSyncDebugMatches(plannerEvent)) {
@@ -7310,6 +7473,18 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
   if (existingEntry) {
     const existing = existingEntry.ev;
     const updatedEvent = compactIcsPlannerEvent({ ...plannerEvent, syncStatus: 'updated' }, existing);
+    if (/deichbrand/i.test(plannerEvent.title || '')) {
+      console.log('[ICS ALLDAY DEBUG] event-flow', JSON.stringify({
+        title: plannerEvent.title,
+        uid: plannerEvent.sourceUid || plannerEvent.externalUid || null,
+        sourceId: plannerEvent.sourceId,
+        externalId: plannerEvent.externalId,
+        recurrenceId: plannerEvent.recurrenceId,
+        transformed: { date: plannerEvent.date, day: plannerEvent.day, allDay: plannerEvent.allDay },
+        existing: { id: existing.id, sourceId: existing.sourceId, externalId: existing.externalId, date: existing.date, day: existing.day, allDay: existing.allDay, localOverrides: existing.localOverrides },
+        merged: { id: updatedEvent.id, sourceId: updatedEvent.sourceId, externalId: updatedEvent.externalId, date: updatedEvent.date, day: updatedEvent.day, allDay: updatedEvent.allDay, localOverrides: updatedEvent.localOverrides }
+      }, null, 2));
+    }
 
     const targetWeekKey = weekStartKey(dateKeyToLocalDate(updatedEvent.date || icsEvent.date || dateKey(new Date())));
     if (!state.weekEventsByWeek[targetWeekKey]) state.weekEventsByWeek[targetWeekKey] = [];
@@ -7418,6 +7593,21 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
         hidden: event.localOverrides?.hidden || false
       }))
   });
+  const savedDeichbrandEvents = savedIcsEvents.filter(event => /deichbrand/i.test(event.title || event.label || ''));
+  if (savedDeichbrandEvents.length) {
+    console.log('[ICS ALLDAY DEBUG] final-saved', JSON.stringify(savedDeichbrandEvents.map(event => ({
+      id: event.id,
+      uid: event.sourceUid || event.externalUid || event.uid || null,
+      sourceId: event.sourceId || event.externalCalendarId || null,
+      externalId: event.externalId || null,
+      recurrenceId: event.recurrenceId || null,
+      title: event.title || event.label,
+      date: event.date,
+      day: event.day,
+      allDay: event.allDay,
+      localOverrides: event.localOverrides
+    })), null, 2));
+  }
   renderAll();
   const allImportedStateEvents = Object.entries(state.weekEventsByWeek || {})
     .flatMap(([weekKey, events]) => (events || []).filter(isImportedIcsEvent).map(ev => ({ weekKey, ev })));
@@ -7758,7 +7948,7 @@ if (removeBtn) {
   // INIT
   // ==================================================
 
-function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); renderCalendarFeedSettings(); renderSpecialEventsButton(); renderSpecialEventsModal(); renderSpecialEventsDrawer(); renderMobileControls(); renderBulkActionBar(); updateIcsAutoSyncMeta(); }
+function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); renderCalendarFeedSettings(); renderSpecialEventsButton(); renderSpecialEventsModal(); renderSpecialEventsDrawer(); renderMobileControls(); renderBulkActionBar(); renderHiddenExternalEvents(); updateIcsAutoSyncMeta(); }
   fillTaskDaySelect();
   renderAll();
   renderAll();

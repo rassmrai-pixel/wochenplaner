@@ -676,6 +676,16 @@
         <div><span>Status:</span> <strong id="icsAutoSyncStatus">Bereit</strong></div>
         <div><span>Zuletzt aktualisiert:</span> <strong id="icsLastSyncText">Noch nicht synchronisiert</strong></div>
       </div>
+      <section class="ics-hidden-events" aria-labelledby="icsHiddenEventsTitle">
+        <div class="ics-hidden-events-header">
+          <div>
+            <h3 id="icsHiddenEventsTitle">Ausgeblendete externe Termine</h3>
+            <p>Lokal ausgeblendete Termine bleiben im externen Kalender unverändert.</p>
+          </div>
+          <button id="restoreAllHiddenIcsBtn" class="ics-secondary-btn" type="button">Alle wieder einblenden</button>
+        </div>
+        <div id="icsHiddenEventsList"></div>
+      </section>
       <div id="icsProgress" class="ics-progress" aria-live="polite">
         <div class="ics-progress-meta">
           <span id="icsProgressText">Bereit</span>

@@ -657,15 +657,27 @@ function expandMultiDayEventForDisplay(item) {
     const startDateOnly = start.isDateOnly ? start : parseDateOnlyValue(start.dateKey);
     const endDateOnly = end?.isDateOnly ? end : parseDateOnlyValue(end?.dateKey) || addDaysToDateOnly(startDateOnly, 1);
     const expandedDates = expandDateOnlyRangeExclusive(startDateOnly, endDateOnly);
-    console.log("ALL DAY RANGE DEBUG", {
-      uid: sourceUid,
-      summary: event.summary,
-      rawDtStart: event.dtStart?.raw || event.dtStart?.value || "",
-      rawDtEnd: event.dtEnd?.raw || event.dtEnd?.value || "",
-      parsedStart: formatDateOnly(startDateOnly),
-      parsedEndExclusive: formatDateOnly(endDateOnly),
-      expandedDates
-    });
+    if (/deichbrand/i.test(event.summary || "")) {
+      console.log("[ICS ALLDAY DEBUG] event-flow", JSON.stringify({
+        title: event.summary,
+        uid: sourceUid,
+        sourceId: DEFAULT_ICS_SOURCE_ID,
+        recurrenceId: event.recurrenceId?.value || null,
+        raw: {
+          dtstart: event.dtStart?.raw || event.dtStart?.value || "",
+          dtend: event.dtEnd?.raw || event.dtEnd?.value || "",
+          valueDate: event.dtStart?.params?.VALUE === "DATE",
+          tzid: event.dtStart?.params?.TZID || null
+        },
+        parsed: {
+          start: formatDateOnly(startDateOnly),
+          end: formatDateOnly(endDateOnly),
+          allDay: true,
+          endExclusive: true
+        },
+        transformed: { expandedDates }
+      }, null, 2));
+    }
     return expandedDates.map(date => ({
         ...base,
         id: `${sourceUid}__${occurrenceStartKey}__${date}`,

@@ -92,13 +92,14 @@ assert.deepEqual(trip.map(event => event.date), ["2025-09-05", "2025-09-06", "20
 const deichbrand = eventsFor(`BEGIN:VEVENT
 UID:deichbrand
 SUMMARY:Deichbrand
-DTSTART;VALUE=DATE:20250718
-DTEND;VALUE=DATE:20250720
+DTSTART;VALUE=DATE:20260718
+DTEND;VALUE=DATE:20260720
 X-MICROSOFT-CDO-ALLDAYEVENT:TRUE
 END:VEVENT`);
 
-assert.deepEqual(deichbrand.map(event => event.date), ["2025-07-18", "2025-07-19"]);
-assert.ok(!deichbrand.some(event => event.date === "2025-07-17"));
+assert.deepEqual(deichbrand.map(event => event.date), ["2026-07-18", "2026-07-19"]);
+assert.deepEqual(deichbrand.map(event => new Date(`${event.date}T00:00:00Z`).getUTCDay()), [6, 0]);
+assert.ok(!deichbrand.some(event => event.date === "2026-07-20"));
 
 const folded = eventsFor(`BEGIN:VEVENT
 UID:folded
