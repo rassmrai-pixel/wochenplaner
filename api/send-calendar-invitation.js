@@ -24,7 +24,7 @@ function emailConfig() {
     resendApiKey: process.env.RESEND_API_KEY || '',
     fromEmail: process.env.CALENDAR_FROM_EMAIL || '',
     organizerName: process.env.CALENDAR_ORGANIZER_NAME || 'Wochenplaner',
-    organizerEmail: process.env.CALENDAR_ORGANIZER_EMAIL || process.env.CALENDAR_FROM_EMAIL || '',
+    organizerEmail: process.env.CALENDAR_FROM_EMAIL || '',
     smtpHost: process.env.CALENDAR_SMTP_HOST || 'smtp.resend.com',
     smtpPort: Number(process.env.CALENDAR_SMTP_PORT || 465),
     smtpUser: process.env.CALENDAR_SMTP_USER || 'resend'
@@ -35,7 +35,6 @@ function missingEmailConfig(email) {
   const missing = [];
   if (!email.resendApiKey) missing.push('RESEND_API_KEY');
   if (!email.fromEmail) missing.push('CALENDAR_FROM_EMAIL');
-  if (!email.organizerEmail) missing.push('CALENDAR_ORGANIZER_EMAIL oder CALENDAR_FROM_EMAIL');
   return missing;
 }
 
@@ -127,7 +126,7 @@ function stripHeaderValue(value) {
 
 function formatMailbox(name, email) {
   const safeEmail = normalizeEmail(email);
-  const safeName = stripHeaderValue(name).replace(/\\/g, '\\\\').replace(/"/g, '\"');
+  const safeName = stripHeaderValue(name).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   return safeName ? `"${safeName}" <${safeEmail}>` : safeEmail;
 }
 
@@ -182,9 +181,7 @@ async function smtpCommand(socket, command, expected) {
 }
 
 function buildCalendarMimeMessage({ to, subject, text, html, ics, method, email }) {
-  const mixedBoundary = `mixed-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const alternativeBoundary = `alt-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const filename = method === 'CANCEL' ? 'absage.ics' : 'einladung.ics';
   const from = formatMailbox(email.organizerName, email.fromEmail);
   const messageIdDomain = normalizeEmail(email.fromEmail).split('@')[1] || 'wochenplaner.local';
   const encodedSubject = encodeMimeWord(subject);
@@ -196,15 +193,12 @@ function buildCalendarMimeMessage({ to, subject, text, html, ics, method, email 
     `Message-ID: <${Date.now()}.${Math.random().toString(16).slice(2)}@${messageIdDomain}>`,
     'MIME-Version: 1.0',
     'Content-Class: urn:content-classes:calendarmessage',
-    `Content-Type: multipart/mixed; boundary="${mixedBoundary}"`
+    `Content-Type: multipart/alternative; boundary="${alternativeBoundary}"`
   ];
 
-  const calendarContentType = `text/calendar; charset=UTF-8; method=${method}; component=VEVENT`;
+  const calendarContentType = `text/calendar; method=${method}; charset=UTF-8`;
   const parts = [
     ...headerLines,
-    '',
-    `--${mixedBoundary}`,
-    `Content-Type: multipart/alternative; boundary="${alternativeBoundary}"`,
     '',
     `--${alternativeBoundary}`,
     'Content-Type: text/plain; charset=UTF-8',
@@ -217,22 +211,13 @@ function buildCalendarMimeMessage({ to, subject, text, html, ics, method, email 
     '',
     base64Mime(html),
     `--${alternativeBoundary}`,
-    `Content-Type: ${calendarContentType}; name="${filename}"`,
+    `Content-Type: ${calendarContentType}`,
     'Content-Class: urn:content-classes:calendarmessage',
     'Content-Transfer-Encoding: base64',
     'Content-Disposition: inline',
     '',
     base64Mime(ics),
     `--${alternativeBoundary}--`,
-    '',
-    `--${mixedBoundary}`,
-    `Content-Type: ${calendarContentType}; name="${filename}"`,
-    'Content-Class: urn:content-classes:calendarmessage',
-    'Content-Transfer-Encoding: base64',
-    `Content-Disposition: attachment; filename="${filename}"`,
-    '',
-    base64Mime(ics),
-    `--${mixedBoundary}--`,
     ''
   ];
   return parts.join('\r\n');
@@ -306,7 +291,8 @@ function buildInviteIcs({ event, weekKey, method, sequence, uid, message, organi
   if (!attendees.length) throw Object.assign(new Error('Keine gültigen Teilnehmer.'), { statusCode: 400 });
   const dateKey = eventDateKey(event, weekKey);
   const summary = event.label || event.title || 'Termin';
-  const description = [message, event.description].filter(Boolean).join('\n\n');
+  const description = [message, event.description].filter(Boolean).join('\n\n') || summary;
+  const location = event.location || '';
   const dtstamp = compactUtcDateTime(new Date().toISOString());
   const lines = [
     'BEGIN:VCALENDAR',
@@ -341,10 +327,10 @@ function buildInviteIcs({ event, weekKey, method, sequence, uid, message, organi
     `SUMMARY:${escapeIcsText(summary)}`,
     `DTSTART;TZID=${DEFAULT_TIMEZONE}:${compactLocalDateTime(dateKey, start)}`,
     `DTEND;TZID=${DEFAULT_TIMEZONE}:${compactLocalDateTime(dateKey, end)}`,
+    `DESCRIPTION:${escapeIcsText(description)}`,
+    `LOCATION:${escapeIcsText(location)}`,
     `ORGANIZER;CN="${escapeIcsParam(organizerName)}":mailto:${normalizeEmail(organizerEmail)}`
   ];
-  if (event.location) lines.push(`LOCATION:${escapeIcsText(event.location)}`);
-  if (description) lines.push(`DESCRIPTION:${escapeIcsText(description)}`);
   attendees.forEach(att => {
     const cn = escapeIcsParam(att.name || att.email);
     lines.push(`ATTENDEE;CN="${cn}";ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:${att.email}`);
@@ -507,7 +493,7 @@ async function sendCalendarInvitationHandler(req, res) {
       uid: invitationUid,
       message,
       organizerName: email.organizerName,
-      organizerEmail: email.organizerEmail,
+      organizerEmail: email.fromEmail,
       host: req.headers.host
     });
     const title = event.label || event.title || 'Termin';
