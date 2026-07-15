@@ -3619,7 +3619,8 @@
     div.style.setProperty('--event-color', cat.color);
     div.title = `${days[ev.day]} ${isTemplateMode() ? '' : formatShortDate(getDayDate(ev.day)) + ' '}${eventTime(ev)} · ${ev.label}`;
     const integratedCount = integratedEventsForEvent(ev.id).length;
-    const fulfillment = blockFulfillmentStats(ev);
+    const blockSubtasks = cloneEventSubtasks(ev);
+    const fulfillment = blockFulfillmentStats(ev, blockSubtasks);
     const fulfillmentBadge = fulfillment.containedTotal ? `<div class="event-fulfillment-badge">${fulfillment.done}/${fulfillment.total}</div>` : '';
     const integratedBadge = integratedCount ? `<div class="event-integrated-badge">+${integratedCount} im Block</div>` : '';
     const scheduledChildren = layoutEmbeddedChildren(scheduledIntegratedEventsForEvent(ev));
@@ -3663,6 +3664,28 @@
         aria-expanded="${compactDetailsOpen ? 'true' : 'false'}"
       >&rsaquo;</button>` : '';
     const compactMeta = hasStartAlignedChild ? `<span class="event-compact-meta">${eventTime(ev)}${fulfillment.containedTotal ? ` · ${fulfillment.done}/${fulfillment.total}` : ''}</span>` : '';
+    const eventHeight = Math.max(16, (Number(ev.end) - Number(ev.start)) * cellHeight() - 2);
+    const subtaskListTop = eventHeight < 54 ? 4 : (hasStartAlignedChild ? 30 : Math.round((2 * cellHeight()) + 7));
+    const subtaskListBottom = integratedCount ? 20 : 4;
+    const reservedBottom = subtaskListBottom + 2;
+    const subtaskRowHeight = 18;
+    const subtaskAvailableHeight = Math.max(0, eventHeight - subtaskListTop - reservedBottom);
+    const maxVisibleSubtasks = blockSubtasks.length
+      ? Math.max(0, Math.floor(subtaskAvailableHeight / subtaskRowHeight))
+      : 0;
+    const visibleSubtasks = blockSubtasks.slice(0, maxVisibleSubtasks);
+    const hiddenSubtaskCount = Math.max(0, blockSubtasks.length - visibleSubtasks.length);
+    const blockSubtaskList = blockSubtasks.length ? `
+      <div class="event-block-subtasks" style="top:${subtaskListTop}px;bottom:${subtaskListBottom}px">
+        ${visibleSubtasks.map(sub => `
+          <div class="event-block-subtask ${sub.done ? 'done' : ''} ${sub.missed ? 'missed' : ''}" data-subtask-id="${escapeHtml(sub.id)}" title="${escapeHtml(sub.text)}">
+            <input class="event-block-subtask-check" type="checkbox" ${sub.done ? 'checked' : ''} title="Erledigt" />
+            <span>Ohne Zeit</span>
+            <strong>${escapeHtml(sub.text)}</strong>
+            ${sub.missed ? '<em title="Nicht eingehalten">!</em>' : ''}
+          </div>`).join('')}
+        ${hiddenSubtaskCount ? `<div class="event-block-subtask-more">+${hiddenSubtaskCount} weitere</div>` : ''}
+      </div>` : '';
 
     const trackable = isWeekMode() && Boolean(cat.habit);
     const resizeHandles = canResizeEventDuration(ev) ? `
@@ -3680,6 +3703,7 @@
   </div>
   <div class="event-time">${eventTime(ev)}</div>
   ${embeddedChildren}
+  ${blockSubtaskList}
   ${fulfillmentBadge}
   ${integratedBadge}`;
     div.querySelectorAll('input, button, select, textarea, a').forEach(control => {
@@ -3765,6 +3789,35 @@ if (compactToggleBtn) {
     renderAll();
   });
 }
+
+div.querySelectorAll('.event-block-subtask').forEach(row => {
+  row.addEventListener('click', e => {
+    if (e.target.closest('input, button, select, textarea, a')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    openEditor(ev.id);
+  });
+  const check = row.querySelector('.event-block-subtask-check');
+  const sub = ev.subtasks?.find(item => item.id === row.dataset.subtaskId);
+  if (check && sub) {
+    check.addEventListener('click', e => e.stopPropagation());
+    check.addEventListener('change', e => {
+      e.stopPropagation();
+      sub.done = Boolean(e.target.checked);
+      if (sub.done) sub.missed = false;
+      syncEventAutoComplete(ev);
+      syncParentAutoCompleteForChild(ev);
+      saveState();
+      renderAll();
+    });
+  }
+});
+
+div.querySelector('.event-block-subtask-more')?.addEventListener('click', e => {
+  e.preventDefault();
+  e.stopPropagation();
+  openEditor(ev.id);
+});
 
 div.querySelectorAll('.event-embedded-child').forEach(childBtn => {
   childBtn.addEventListener('click', e => {
