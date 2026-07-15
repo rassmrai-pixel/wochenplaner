@@ -725,6 +725,31 @@ function expandMultiDayEventForDisplay(item) {
   return days.filter(day => day.startTime !== day.endTime);
 }
 
+function importedEventEndMs(event) {
+  const date = parseDateKey(event?.date);
+  if (!date.year || !date.month || !date.day) return NaN;
+  if (event.allDay) {
+    const exclusiveEnd = parseDateKey(addDaysToDateKey(event.date, 1));
+    return partsToUtcMs({ ...exclusiveEnd, hour: 0, minute: 0, second: 0 }, "Europe/Berlin");
+  }
+  const match = String(event.endTime || "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return NaN;
+  const totalMinutes = Number(match[1]) * 60 + Number(match[2]);
+  const endDate = parseDateKey(addDaysToDateKey(event.date, Math.floor(totalMinutes / 1440)));
+  const minutesInDay = totalMinutes % 1440;
+  return partsToUtcMs({
+    ...endDate,
+    hour: Math.floor(minutesInDay / 60),
+    minute: minutesInDay % 60,
+    second: 0
+  }, "Europe/Berlin");
+}
+
+function isCurrentOrFutureImportedEvent(event, nowMs = Date.now()) {
+  const endMs = importedEventEndMs(event);
+  return Number.isFinite(endMs) && endMs > nowMs;
+}
+
 function parseIcsEvents(icsText) {
   console.log("[ICS] Parsing started");
   const window = importWindow();
@@ -797,9 +822,11 @@ function parseIcsEvents(icsText) {
     }
   });
 
+  const currentOrFutureEvents = importedEvents.filter(event => isCurrentOrFutureImportedEvent(event));
+  const pastEventsSkipped = importedEvents.length - currentOrFutureEvents.length;
   const uniqueEvents = [];
   const seen = new Set();
-  importedEvents.forEach(event => {
+  currentOrFutureEvents.forEach(event => {
     const key = `${event.sourceId}::${event.externalId}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -809,6 +836,7 @@ function parseIcsEvents(icsText) {
   const skipReasonsSummary = countByReason(skippedEvents);
   const allDayImported = uniqueEvents.filter(event => event.allDay).length;
   console.log("[ICS] Imported events:", uniqueEvents.length);
+  console.log("[ICS] Past events skipped:", pastEventsSkipped);
   console.log("[ICS] Skipped events:", skippedEvents.length);
   console.log("[ICS SYNC DEBUG] parsed-events", {
     parsedCount: uniqueEvents.length,
@@ -833,6 +861,7 @@ function parseIcsEvents(icsText) {
     recurringSkipped: 0,
     allDaySkipped: 0,
     allDayImported,
+    pastEventsSkipped,
     totalVevents,
     rangeStart: window.start,
     rangeEnd: window.end
@@ -847,6 +876,8 @@ export {
   formatDateOnly,
   addDaysToDateOnly,
   expandDateOnlyRangeExclusive,
+  importedEventEndMs,
+  isCurrentOrFutureImportedEvent,
   parseRRule,
   parseIcsEvents,
   expandRecurringEvent,
@@ -929,6 +960,7 @@ export default async function handler(req, res) {
       recurringSkipped: diagnostics.recurringSkipped,
       allDaySkipped: diagnostics.allDaySkipped,
       allDayImported: diagnostics.allDayImported,
+      pastEventsSkipped: diagnostics.pastEventsSkipped,
       totalVevents: diagnostics.totalVevents,
       rangeStart: diagnostics.rangeStart,
       rangeEnd: diagnostics.rangeEnd

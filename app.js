@@ -84,6 +84,7 @@
     todos: [],
     specialEvents: [],
     specialEventSuggestions: [],
+    deletedExternalEvents: [],
     specialEventTypeFilter: 'all',
     specialEventRangeFilter: 'all',
     specialEventsSeenKeys: []
@@ -192,6 +193,7 @@
   const modalAddSubtaskBtn = document.getElementById('modalAddSubtaskBtn');
   const modalSubtaskList = document.getElementById('modalSubtaskList');
   const deleteBlockBtn = document.getElementById('deleteBlockBtn');
+  const localDeleteExternalBtn = document.getElementById('localDeleteExternalBtn');
   const drawerTitle = document.getElementById('drawerTitle');
   const drawerSwitch = document.getElementById('drawerSwitch');
   const drawerHabitBtn = document.getElementById('drawerHabitBtn');
@@ -638,6 +640,23 @@
       createdAt: item.createdAt || new Date().toISOString(),
       updatedAt: item.updatedAt || item.createdAt || new Date().toISOString()
     })) : [];
+    const deletedExternalEvents = new Map();
+    (Array.isArray(input.deletedExternalEvents) ? input.deletedExternalEvents : []).forEach(item => {
+      const sourceId = String(item?.sourceId || '').trim();
+      const externalId = String(item?.externalId || '').trim();
+      if (!sourceId || !externalId) return;
+      const key = `${sourceId}:${externalId}`;
+      if (deletedExternalEvents.has(key)) return;
+      deletedExternalEvents.set(key, {
+        sourceId,
+        externalId,
+        title: String(item.title || 'Externer Termin').slice(0, 240),
+        date: /^\d{4}-\d{2}-\d{2}$/.test(String(item.date || '')) ? String(item.date) : null,
+        sourceLabel: String(item.sourceLabel || 'Externer Kalender').slice(0, 120),
+        deletedAt: item.deletedAt || new Date().toISOString()
+      });
+    });
+    s.deletedExternalEvents = [...deletedExternalEvents.values()];
 
     if (!s.categories[s.selectedCategory]) s.selectedCategory = 'gym';
     if (!['calendar', 'tasks'].includes(s.viewMode)) s.viewMode = 'calendar';
@@ -4342,6 +4361,7 @@ return div;
     if (saveModalBtn) saveModalBtn.disabled = readOnlyEvent;
     deleteBlockBtn.style.display = eventId && !readOnlyEvent ? '' : 'none';
     if (deleteBlockBtn) deleteBlockBtn.textContent = externalEvent ? 'In dieser App ausblenden' : 'Block löschen';
+    if (localDeleteExternalBtn) localDeleteExternalBtn.style.display = eventId && externalEvent ? '' : 'none';
     updateModalInfo();
     modalBackdrop.style.display = 'flex';
   }
@@ -6486,6 +6506,14 @@ function toggleMissed(eventId) {
     renderAll();
     closeModal();
   };
+  if (localDeleteExternalBtn) {
+    localDeleteExternalBtn.onclick = () => {
+      if (!editingId) return;
+      const ev = currentEvents().find(item => item.id === editingId);
+      if (!isExternalIcsEvent(ev)) return;
+      deleteExternalEventLocally(ev);
+    };
+  }
   if (categoryToggleBtn && legend) {
     categoryToggleBtn.addEventListener('click', () => {
       const isOpen = legend.classList.toggle('category-open');
@@ -6775,6 +6803,91 @@ function hiddenExternalEventKey(ev) {
     || (ev?.id ? `id:${ev.id}` : null);
 }
 
+function deletedExternalEventKey(item) {
+  return icsExternalKey(item?.sourceId, item?.externalId);
+}
+
+function deletedExternalEventKeys() {
+  return new Set((state.deletedExternalEvents || []).map(deletedExternalEventKey).filter(Boolean));
+}
+
+function externalSourceLabel(ev) {
+  return String(ev?.provider || '').toLowerCase() === 'outlook' ? 'Outlook' : 'Externer Kalender';
+}
+
+function deleteExternalEventLocally(ev) {
+  if (!isExternalIcsEvent(ev)) return false;
+  const sourceId = ev.sourceId || ev.externalCalendarId || DEFAULT_ICS_SOURCE_ID;
+  const externalId = ev.externalId;
+  const key = icsExternalKey(sourceId, externalId);
+  if (!key) return false;
+  if (!confirm('Dieser Termin wird nur aus dieser App gelöscht. Er bleibt in Outlook bestehen und wird bei zukünftigen Synchronisierungen nicht erneut importiert.')) return false;
+
+  const tombstone = {
+    sourceId,
+    externalId,
+    title: String(ev.title || ev.label || 'Externer Termin').slice(0, 240),
+    date: /^\d{4}-\d{2}-\d{2}$/.test(String(ev.date || '')) ? ev.date : null,
+    sourceLabel: externalSourceLabel(ev),
+    deletedAt: new Date().toISOString()
+  };
+  const tombstones = new Map((state.deletedExternalEvents || []).map(item => [deletedExternalEventKey(item), item]));
+  tombstones.set(key, tombstone);
+  state.deletedExternalEvents = [...tombstones.values()].filter(item => deletedExternalEventKey(item));
+
+  Object.keys(state.weekEventsByWeek || {}).forEach(weekKey => {
+    const events = Array.isArray(state.weekEventsByWeek[weekKey]) ? state.weekEventsByWeek[weekKey] : [];
+    events.forEach(item => {
+      if (item.stackedIntoId === ev.id) item.stackedIntoId = null;
+      if (item.parentId === ev.id) item.parentId = null;
+    });
+    state.weekEventsByWeek[weekKey] = events.filter(item => hiddenExternalEventKey(item) !== key);
+  });
+  currentWeekEvents();
+  saveState();
+  renderAll();
+  closeModal();
+  return true;
+}
+
+function removeDeletedExternalEvents(keys) {
+  const removed = new Set(keys);
+  state.deletedExternalEvents = (state.deletedExternalEvents || []).filter(item => !removed.has(deletedExternalEventKey(item)));
+  saveState();
+  renderAll();
+  setIcsStatus('Die Löschung wurde aufgehoben. Der Termin wird beim nächsten Sync wieder importiert, sofern er noch aktuell oder zukünftig ist.');
+}
+
+function renderDeletedExternalEvents() {
+  const list = document.getElementById('icsDeletedEventsList');
+  const restoreAllButton = document.getElementById('restoreAllDeletedIcsBtn');
+  if (!list || !restoreAllButton) return;
+  const tombstones = [...(state.deletedExternalEvents || [])].sort((a, b) =>
+    String(a.date || '').localeCompare(String(b.date || '')) || String(a.title || '').localeCompare(String(b.title || ''))
+  );
+  restoreAllButton.style.display = tombstones.length ? '' : 'none';
+  if (!tombstones.length) {
+    list.innerHTML = '<p class="ics-hidden-empty">Keine lokal gelöschten externen Termine.</p>';
+    restoreAllButton.onclick = null;
+    return;
+  }
+  list.innerHTML = tombstones.map((item, index) => `<div class="ics-hidden-event">
+    <div class="ics-hidden-event-copy">
+      <strong>${escapeHtml(item.title || 'Externer Termin')}</strong>
+      <span>${escapeHtml(item.date || 'Datum unbekannt')} · ${escapeHtml(item.sourceLabel || 'Externer Kalender')}</span>
+    </div>
+    <button type="button" class="ics-secondary-btn" data-deleted-event-index="${index}">Löschung aufheben</button>
+  </div>`).join('');
+  list.querySelectorAll('[data-deleted-event-index]').forEach(button => {
+    button.addEventListener('click', () => {
+      const item = tombstones[Number(button.dataset.deletedEventIndex)];
+      const key = deletedExternalEventKey(item);
+      if (key) removeDeletedExternalEvents([key]);
+    });
+  });
+  restoreAllButton.onclick = () => removeDeletedExternalEvents(tombstones.map(deletedExternalEventKey).filter(Boolean));
+}
+
 function hiddenExternalEvents() {
   const unique = new Map();
   Object.entries(state.weekEventsByWeek || {}).forEach(([weekKey, events]) => {
@@ -6825,13 +6938,22 @@ function renderHiddenExternalEvents() {
         <strong>${escapeHtml(ev.title || ev.label || 'Externer Termin')}</strong>
         <span>${escapeHtml(date)} · ${escapeHtml(source)}</span>
       </div>
-      <button type="button" class="ics-secondary-btn" data-hidden-event-index="${index}">Wieder einblenden</button>
+      <div class="ics-hidden-event-actions">
+        <button type="button" class="ics-secondary-btn" data-hidden-event-index="${index}">Wieder einblenden</button>
+        <button type="button" class="ics-danger-btn" data-delete-hidden-event-index="${index}">Lokal dauerhaft löschen</button>
+      </div>
     </div>`;
   }).join('');
   list.querySelectorAll('[data-hidden-event-index]').forEach(button => {
     button.addEventListener('click', () => {
       const item = hiddenEvents[Number(button.dataset.hiddenEventIndex)];
       if (item) restoreHiddenExternalEvents([item.key]);
+    });
+  });
+  list.querySelectorAll('[data-delete-hidden-event-index]').forEach(button => {
+    button.addEventListener('click', () => {
+      const item = hiddenEvents[Number(button.dataset.deleteHiddenEventIndex)];
+      if (item) deleteExternalEventLocally(item.ev);
     });
   });
   restoreAllButton.onclick = () => restoreHiddenExternalEvents(hiddenEvents.map(item => item.key));
@@ -6844,6 +6966,14 @@ function icsExternalIdAliases(externalId) {
   if (raw.startsWith('ics_')) aliases.add(raw.slice(4));
   else aliases.add(`ics_${raw}`);
   return [...aliases].filter(Boolean);
+}
+
+function isPastStoredExternalEvent(ev, now = new Date()) {
+  if (!isImportedIcsEvent(ev) || !/^\d{4}-\d{2}-\d{2}$/.test(String(ev.date || ''))) return false;
+  const end = dateKeyToLocalDate(ev.date);
+  if (ev.allDay) end.setDate(end.getDate() + 1);
+  else end.setMinutes(Math.max(0, Number(ev.end) || 0) * 15);
+  return end.getTime() <= now.getTime();
 }
 
 function specialSuggestionKeyFromIcsEvent(icsEvent) {
@@ -7344,6 +7474,7 @@ function importIcsEventsIntoPlanner(icsEvents) {
   let updatedCount = 0;
   const seenRoundtripLocalEventIds = new Set();
   const matchedExistingEventIds = new Set();
+  const tombstoneKeys = deletedExternalEventKeys();
 
 (icsEvents || []).forEach((icsEvent, index) => {
   if (isAcceptedSpecialExternalSeries(icsEvent)) {
@@ -7395,6 +7526,15 @@ function importIcsEventsIntoPlanner(icsEvents) {
       title: icsEvent.title || icsEvent.summary || 'Kalendertermin',
       externalId: plannerEvent.externalId || null,
       sourceId: plannerEvent.sourceId || null
+    });
+    return;
+  }
+  if (tombstoneKeys.has(externalKey)) {
+    skippedEvents.push({
+      reason: 'locally deleted external event',
+      title: plannerEvent.title,
+      externalId: plannerEvent.externalId,
+      sourceId: plannerEvent.sourceId
     });
     return;
   }
@@ -7514,6 +7654,15 @@ function importIcsEventsIntoPlanner(icsEvents) {
 
   let missingCount = 0;
   existingIcsEvents.forEach(({ ev }) => {
+    const storedExternalKey = icsExternalKey(ev.sourceId || ev.externalCalendarId || DEFAULT_ICS_SOURCE_ID, ev.externalId);
+    if (storedExternalKey && tombstoneKeys.has(storedExternalKey)) {
+      Object.keys(state.weekEventsByWeek).forEach(weekKey => {
+        state.weekEventsByWeek[weekKey] = (state.weekEventsByWeek[weekKey] || []).filter(item => item.id !== ev.id);
+      });
+      missingCount++;
+      return;
+    }
+    if (isPastStoredExternalEvent(ev)) return;
     const wasProcessed = icsExternalIdAliases(ev.externalId).some((externalIdAlias) => (
       processedKeys.has(icsExternalKey(ev.sourceId || DEFAULT_ICS_SOURCE_ID, externalIdAlias))
       || processedKeys.has(icsExternalKey(DEFAULT_ICS_SOURCE_ID, externalIdAlias))
@@ -7948,7 +8097,7 @@ if (removeBtn) {
   // INIT
   // ==================================================
 
-function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); renderCalendarFeedSettings(); renderSpecialEventsButton(); renderSpecialEventsModal(); renderSpecialEventsDrawer(); renderMobileControls(); renderBulkActionBar(); renderHiddenExternalEvents(); updateIcsAutoSyncMeta(); }
+function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); renderCalendarFeedSettings(); renderSpecialEventsButton(); renderSpecialEventsModal(); renderSpecialEventsDrawer(); renderMobileControls(); renderBulkActionBar(); renderHiddenExternalEvents(); renderDeletedExternalEvents(); updateIcsAutoSyncMeta(); }
   fillTaskDaySelect();
   renderAll();
   renderAll();

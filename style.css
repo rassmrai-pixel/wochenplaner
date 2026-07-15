@@ -3084,7 +3084,8 @@
     }
 
     .ics-primary-btn,
-    .ics-secondary-btn {
+    .ics-secondary-btn,
+    .ics-danger-btn {
       border: 0;
       border-radius: 12px;
       padding: 10px 14px;
@@ -3100,6 +3101,11 @@
     .ics-secondary-btn {
       background: #e5e7eb;
       color: #111827;
+    }
+
+    .ics-danger-btn {
+      background: #fee2e2;
+      color: #991b1b;
     }
 
     .ics-hidden-events {
@@ -3154,6 +3160,14 @@
     .ics-hidden-event-copy span {
       color: #64748b;
       font-size: 12px;
+    }
+
+    .ics-hidden-event-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 6px;
     }
 
     .ics-modal-status {

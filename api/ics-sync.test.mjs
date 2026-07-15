@@ -4,9 +4,9 @@ import { parseIcsEvents } from "./ics-sync.js";
 const RealDate = Date;
 globalThis.Date = class FixedDate extends RealDate {
   constructor(...args) {
-    super(...(args.length ? args : ["2025-07-11T12:00:00Z"]));
+    super(...(args.length ? args : ["2025-07-10T05:00:00Z"]));
   }
-  static now() { return new RealDate("2025-07-11T12:00:00Z").getTime(); }
+  static now() { return new RealDate("2025-07-10T05:00:00Z").getTime(); }
   static UTC(...args) { return RealDate.UTC(...args); }
   static parse(value) { return RealDate.parse(value); }
 };
@@ -53,6 +53,46 @@ DTEND;TZID=W. Europe Standard Time:20250709T090000
 END:VEVENT`);
 
 assert.equal(pastSingle.length, 0);
+
+const running = eventsFor(`BEGIN:VEVENT
+UID:running
+SUMMARY:Running
+DTSTART;TZID=W. Europe Standard Time:20250710T060000
+DTEND;TZID=W. Europe Standard Time:20250710T080000
+END:VEVENT`);
+assert.equal(running.length, 1);
+
+const justEnded = eventsFor(`BEGIN:VEVENT
+UID:just-ended
+SUMMARY:Just ended
+DTSTART;TZID=W. Europe Standard Time:20250710T060000
+DTEND;TZID=W. Europe Standard Time:20250710T070000
+END:VEVENT`);
+assert.equal(justEnded.length, 0);
+
+const allDayToday = eventsFor(`BEGIN:VEVENT
+UID:all-day-today
+SUMMARY:Today
+DTSTART;VALUE=DATE:20250710
+DTEND;VALUE=DATE:20250711
+END:VEVENT`);
+assert.deepEqual(allDayToday.map(event => event.date), ["2025-07-10"]);
+
+const pastAllDay = eventsFor(`BEGIN:VEVENT
+UID:past-all-day
+SUMMARY:Yesterday
+DTSTART;VALUE=DATE:20250709
+DTEND;VALUE=DATE:20250710
+END:VEVENT`);
+assert.equal(pastAllDay.length, 0);
+
+const ongoingAllDayRange = eventsFor(`BEGIN:VEVENT
+UID:ongoing-all-day-range
+SUMMARY:Ongoing range
+DTSTART;VALUE=DATE:20250709
+DTEND;VALUE=DATE:20250712
+END:VEVENT`);
+assert.deepEqual(ongoingAllDayRange.map(event => event.date), ["2025-07-10", "2025-07-11"]);
 
 const shortSeries = eventsFor(`BEGIN:VEVENT
 UID:short-series
