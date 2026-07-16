@@ -21,6 +21,7 @@
   const MAX_INVITE_ATTENDEES = 10;
   const DEFAULT_ICS_SOURCE_ID = 'default-ics';
   const ICS_SYNC_DEBUG_TEST_TITLE = 'ICS SYNC TEST 001';
+  const OWN_INVITE_DEBUG_TEST_TITLE = 'APP OUTLOOK DUPLICATE TEST 001';
   const SUPABASE_URL = 'https://uwynzmdsveplxfqgwzqp.supabase.co';
   const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_zIKjzTf24k4BDsVrQAyeZQ_WALpNEkH';
   const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY) : null;
@@ -33,6 +34,7 @@
   let icsSyncStatus = '';
   let icsAutoSyncTimer = null;
   let icsCalendarIntegrationInitialized = false;
+  const invitationUpdateTimers = new Map();
   const cellHeight = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell-h')) || 18;
 
   // ==================================================
@@ -85,6 +87,7 @@
     specialEvents: [],
     specialEventSuggestions: [],
     deletedExternalEvents: [],
+    ownInvitationUids: [],
     specialEventTypeFilter: 'all',
     specialEventRangeFilter: 'all',
     specialEventsSeenKeys: []
@@ -577,6 +580,19 @@
     if (!s.weekEventsByWeek[s.currentWeekStart]) s.weekEventsByWeek[s.currentWeekStart] = [];
     s.weekEvents = s.weekEventsByWeek[s.currentWeekStart];
     s.events = s.templateEvents;
+    const ownInvitationUids = new Set(
+      (Array.isArray(input.ownInvitationUids) ? input.ownInvitationUids : [])
+        .map(value => String(value || '').trim().toLowerCase())
+        .filter(Boolean)
+    );
+    Object.values(s.weekEventsByWeek).forEach(events => {
+      (Array.isArray(events) ? events : []).forEach(ev => {
+        if (!isImportedIcsEvent(ev) && ev.invitationSentAt && ev.invitationUid) {
+          ownInvitationUids.add(String(ev.invitationUid).trim().toLowerCase());
+        }
+      });
+    });
+    s.ownInvitationUids = [...ownInvitationUids];
 
     function normalizeSpecialEvent(event) {
       const allowedTypes = ['birthday', 'anniversary', 'jubilee', 'reminder', 'other'];
@@ -1450,7 +1466,9 @@
       ev.day = clamp(targetDay, 0, 6);
       ev.start = start;
       ev.end = end;
+      ev.date = isTemplateMode() ? null : dateKey(getDayDate(ev.day));
       ev.updatedAt = new Date().toISOString();
+      scheduleInvitedEventUpdate(ev, 'bulk-move');
       changed += 1;
     });
     if (!changed) throw new Error('Keine Termine konnten mit dieser Zeitverschiebung verschoben werden.');
@@ -1521,6 +1539,7 @@
         if (!response.ok) throw new Error(result.error || 'Versand fehlgeschlagen');
         ev.invitationUid = result.invitationUid || ev.invitationUid || invitationUidForEvent(ev);
         ev.invitationSequence = Number(result.sequence ?? ev.invitationSequence ?? 0);
+        rememberOwnInvitationUid(ev.invitationUid);
         ev.organizerEmail = result.organizerEmail || ev.organizerEmail || null;
         ev.organizerName = result.organizerName || ev.organizerName || null;
         ev.invitationStatus = ev.invitationSentAt ? 'updated' : 'sent';
@@ -1566,6 +1585,7 @@
     if (!confirm(`Möchtest du wirklich ${editable.length} ${editable.length === 1 ? 'Termin' : 'Termine'} löschen?${readOnly ? ` ${readOnly} schreibgeschützte Termine bleiben erhalten.` : ''}`)) return;
     const invited = editable.filter(ev => eventParticipantList(ev).length && ev.invitationSentAt);
     if (invited.length) {
+      invited.forEach(ev => rememberOwnInvitationUid(ev.invitationUid));
       const sendCancel = confirm(`${invited.length} Termine haben bereits versendete Einladungen. OK = Absagen senden und löschen. Abbrechen = nur in meiner App löschen oder im nächsten Dialog abbrechen.`);
       if (!sendCancel && !confirm('Nur in meiner App löschen?')) return;
       if (sendCancel) {
@@ -3515,6 +3535,7 @@
     touchEvent(ev);
     syncEventAutoComplete(ev);
     saveState();
+    scheduleInvitedEventUpdate(ev, 'drag-move');
     renderAll();
     return true;
   }
@@ -3687,6 +3708,7 @@
     touchEvent(ev);
     syncEventAutoComplete(ev);
     saveState();
+    scheduleInvitedEventUpdate(ev, 'resize');
     renderAll();
   }
 
@@ -4141,6 +4163,91 @@ return div;
     return ev;
   }
 
+  function rememberOwnInvitationUid(value) {
+    const uid = String(value || '').trim().toLowerCase();
+    if (!uid) return;
+    const known = new Set((state.ownInvitationUids || []).map(item => String(item || '').trim().toLowerCase()).filter(Boolean));
+    known.add(uid);
+    state.ownInvitationUids = [...known];
+  }
+
+  function logOwnInviteDebug(stage, ev, extra = {}) {
+    if (!String(ev?.label || ev?.title || '').includes(OWN_INVITE_DEBUG_TEST_TITLE)) return;
+    console.log('[OWN INVITE DEBUG]', stage, JSON.stringify({
+      appEventId: ev?.id || null,
+      title: ev?.label || ev?.title || null,
+      icsUid: ev?.icsUid || null,
+      uid: ev?.uid || null,
+      inviteUid: ev?.invitationUid || null,
+      inviteSent: Boolean(ev?.invitationSentAt),
+      sequence: Number(ev?.invitationSequence || 0),
+      organizer: ev?.organizerEmail || ev?.organizerName || null,
+      attendees: eventParticipantList(ev),
+      ...extra
+    }, null, 2));
+  }
+
+  function weekKeyForEvent(ev) {
+    for (const [weekKey, events] of Object.entries(state.weekEventsByWeek || {})) {
+      if ((Array.isArray(events) ? events : []).some(item => item === ev || item.id === ev?.id)) return weekKey;
+    }
+    return state.currentWeekStart;
+  }
+
+  async function deliverCalendarInvitation(ev, method = 'REQUEST') {
+    if (!ev || !canManageParticipants(ev)) throw new Error('Einladungen sind fuer diesen Termin nicht verfuegbar.');
+    if (!eventParticipantList(ev).length) throw new Error('Bitte mindestens einen Teilnehmer hinzufuegen.');
+    if (!cloudUser || !supabaseClient) throw new Error('Bitte einloggen, um Einladungen zu senden.');
+    saveState();
+    const cloudSaved = await saveCloudState(state, { throwOnError: true });
+    if (!cloudSaved) throw new Error('Termin konnte nicht fuer den Einladungsversand gespeichert werden.');
+    const { data } = await supabaseClient.auth.getSession();
+    const token = data?.session?.access_token;
+    if (!token) throw new Error('Keine gueltige Sitzung. Bitte erneut einloggen.');
+    const response = await fetch('/api/send-calendar-invitation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ eventId: ev.id, weekKey: weekKeyForEvent(ev), method, message: ev.inviteMessage })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'Einladung konnte nicht gesendet werden.');
+    ev.invitationUid = result.invitationUid || ev.invitationUid || invitationUidForEvent(ev);
+    ev.invitationSequence = Number(result.sequence ?? ev.invitationSequence ?? 0);
+    ev.organizerEmail = result.organizerEmail || ev.organizerEmail || null;
+    ev.organizerName = result.organizerName || ev.organizerName || null;
+    ev.invitationStatus = method === 'CANCEL' ? 'cancelled' : (ev.invitationSentAt ? 'updated' : 'sent');
+    ev.invitationSentAt = method === 'CANCEL' ? ev.invitationSentAt : (ev.invitationSentAt || new Date().toISOString());
+    ev.invitationUpdatedAt = new Date().toISOString();
+    ev.invitationError = null;
+    ev.attendees = eventParticipantList(ev).map(att => ({ ...att, status: method === 'CANCEL' ? 'cancelled' : 'sent', invitationStatus: method === 'CANCEL' ? 'cancelled' : 'sent', invitationError: null, invitationSentAt: new Date().toISOString() }));
+    ev.participants = ev.attendees.map(att => ({ ...att }));
+    rememberOwnInvitationUid(ev.invitationUid);
+    logOwnInviteDebug(method === 'CANCEL' ? 'invite-cancelled' : 'invite-sent-or-updated', ev, { method });
+    saveState();
+    return true;
+  }
+
+  function scheduleInvitedEventUpdate(ev, reason) {
+    if (!ev?.id || isExternalIcsEvent(ev) || !ev.invitationSentAt || !eventParticipantList(ev).length) return;
+    const existingTimer = invitationUpdateTimers.get(ev.id);
+    if (existingTimer) window.clearTimeout(existingTimer);
+    const timer = window.setTimeout(async () => {
+      invitationUpdateTimers.delete(ev.id);
+      const current = ownRoundtripCandidateEvents().find(item => item.id === ev.id);
+      if (!current) return;
+      try {
+        await deliverCalendarInvitation(current, 'REQUEST');
+        logOwnInviteDebug('schedule-update-sent', current, { reason });
+      } catch (error) {
+        current.invitationStatus = 'failed';
+        current.invitationError = error.message || String(error);
+        saveState();
+        console.warn('[CalendarInvite] Automatische Aktualisierung fehlgeschlagen', { eventId: current.id, reason, message: current.invitationError });
+      }
+    }, 700);
+    invitationUpdateTimers.set(ev.id, timer);
+  }
+
   function setInviteStatus(message, mode = '') {
     if (!eventInviteStatus) return;
     eventInviteStatus.textContent = message || '';
@@ -4246,39 +4353,11 @@ return div;
     if (!canInviteEvent(ev)) { setInviteStatus(isExternalReadOnlyEvent(ev) ? 'Teilnehmer können für importierte Kalender nicht bearbeitet werden.' : 'Einladungen sind für eigene Termine mit Uhrzeit verfügbar.', 'error'); return false; }
     applyInviteDraftToEvent(ev);
     if (!eventParticipantList(ev).length) { setInviteStatus('Bitte mindestens einen Teilnehmer hinzufügen.', 'error'); return false; }
-    if (!cloudUser || !supabaseClient) { setInviteStatus('Bitte einloggen, um Einladungen zu senden.', 'error'); return false; }
-    saveState();
-    try {
-      await saveCloudState(state, { throwOnError: true });
-    } catch (error) {
-      setInviteStatus(`Termin gespeichert, aber Cloud-Speicherung fehlgeschlagen: ${error.message || error}`, 'error');
-      return false;
-    }
-    const { data } = await supabaseClient.auth.getSession();
-    const token = data?.session?.access_token;
-    if (!token) { setInviteStatus('Keine gültige Sitzung. Bitte erneut einloggen.', 'error'); return false; }
     if (sendInviteBtn) sendInviteBtn.disabled = true;
     setInviteStatus(method === 'CANCEL' ? 'Absage wird gesendet...' : 'Einladung wird gesendet...', 'pending');
     try {
-      const response = await fetch('/api/send-calendar-invitation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ eventId: ev.id, weekKey: state.currentWeekStart, method, message: ev.inviteMessage })
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.error || 'Einladung konnte nicht gesendet werden.');
-      ev.invitationUid = result.invitationUid || ev.invitationUid || invitationUidForEvent(ev);
-      ev.invitationSequence = Number(result.sequence ?? ev.invitationSequence ?? 0);
-      ev.organizerEmail = result.organizerEmail || ev.organizerEmail || null;
-      ev.organizerName = result.organizerName || ev.organizerName || null;
-      ev.invitationStatus = method === 'CANCEL' ? 'cancelled' : (ev.invitationSentAt ? 'updated' : 'sent');
-      ev.invitationSentAt = method === 'CANCEL' ? ev.invitationSentAt : (ev.invitationSentAt || new Date().toISOString());
-      ev.invitationUpdatedAt = new Date().toISOString();
-      ev.invitationError = null;
-      ev.attendees = eventParticipantList(ev).map(att => ({ ...att, status: method === 'CANCEL' ? 'cancelled' : 'sent', invitationStatus: method === 'CANCEL' ? 'cancelled' : 'sent', invitationError: null, invitationSentAt: new Date().toISOString() }));
-      ev.participants = ev.attendees.map(att => ({ ...att }));
+      await deliverCalendarInvitation(ev, method);
       inviteDraftAttendees = ev.participants.map(att => ({ ...att }));
-      saveState();
       renderInviteAttendees(ev);
       setInviteStatus(method === 'CANCEL' ? 'Absage gesendet.' : 'Einladung gesendet.', 'success');
       return true;
@@ -6389,6 +6468,7 @@ function toggleMissed(eventId) {
     if (editingId) {
       const ev = currentEvents().find(x => x.id === editingId);
       if (ev) {
+        const scheduleBefore = [ev.date || '', Number(ev.day), Number(ev.start), Number(ev.end)].join('|');
         const participantsBefore = participantSignature(eventParticipantList(ev));
         const participantDraftChanged = participantSignature(inviteDraftAttendees) !== participantsBefore;
         if (!canManageParticipants(ev) && participantDraftChanged) {
@@ -6413,7 +6493,10 @@ function toggleMissed(eventId) {
           ev.date = isTemplateMode() ? null : dateKey(getDayDate(day));
           recordExternalLocalOverrides(ev, { label, categoryId, day, start, end, date: ev.date, stackedIntoId, parentId: null });
         } else {
+          ev.date = isTemplateMode() ? null : dateKey(getDayDate(day));
           applyInviteDraftToEvent(ev);
+          const scheduleAfter = [ev.date || '', Number(ev.day), Number(ev.start), Number(ev.end)].join('|');
+          if (scheduleBefore !== scheduleAfter) scheduleInvitedEventUpdate(ev, 'editor-save');
         }
         const participantsAfter = participantSignature(eventParticipantList(ev));
         if (participantsBefore !== participantsAfter && routineParticipantScopeEligible(ev)) {
@@ -6454,6 +6537,7 @@ function toggleMissed(eventId) {
   };
   applyInviteDraftToEvent(newEvent);
   currentEvents().push(newEvent);
+  logOwnInviteDebug('app-event-created', newEvent);
 
   if (pendingTodoId) {
     const todo = state.todos.find(t => t.id === pendingTodoId);
@@ -6489,6 +6573,7 @@ function toggleMissed(eventId) {
       return;
     }
     if (eventParticipantList(ev).length && ev.invitationSentAt) {
+      rememberOwnInvitationUid(ev.invitationUid);
       const sendCancel = confirm('Für diesen Termin wurden Einladungen gesendet. Auch eine Absage an die Teilnehmer senden?');
       if (sendCancel) {
         const sent = await sendCalendarInvitationForCurrentEvent('CANCEL');
@@ -7087,6 +7172,10 @@ function buildOwnInvitationUidIndex() {
       if (!byUid.has(uid)) byUid.set(uid, ev);
     });
   });
+  (state.ownInvitationUids || []).forEach(value => {
+    const uid = String(value || '').trim().toLowerCase();
+    if (uid && !byUid.has(uid)) byUid.set(uid, null);
+  });
   return byUid;
 }
 
@@ -7153,7 +7242,10 @@ function roundtripFallbackEvidence(localEv, plannerEvent, icsEvent) {
 
 function findRoundtripLocalEvent(plannerEvent, icsEvent, invitationUidIndex) {
   const uid = String(plannerEvent.sourceUid || plannerEvent.externalUid || icsEvent.sourceUid || icsEvent.uid || '').trim().toLowerCase();
-  if (uid && invitationUidIndex.has(uid)) return { event: invitationUidIndex.get(uid), reason: 'uid' };
+  if (uid && invitationUidIndex.has(uid)) {
+    const event = invitationUidIndex.get(uid) || null;
+    return { event, reason: event ? 'uid' : 'known invitation uid' };
+  }
 
   return null;
 }
@@ -7584,28 +7676,40 @@ function importIcsEventsIntoPlanner(icsEvents) {
   if (existingEntry) matchedExistingEventIds.add(existingEntry.ev.id);
 
   const roundtripMatch = findRoundtripLocalEvent(plannerEvent, icsEvent, invitationUidIndex);
+  logOwnInviteDebug('ics-import-candidate', plannerEvent, {
+    incomingUid: plannerEvent.sourceUid || plannerEvent.externalUid || null,
+    uidKnownAsOwnInvitation: Boolean(roundtripMatch),
+    matchedLocalEventId: roundtripMatch?.event?.id || null,
+    decision: roundtripMatch ? 'skip-own-mirror' : (existingEntry?.ev ? 'update-external' : 'import-external')
+  });
   if (icsSyncDebugMatches(plannerEvent)) {
     console.log('[ICS SYNC DEBUG] duplicate-check', {
       uid: plannerEvent.sourceUid || plannerEvent.externalUid || null,
       title: plannerEvent.title,
-      existingMatch: Boolean(roundtripMatch?.event || existingEntry?.ev),
+      existingMatch: Boolean(roundtripMatch || existingEntry?.ev),
       matchedEventId: roundtripMatch?.event?.id || existingEntry?.ev?.id || null,
-      matchedSource: roundtripMatch?.event ? 'local invitation uid' : (existingEntry?.ev ? 'existing imported ics' : null),
-      decision: roundtripMatch?.event ? 'skip' : (existingEntry?.ev ? 'update' : 'import'),
-      reason: roundtripMatch?.event ? `roundtrip mirror ${roundtripMatch.reason}` : (existingEntry?.ev ? 'existing external event' : 'new external event'),
+      matchedSource: roundtripMatch ? 'own invitation uid' : (existingEntry?.ev ? 'existing imported ics' : null),
+      decision: roundtripMatch ? 'skip' : (existingEntry?.ev ? 'update' : 'import'),
+      reason: roundtripMatch ? `roundtrip mirror ${roundtripMatch.reason}` : (existingEntry?.ev ? 'existing external event' : 'new external event'),
       externalKey
     });
   }
-  if (roundtripMatch?.event) {
-    markLocalEventMirrored(roundtripMatch.event, plannerEvent, icsEvent, roundtripMatch.reason);
-    seenRoundtripLocalEventIds.add(roundtripMatch.event.id);
+  if (roundtripMatch) {
+    if (roundtripMatch.event) {
+      markLocalEventMirrored(roundtripMatch.event, plannerEvent, icsEvent, roundtripMatch.reason);
+      seenRoundtripLocalEventIds.add(roundtripMatch.event.id);
+    }
     if (existingEntry) removeExistingIcsMirror(existingEntry);
     skippedEvents.push({
       reason: `roundtrip mirror ${roundtripMatch.reason}`,
       title: plannerEvent.title || plannerEvent.label || icsEvent.title || icsEvent.summary || 'Kalendertermin',
       externalId: plannerEvent.externalId,
       sourceId: plannerEvent.sourceId,
-      matchedEventId: roundtripMatch.event.id
+      matchedEventId: roundtripMatch.event?.id || null
+    });
+    logOwnInviteDebug('ics-roundtrip-skipped', roundtripMatch.event || plannerEvent, {
+      incomingUid: plannerEvent.sourceUid || plannerEvent.externalUid || null,
+      reason: roundtripMatch.reason
     });
     return;
   }
