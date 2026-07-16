@@ -174,6 +174,7 @@
   const modalTitle = document.getElementById('modalTitle');
   const modalLabel = document.getElementById('modalLabel');
   const modalCategory = document.getElementById('modalCategory');
+  const modalEntryType = document.getElementById('modalEntryType');
   const modalDay = document.getElementById('modalDay');
   const modalStart = document.getElementById('modalStart');
   const modalEnd = document.getElementById('modalEnd');
@@ -466,6 +467,13 @@
 
     function normalizeEvent(ev, fallbackSource = 'routine') {
       const allDay = Boolean(ev.allDay);
+      const rawSource = ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource;
+      const external = Boolean(ev.importSource === 'ics' || ev.provider === 'ics' || ev.provider === 'outlook' || ev.isExternal || ev.externalId || ev.externalCalendarId);
+      const allowedEntryTypes = ['calendar', 'timedTodo', 'habit', 'routine', 'external'];
+      let entryType = allowedEntryTypes.includes(ev.entryType) ? ev.entryType : null;
+      if (!entryType && ev.isHabit === true) entryType = 'habit';
+      if (!entryType && (ev.isTodo === true || ev.extraTodo === true || ev.taskType === 'todo')) entryType = 'timedTodo';
+      if (!entryType) entryType = external ? 'external' : (rawSource === 'routine' ? 'routine' : (rawSource === 'extra' ? 'timedTodo' : 'calendar'));
       return {
         id: ev.id || id(),
         day: clamp(Number(ev.day), 0, 6),
@@ -480,7 +488,8 @@
         done: Boolean(ev.done || ev.completed),
         missed: Boolean(ev.missed),
         completed: Boolean(ev.completed || ev.done),
-        source: ['routine', 'extra'].includes(ev.source) ? ev.source : fallbackSource,
+        source: rawSource,
+        entryType,
         templateEventId: ev.templateEventId || null,
         parentId: ev.parentId || null,
         stackedIntoId: ev.stackedIntoId || null,
@@ -1286,6 +1295,29 @@
   function isWeekMode() { return state.plannerMode === 'week'; }
   function isTemplateMode() { return state.plannerMode === 'template'; }
 
+  function eventEntryType(ev) {
+    if (!ev) return 'calendar';
+    if (isExternalIcsEvent(ev)) return 'external';
+    if (['calendar', 'timedTodo', 'habit', 'routine'].includes(ev.entryType)) return ev.entryType;
+    if (ev.isHabit === true) return 'habit';
+    if (ev.isTodo === true || ev.extraTodo === true || ev.taskType === 'todo') return 'timedTodo';
+    return ev.source === 'routine' ? 'routine' : (ev.source === 'extra' ? 'timedTodo' : 'calendar');
+  }
+
+  function isTimedTodoEvent(ev) {
+    return eventEntryType(ev) === 'timedTodo';
+  }
+
+  function isHabitEvent(ev) {
+    const type = eventEntryType(ev);
+    if (type === 'habit') return true;
+    return type === 'routine' && Boolean(state.categories[ev?.categoryId]?.habit);
+  }
+
+  function isTrackableCalendarEvent(ev) {
+    return !isExternalIcsEvent(ev) && (isTimedTodoEvent(ev) || isHabitEvent(ev));
+  }
+
   function isExternalReadOnlyEvent(ev) {
     return Boolean(
       ev?.readOnly ||
@@ -1622,7 +1654,7 @@
   if (!isWeekMode()) return { total: 0, done: 0, missed: 0, open: 0, percent: 0 };
 
   const habitItems = visibleEvents(currentWeekEvents())
-    .filter(ev => ev.day === dayIndex && !isIntegratedChild(ev) && state.categories[ev.categoryId]?.habit)
+    .filter(ev => ev.day === dayIndex && !isIntegratedChild(ev) && isTrackableCalendarEvent(ev))
     .map(ev => syncEventAutoComplete(ev));
 
   const dayTodos = state.todos
@@ -3467,7 +3499,7 @@
     clearSelection();
     isDragging = false;
     if (end <= start) return;
-    openEditor(null, { day: d, start, end, source: isTemplateMode() ? 'routine' : 'extra' });
+    openEditor(null, { day: d, start, end, source: isTemplateMode() ? 'routine' : 'extra', entryType: isTemplateMode() ? 'routine' : 'calendar' });
   }
   document.addEventListener('mouseup', () => {
     if (!isDragging) return;
@@ -3937,7 +3969,7 @@
         ${hiddenSubtaskCount ? `<div class="event-block-subtask-more">+${hiddenSubtaskCount} weitere</div>` : ''}
       </div>` : '';
 
-    const trackable = isWeekMode() && Boolean(cat.habit);
+    const trackable = isWeekMode() && isTrackableCalendarEvent(ev);
     const resizeHandles = canResizeEventDuration(ev) ? `
   <button class="event-resize-handle event-resize-start" type="button" title="Startzeit ziehen" aria-label="Startzeit ändern"></button>
   <button class="event-resize-handle event-resize-end" type="button" title="Endzeit ziehen" aria-label="Endzeit ändern"></button>
@@ -4255,6 +4287,17 @@ return div;
   }
 
   function renderInviteAttendees(ev = currentEvents().find(item => item.id === editingId)) {
+    if (!ev && !editingId) {
+      ev = {
+        id: null,
+        day: Number(modalDay?.value),
+        start: Number(modalStart?.value),
+        end: Number(modalEnd?.value),
+        allDay: false,
+        source: presetSource || (isTemplateMode() ? 'routine' : 'extra'),
+        entryType: modalEntryType?.value || (isTemplateMode() ? 'routine' : 'calendar')
+      };
+    }
     if (!eventInviteChips) return;
     const inviteAllowed = ev ? canManageParticipants(ev) : isWeekMode();
     const readOnlyExternal = Boolean(ev && isExternalReadOnlyEvent(ev));
@@ -4296,7 +4339,7 @@ return div;
     }
     if (sendInviteBtn) {
       sendInviteBtn.textContent = ev?.invitationSentAt ? 'Aktualisierung senden' : 'Einladung senden';
-      sendInviteBtn.disabled = !editingId || !canInviteEvent(ev) || !inviteDraftAttendees.length;
+      sendInviteBtn.disabled = !canInviteEvent(ev) || !inviteDraftAttendees.length;
       sendInviteBtn.parentElement.style.display = inviteAllowed ? '' : 'none';
     }
     renderInvitePanelState();
@@ -4344,10 +4387,86 @@ return div;
     ensureOwnEventInvitationUid(ev);
   }
 
+  function modalEventDraftValues() {
+    const categoryId = modalCategory.value;
+    const entryType = modalEntryType?.value || (isTemplateMode() ? 'routine' : 'calendar');
+    const label = modalLabel.value.trim() || state.categories[categoryId]?.label || 'Block';
+    const day = Number(modalDay.value);
+    const start = Number(modalStart.value);
+    const end = Number(modalEnd.value);
+    const selectedStackedIntoId = modalStackedInto?.value || null;
+    const stackedIntoId = selectedStackedIntoId && selectedStackedIntoId !== editingId ? selectedStackedIntoId : null;
+    if (Number.isNaN(day) || Number.isNaN(start) || Number.isNaN(end) || end <= start) {
+      alert('Die Endzeit muss nach der Startzeit liegen.');
+      return null;
+    }
+    return { categoryId, entryType, label, day, start, end, stackedIntoId };
+  }
+
+  function createEventFromModalDraft(draft) {
+    if (!draft || editingId) return editingId ? currentEvents().find(item => item.id === editingId) : null;
+    const newEventId = id();
+    const newEvent = {
+      id: newEventId,
+      day: draft.day,
+      start: draft.start,
+      end: draft.end,
+      date: isTemplateMode() ? null : dateKey(getDayDate(draft.day)),
+      label: draft.label,
+      categoryId: draft.categoryId,
+      entryType: draft.entryType,
+      done: false,
+      completed: false,
+      missed: false,
+      source: (presetSource || (isTemplateMode() ? 'routine' : 'extra')),
+      templateEventId: null,
+      stackedIntoId: draft.stackedIntoId,
+      autoComplete: Boolean(modalAutoComplete?.checked),
+      autoCompleteFromSubtasks: Boolean(modalAutoComplete?.checked),
+      subtasks: cloneEventSubtasks({ subtasks: eventDraftSubtasks }),
+      participants: [],
+      attendees: [],
+      inviteMessage: '',
+      invitationUid: invitationUidForEvent({ id: newEventId }),
+      invitationSequence: 0,
+      invitationStatus: 'not-sent',
+      invitationError: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    applyInviteDraftToEvent(newEvent);
+    currentEvents().push(newEvent);
+    logOwnInviteDebug('app-event-created', newEvent);
+    if (pendingTodoId) {
+      const todo = state.todos.find(item => item.id === pendingTodoId);
+      if (todo) {
+        todo.status = 'planned';
+        todo.done = false;
+        todo.plannedEventId = newEventId;
+        todo.plannedWeekStart = state.currentWeekStart;
+        todo.plannedDay = draft.day;
+      }
+      pendingTodoId = null;
+    }
+    editingId = newEventId;
+    presetSource = null;
+    return newEvent;
+  }
+
 
   async function sendCalendarInvitationForCurrentEvent(method = 'REQUEST') {
-    if (!editingId) { setInviteStatus('Bitte speichere den Termin zuerst.', 'error'); return false; }
     if (!addInviteEmailFromInput()) return false;
+    if (!editingId) {
+      if (method !== 'REQUEST') return false;
+      const draft = modalEventDraftValues();
+      if (!draft) return false;
+      const created = createEventFromModalDraft(draft);
+      if (!created) return false;
+      saveState();
+      openEditor(created.id);
+      invitePanelExpanded = true;
+      renderInvitePanelState();
+    }
     const ev = currentEvents().find(item => item.id === editingId);
     if (!ev) { setInviteStatus('Termin nicht gefunden.', 'error'); return false; }
     if (!canInviteEvent(ev)) { setInviteStatus(isExternalReadOnlyEvent(ev) ? 'Teilnehmer können für importierte Kalender nicht bearbeitet werden.' : 'Einladungen sind für eigene Termine mit Uhrzeit verfügbar.', 'error'); return false; }
@@ -4392,6 +4511,7 @@ return div;
       completed: false,
       missed: false,
       source: preset?.source || (isTemplateMode() ? 'routine' : 'extra'),
+      entryType: preset?.entryType || (isTemplateMode() ? 'routine' : 'calendar'),
       templateEventId: null,
       stackedIntoId: null,
       autoComplete: false,
@@ -4424,6 +4544,10 @@ return div;
       if (catId === ev.categoryId) option.selected = true;
       modalCategory.appendChild(option);
     });
+    if (modalEntryType) {
+      modalEntryType.value = eventEntryType(ev);
+      modalEntryType.disabled = readOnlyEvent || externalEvent;
+    }
     fillDaySelect();
     fillTimeSelect(modalStart, false);
     fillTimeSelect(modalEnd, true);
@@ -4502,11 +4626,17 @@ return div;
     const durationMinutes = Math.max(0, end - start) * 15;
     const hours = Math.floor(durationMinutes / 60), minutes = durationMinutes % 60;
     const durationText = hours ? `${hours}h ${minutes ? minutes + 'min' : ''}` : `${minutes}min`;
-    const categoryId = modalCategory.value;
-    const habitText = state.categories[categoryId]?.habit ? 'erscheint im Habit Tracker' : 'kein Habit Tracking';
+    const entryType = modalEntryType?.value || 'calendar';
+    const entryTypeText = {
+      calendar: 'Kalenderblock',
+      timedTodo: 'To-do mit Uhrzeit',
+      habit: 'Habit',
+      routine: 'Routine',
+      external: 'Externer ICS-Termin'
+    }[entryType] || 'Kalenderblock';
     const ev = editingId ? currentEvents().find(item => item.id === editingId) : null;
     const externalPrefix = isExternalIcsEvent(ev) ? 'Externer Kalendertermin · Lokale Änderungen werden nicht zurück in den externen Kalender übertragen. · ' : '';
-    modalInfo.textContent = `${externalPrefix}${days[d] || ''}${isTemplateMode() ? '' : ' · ' + formatShortDate(getDayDate(d))} · ${timeLabel(start)}–${timeLabel(end)} · Dauer: ${durationText} · ${habitText} · ${isTemplateMode() ? 'Routine-Vorlage' : (presetSource === 'extra' ? 'Extra-To-do' : 'Kalenderwoche')}`;
+    modalInfo.textContent = `${externalPrefix}${days[d] || ''}${isTemplateMode() ? '' : ' · ' + formatShortDate(getDayDate(d))} · ${timeLabel(start)}–${timeLabel(end)} · Dauer: ${durationText} · ${entryTypeText}`;
   }
 
   function fillDrawerDaySelect() {
@@ -4853,6 +4983,7 @@ return div;
     const dayEvents = visibleEvents(currentWeekEvents())
       .filter(ev => ev.day === state.activeHabitDay)
       .filter(ev => !isIntegratedChild(ev))
+      .filter(isTrackableCalendarEvent)
       .filter(ev => filter === 'all' || (filter === 'done' ? isEventDone(ev) : (filter === 'missed' ? ev.missed : (!isEventDone(ev) && !ev.missed))))
       .sort((a, b) => a.start - b.start || a.end - b.end);
 
@@ -4873,8 +5004,8 @@ return div;
     );
     renderDrawerControlsSummary(stats, taskFilter);
 
-    const routineList = dayEvents.filter(ev => ev.source !== 'extra' && state.categories[ev.categoryId]?.habit);
-    const scheduledTodos = dayEvents.filter(ev => ev.source === 'extra');
+    const routineList = dayEvents.filter(isHabitEvent);
+    const scheduledTodos = dayEvents.filter(isTimedTodoEvent);
     const routineStats = eventListProgressStats(routineList);
     const scheduledStats = eventListProgressStats(scheduledTodos);
 
@@ -5045,7 +5176,8 @@ return div;
       end: start + 4,
       label: todo.text,
       categoryId: todo.categoryId,
-      source: 'extra'
+      source: 'extra',
+      entryType: 'timedTodo'
     });
   }
 
@@ -5172,7 +5304,7 @@ return div;
     const d = state.activeHabitDay;
     taskTitle.textContent = `${days[d]} ${formatShortDate(getDayDate(d))} · Tages-Tasks`;
     const all = visibleEvents(currentWeekEvents())
-      .filter(ev => ev.day === d && !isIntegratedChild(ev) && state.categories[ev.categoryId]?.habit)
+      .filter(ev => ev.day === d && !isIntegratedChild(ev) && isTrackableCalendarEvent(ev))
       .sort((a, b) => a.start - b.start || a.end - b.end);
     const stats = all.reduce((acc, ev) => {
       const progress = eventProgressStats(ev);
@@ -5273,7 +5405,7 @@ return div;
   // ==================================================
 
   function routineTrackingStats() {
-    const trackableTemplate = state.templateEvents.filter(ev => !isIntegratedChild(ev) && state.categories[ev.categoryId]?.habit);
+    const trackableTemplate = state.templateEvents.filter(ev => !isIntegratedChild(ev) && isHabitEvent(ev));
     const weekEvents = currentWeekEvents();
     const stats = trackableTemplate.reduce((acc, templateEv) => {
       const weekEv = weekEvents.find(ev => ev.source === 'routine' && ev.templateEventId === templateEv.id);
@@ -5287,7 +5419,7 @@ return div;
   }
 
   function extraTrackingStats() {
-    const extras = visibleEvents(currentWeekEvents()).filter(ev => ev.source === 'extra' && !isIntegratedChild(ev) && state.categories[ev.categoryId]?.habit);
+    const extras = visibleEvents(currentWeekEvents()).filter(ev => !isIntegratedChild(ev) && (isTimedTodoEvent(ev) || (ev.source === 'extra' && isHabitEvent(ev))));
     const stats = extras.reduce((acc, ev) => {
       const progress = eventProgressStats(ev);
       acc.total += progress.total;
@@ -5342,7 +5474,7 @@ return div;
       const dayIndex = (date.getDay() + 6) % 7;
       const weekEvents = visibleEvents(weekEventsForKey(weekKey));
       state.templateEvents
-        .filter(ev => ev.day === dayIndex && !isIntegratedChild(ev) && state.categories[ev.categoryId]?.habit)
+        .filter(ev => ev.day === dayIndex && !isIntegratedChild(ev) && isHabitEvent(ev))
         .forEach(templateEv => {
           const weekEv = weekEvents.find(ev => ev.source === 'routine' && ev.templateEventId === templateEv.id);
           const scoreSource = weekEv || templateEv;
@@ -5367,7 +5499,7 @@ return div;
         });
 
       weekEvents
-        .filter(ev => ev.day === dayIndex && ev.source === 'extra' && !isIntegratedChild(ev) && state.categories[ev.categoryId]?.habit)
+        .filter(ev => ev.day === dayIndex && !isIntegratedChild(ev) && (isTimedTodoEvent(ev) || (ev.source === 'extra' && isHabitEvent(ev))))
         .forEach(ev => {
           const weights = eventTrackingWeight(ev, weekEvents);
           items.push({
@@ -5994,7 +6126,8 @@ return div;
           end: start + 4,
           label: todo.text,
           categoryId: todo.categoryId,
-          source: 'extra'
+          source: 'extra',
+          entryType: 'timedTodo'
         });
       });
 
@@ -6454,6 +6587,7 @@ function toggleMissed(eventId) {
   document.getElementById('cancelModalBtn').onclick = closeModal;
   document.getElementById('saveModalBtn').onclick = () => {
     const categoryId = modalCategory.value;
+    const entryType = modalEntryType?.value || (isTemplateMode() ? 'routine' : 'calendar');
     const label = modalLabel.value.trim() || state.categories[categoryId].label;
     const day = Number(modalDay.value);
     const start = Number(modalStart.value);
@@ -6482,6 +6616,7 @@ function toggleMissed(eventId) {
           end,
           label,
           categoryId,
+          entryType,
           stackedIntoId,
           parentId: null,
           autoComplete,
@@ -6507,50 +6642,9 @@ function toggleMissed(eventId) {
         syncParentAutoCompleteForChild(ev);
       }
     } else {
-  const newEventId = id();
-
-  const newEvent = {
-    id: newEventId,
-    day,
-    start,
-    end,
-    label,
-    categoryId,
-    done: false,
-    completed: false,
-    missed: false,
-    source: (presetSource || (isTemplateMode() ? 'routine' : 'extra')),
-    templateEventId: null,
-    stackedIntoId,
-    autoComplete: Boolean(modalAutoComplete?.checked),
-    autoCompleteFromSubtasks: Boolean(modalAutoComplete?.checked),
-    subtasks: cloneEventSubtasks({ subtasks: eventDraftSubtasks }),
-    participants: [],
-    attendees: [],
-    inviteMessage: '',
-    invitationUid: invitationUidForEvent({ id: newEventId }),
-    invitationSequence: 0,
-    invitationStatus: 'not-sent',
-    invitationError: null,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-  applyInviteDraftToEvent(newEvent);
-  currentEvents().push(newEvent);
-  logOwnInviteDebug('app-event-created', newEvent);
-
-  if (pendingTodoId) {
-    const todo = state.todos.find(t => t.id === pendingTodoId);
-    if (todo) {
-      todo.status = 'planned';
-      todo.done = false;
-      todo.plannedEventId = newEventId;
-      todo.plannedWeekStart = state.currentWeekStart;
-      todo.plannedDay = day;
+      const created = createEventFromModalDraft({ categoryId, entryType, label, day, start, end, stackedIntoId });
+      if (!created) return;
     }
-    pendingTodoId = null;
-  }
-}
     saveState();
     renderAll();
     closeModal();
@@ -6612,6 +6706,7 @@ function toggleMissed(eventId) {
     updateModalInfo();
   }));
   modalCategory.addEventListener('change', updateModalInfo);
+  if (modalEntryType) modalEntryType.addEventListener('change', updateModalInfo);
   modalBackdrop.addEventListener('click', (e) => { if (e.target === modalBackdrop) closeModal(); });
   document.addEventListener('click', () => {
     if (weekSettings) weekSettings.classList.remove('open');
@@ -7373,6 +7468,7 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
     done: keepExisting('done', false),
     missed: keepExisting('missed', false),
     source: 'extra',
+    entryType: 'external',
     templateEventId: null,
     importSource: 'ics',
     provider: plannerEvent.provider || 'ics',
@@ -7447,6 +7543,7 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
   done: false,
   missed: false,
   source: 'extra',
+  entryType: 'external',
   templateEventId: null,
 
   // Herkunft bleibt markiert

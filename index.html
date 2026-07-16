@@ -311,6 +311,14 @@
       <input id="modalLabel" type="text" />
       <label for="modalCategory">Kategorie</label>
       <select id="modalCategory"></select>
+      <label for="modalEntryType">Art des Eintrags</label>
+      <select id="modalEntryType">
+        <option value="calendar">Kalenderblock</option>
+        <option value="timedTodo">To-do mit Uhrzeit</option>
+        <option value="habit">Habit</option>
+        <option value="routine">Routine</option>
+        <option value="external" disabled>Externer ICS-Termin</option>
+      </select>
       <label for="modalDay">Tag</label>
       <select id="modalDay"></select>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
