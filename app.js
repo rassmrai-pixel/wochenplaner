@@ -53,6 +53,7 @@
     specialEventsDrawerOpen: false,
     mobileControlsOpen: false,
     mobileCalendarStartDay: null,
+    calendarVisibleDays: null,
     drawerView: 'habit',
     openHeaderTodoDay: null,
     currentWeekStart: null,
@@ -452,6 +453,7 @@
     const s = { ...clone(defaults), ...input };
     s.uiHomeVersion = 'calendar-main-v1';
     s.categories = { ...clone(defaults).categories, ...(input.categories || {}) };
+    s.calendarVisibleDays = [1, 2, 3, 7].includes(Number(input.calendarVisibleDays)) ? Number(input.calendarVisibleDays) : null;
     Object.values(s.categories).forEach(cat => { if (cat.habit === undefined) cat.habit = true; });
     const incomingFeed = input.calendarFeed && typeof input.calendarFeed === 'object' ? input.calendarFeed : {};
     s.calendarFeed = { ...clone(defaults).calendarFeed, ...incomingFeed };
@@ -1134,6 +1136,7 @@
       stackedIntoId: typeof raw.stackedIntoId === 'string' && raw.stackedIntoId ? raw.stackedIntoId : null,
       parentId: typeof raw.parentId === 'string' && raw.parentId ? raw.parentId : null,
       hidden: Boolean(raw.hidden),
+      completed: typeof raw.completed === 'boolean' ? raw.completed : null,
       note: typeof raw.note === 'string' && raw.note.trim() ? raw.note.trim() : null,
       updatedAt: raw.updatedAt || null
     };
@@ -1170,6 +1173,7 @@
       overrides.title || overrides.label || overrides.date || overrides.day !== null ||
       overrides.start !== null || overrides.end !== null || overrides.categoryId ||
       overrides.stackedIntoId || overrides.parentId || overrides.hidden || overrides.note ||
+      overrides.completed !== null ||
       (Array.isArray(ev.subtasks) && ev.subtasks.length) || ev.done || ev.completed || ev.missed ||
       ev.autoComplete || ev.autoCompleteFromSubtasks || ev.categoryId !== 'external'
     );
@@ -1226,6 +1230,7 @@
     }
     ev.stackedIntoId = overrides.stackedIntoId || ev.stackedIntoId || null;
     ev.parentId = overrides.parentId || ev.parentId || null;
+    if (overrides.completed !== null) setEventDoneStatus(ev, overrides.completed);
     return ev;
   }
 
@@ -1255,6 +1260,7 @@
     if ('stackedIntoId' in fields) overrides.stackedIntoId = fields.stackedIntoId || null;
     if ('parentId' in fields) overrides.parentId = fields.parentId || null;
     if ('hidden' in fields) overrides.hidden = Boolean(fields.hidden);
+    if ('completed' in fields || 'done' in fields) overrides.completed = Boolean(fields.completed ?? fields.done);
     overrides.updatedAt = new Date().toISOString();
     ev.localOverrides = overrides;
     ev.externalLocalEditedAt = overrides.updatedAt;
@@ -2958,8 +2964,14 @@
     return window.matchMedia('(max-width: 768px)').matches;
   }
 
+  function calendarVisibleDayCount() {
+    const saved = Number(state.calendarVisibleDays);
+    if ([1, 2, 3, 7].includes(saved)) return saved;
+    return isMobileViewport() ? (window.matchMedia('(max-width: 349px)').matches ? 2 : 3) : 7;
+  }
+
   function mobileVisibleDayCount() {
-    return window.matchMedia('(max-width: 349px)').matches ? 2 : 3;
+    return calendarVisibleDayCount();
   }
 
   function mobileCalendarStartDay() {
@@ -2968,7 +2980,7 @@
     const today = getTodayInfo();
     let start = Number.isInteger(Number(state.mobileCalendarStartDay)) ? Number(state.mobileCalendarStartDay) : null;
     if (start === null) {
-      start = state.currentWeekStart === today.weekKey ? today.dayIndex - Math.floor(count / 2) : 0;
+      start = state.currentWeekStart === today.weekKey ? today.dayIndex : 0;
     }
     start = clamp(start, 0, maxStart);
     state.mobileCalendarStartDay = start;
@@ -2976,8 +2988,9 @@
   }
 
   function visibleCalendarDayIndexes() {
-    if (!isMobileViewport() || !isWeekMode() || state.viewMode === 'tasks') return days.map((_, index) => index);
-    const count = mobileVisibleDayCount();
+    if (!isWeekMode() || state.viewMode === 'tasks') return days.map((_, index) => index);
+    const count = calendarVisibleDayCount();
+    if (count === 7) return days.map((_, index) => index);
     const start = mobileCalendarStartDay();
     return Array.from({ length: count }, (_, index) => start + index);
   }
@@ -2985,6 +2998,7 @@
   function shiftMobileCalendarDays(delta) {
     if (!isMobileViewport() || !isWeekMode() || state.viewMode === 'tasks' || isDragging) return;
     const count = mobileVisibleDayCount();
+    if (count === 7) return;
     const maxStart = 7 - count;
     let next = mobileCalendarStartDay() + delta;
     if (next < 0) {
@@ -3019,15 +3033,39 @@
     if (mobileWeekSummaryBtn) mobileWeekSummaryBtn.textContent = formatMobileWeekSummary();
     if (mobileControlsStatus) {
       const view = state.plannerMode === 'tracking' ? 'Tracking' : (state.plannerMode === 'template' ? 'Routine' : 'Kalender');
-      mobileControlsStatus.textContent = `${view} · ${formatMobileWeekSummary()}`;
+      const count = calendarVisibleDayCount();
+      mobileControlsStatus.textContent = `${view} · ${count === 7 ? 'Woche' : `${count} ${count === 1 ? 'Tag' : 'Tage'}`} · ${formatMobileWeekSummary()}`;
     }
+    document.querySelectorAll('[data-calendar-visible-days]').forEach(button => {
+      const active = Number(button.dataset.calendarVisibleDays) === calendarVisibleDayCount();
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+  }
+
+  function setCalendarVisibleDays(value) {
+    const count = [1, 2, 3, 7].includes(Number(value)) ? Number(value) : 7;
+    state.calendarVisibleDays = count;
+    if (count === 7) {
+      state.mobileCalendarStartDay = null;
+    } else {
+      const preferredStart = Number.isInteger(Number(state.mobileCalendarStartDay))
+        ? Number(state.mobileCalendarStartDay)
+        : Number(state.activeHabitDay || 0);
+      state.mobileCalendarStartDay = clamp(preferredStart, 0, 7 - count);
+    }
+    saveState();
+    renderAll();
   }
 
   function renderCalendar() {
     calendar.innerHTML = '';
     const today = getTodayInfo();
     const visibleDays = visibleCalendarDayIndexes();
-    calendar.classList.toggle('mobile-calendar-grid', isMobileViewport() && isWeekMode() && state.viewMode !== 'tasks');
+    const compactMobileCalendar = isMobileViewport() && isWeekMode() && state.viewMode !== 'tasks' && visibleDays.length < 7;
+    calendar.classList.toggle('mobile-calendar-grid', compactMobileCalendar);
+    calendar.classList.toggle('calendar-range-grid', isWeekMode() && visibleDays.length < 7);
+    calendarWrap?.classList.toggle('calendar-week-overflow', isMobileViewport() && visibleDays.length === 7);
     calendar.style.setProperty('--visible-days', String(visibleDays.length));
     calendar.appendChild(headerCell('', 1));
     visibleDays.forEach((dayIndex, visibleIndex) => calendar.appendChild(headerCell(days[dayIndex], visibleIndex + 2, dayIndex)));
@@ -3079,6 +3117,35 @@
         slot.addEventListener('mouseup', () => finishDrag(d, s));
         col.appendChild(slot);
       }
+
+      const createLane = document.createElement('div');
+      createLane.className = 'event-create-lane';
+      createLane.setAttribute('aria-label', `${days[d]}: Termin in belegter Zeit erstellen`);
+      for (let s = 0; s < slotsPerDay; s++) {
+        const createSlot = document.createElement('button');
+        createSlot.type = 'button';
+        createSlot.className = 'event-create-lane-slot';
+        createSlot.style.top = `${s * cellHeight()}px`;
+        createSlot.dataset.day = d;
+        createSlot.dataset.slot = s;
+        createSlot.title = `${timeLabel(s)}: neuen Termin erstellen`;
+        createSlot.setAttribute('aria-label', `${days[d]} ${timeLabel(s)}: neuen Termin erstellen`);
+        ['pointerdown', 'mousedown', 'touchstart'].forEach(type => createSlot.addEventListener(type, event => event.stopPropagation(), { passive: true }));
+        createSlot.addEventListener('click', event => {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          if (bulkSelectionMode) return;
+          openEditor(null, {
+            day: d,
+            start: s,
+            end: Math.min(s + 1, slotsPerDay),
+            source: isTemplateMode() ? 'routine' : 'extra',
+            entryType: isTemplateMode() ? 'routine' : 'calendar'
+          });
+        });
+        createLane.appendChild(createSlot);
+      }
+      col.appendChild(createLane);
 
       const rawDayEvents = currentEvents().filter(ev => Number(ev.day) === Number(d));
       rawDayEvents.filter(icsSyncDebugMatches).forEach(event => {
@@ -3247,14 +3314,20 @@
           const ev = headerItem.event;
           const cat = state.categories[ev.categoryId] || state.categories.external || state.categories.orga;
           const item = document.createElement('div');
-          item.className = 'all-day-item all-day-event';
+          item.className = `all-day-item all-day-event ${isEventDone(ev) ? 'done' : ''}`;
           item.style.borderLeftColor = cat.color;
           item.title = `${ev.label} · Ganztag`;
-          item.innerHTML = `<span class="all-day-text">Ganztag · ${escapeHtml(ev.label)}</span>`;
+          item.innerHTML = `<input class="all-day-check" type="checkbox" aria-label="Erledigt" ${isEventDone(ev) ? 'checked' : ''} /><span class="all-day-text">Ganztag · ${escapeHtml(ev.label)}</span>`;
           item.addEventListener('click', e => {
             e.preventDefault();
             e.stopPropagation();
             openHeaderTodosForDay(dayIndex);
+          });
+          item.querySelector('.all-day-check')?.addEventListener('click', e => e.stopPropagation());
+          item.querySelector('.all-day-check')?.addEventListener('dblclick', e => e.stopPropagation());
+          item.querySelector('.all-day-check')?.addEventListener('change', e => {
+            e.stopPropagation();
+            toggleDone(ev.id, e.target.checked);
           });
           cell.appendChild(item);
           return;
@@ -3432,7 +3505,8 @@
     const eventRows = allDayEvents.map(ev => {
       const cat = state.categories[ev.categoryId] || state.categories.external || state.categories.orga;
       return `
-        <div class="all-day-popover-row all-day-popover-event" data-event-id="${ev.id}" style="border-left-color:${escapeHtml(cat.color)}">
+        <div class="all-day-popover-row all-day-popover-event ${isEventDone(ev) ? 'done' : ''}" data-event-id="${ev.id}" style="border-left-color:${escapeHtml(cat.color)}">
+          <input class="all-day-popover-check" type="checkbox" aria-label="Erledigt" ${isEventDone(ev) ? 'checked' : ''} />
           <span class="all-day-popover-task">Ganztag · ${escapeHtml(ev.label)}</span>
           <span class="all-day-popover-meta">Extern</span>
         </div>`;
@@ -3465,6 +3539,16 @@
     panel.querySelector('.all-day-popover-close').addEventListener('click', closeHeaderTodos);
     panel.querySelector('.all-day-popover-planner').addEventListener('click', e => openTodoPlannerForDay(dayIndex, e));
     panel.querySelectorAll('.all-day-popover-special').forEach(row => row.addEventListener('click', openSpecialEventsModal));
+    panel.querySelectorAll('.all-day-popover-event').forEach(row => {
+      const ev = allDayEvents.find(item => item.id === row.dataset.eventId);
+      const check = row.querySelector('.all-day-popover-check');
+      check?.addEventListener('click', e => e.stopPropagation());
+      check?.addEventListener('dblclick', e => e.stopPropagation());
+      check?.addEventListener('change', e => {
+        e.stopPropagation();
+        if (ev) toggleDone(ev.id, e.target.checked);
+      });
+    });
     panel.querySelectorAll('.all-day-popover-row').forEach(row => {
       const todo = todos.find(item => item.id === row.dataset.todoId);
       if (!todo) return;
@@ -3604,11 +3688,15 @@
 
   let mobileEventTapState = null;
 
+  function isEventControlTarget(target) {
+    return Boolean(target?.closest?.('input, button, select, textarea, a, .event-resize-handle, .event-check-hitbox'));
+  }
+
   function bindMobileEventDoubleTap(element, ev) {
     let touchStart = null;
     element.addEventListener('touchstart', e => {
       const touch = e.touches?.[0];
-      if (!touch || e.target.closest('input, button, select, textarea, a')) {
+      if (!touch || isEventControlTarget(e.target)) {
         touchStart = null;
         return;
       }
@@ -3621,7 +3709,7 @@
         touchStart = null;
         return;
       }
-      if (!touchStart || isDragging || e.target.closest('input, button, select, textarea, a')) {
+      if (!touchStart || isDragging || isEventControlTarget(e.target)) {
         touchStart = null;
         return;
       }
@@ -3804,7 +3892,7 @@
 
   function bindBulkLongPress(element, ev) {
     let press = null;
-    const canStart = target => !bulkSelectionMode && isBulkEditableEvent(ev) && !target.closest('input, button, select, textarea, a, .event-resize-handle');
+    const canStart = target => !bulkSelectionMode && isBulkEditableEvent(ev) && !isEventControlTarget(target);
     const beginPress = (x, y, target) => {
       if (!canStart(target)) return;
       if (press) window.clearTimeout(press.timer);
@@ -3866,10 +3954,13 @@
     const leftPercent = (ev._lane || 0) * widthPercent;
     const widthPxAdjustment = totalGap / laneCount;
     const leftPxAdjustment = (ev._lane || 0) * gap / laneCount;
+    const createLaneWidth = isMobileViewport() ? 20 : 12;
+    const laneReservedWidth = createLaneWidth / laneCount;
+    const laneReservedLeft = (ev._lane || 0) * laneReservedWidth;
     div.style.top = `${ev.start * cellHeight() + 1}px`;
     div.style.height = `${Math.max(16, (ev.end - ev.start) * cellHeight() - 2)}px`;
-    div.style.left = `calc(${leftPercent}% + ${leftPxAdjustment}px)`;
-    div.style.width = `calc(${widthPercent}% - ${widthPxAdjustment}px)`;
+    div.style.left = `calc(${leftPercent}% + ${leftPxAdjustment - laneReservedLeft}px)`;
+    div.style.width = `calc(${widthPercent}% - ${widthPxAdjustment + laneReservedWidth}px)`;
     div.style.background = cat.color;
     div.style.setProperty('--event-color', cat.color);
     div.title = `${days[ev.day]} ${isTemplateMode() ? '' : formatShortDate(getDayDate(ev.day)) + ' '}${eventTime(ev)} · ${ev.label}`;
@@ -3971,6 +4062,11 @@
       </div>` : '';
 
     const trackable = isWeekMode() && isTrackableCalendarEvent(ev);
+    const completionToggle = isWeekMode() && (trackable || isExternalIcsEvent(ev));
+    const completionTitle = eventAutoCompleteEnabled(ev) && (Array.isArray(ev.subtasks) && ev.subtasks.length || integratedCount)
+      ? 'Automatisch: erledigt sich, sobald alle Untertasks erledigt sind'
+      : 'Erledigt';
+    const completionDisabled = eventAutoCompleteEnabled(ev) && (Array.isArray(ev.subtasks) && ev.subtasks.length || integratedCount);
     const resizeHandles = canResizeEventDuration(ev) ? `
   <button class="event-resize-handle event-resize-start" type="button" title="Startzeit ziehen" aria-label="Startzeit ändern"></button>
   <button class="event-resize-handle event-resize-end" type="button" title="Endzeit ziehen" aria-label="Endzeit ändern"></button>
@@ -3978,7 +4074,7 @@
     const bulkSelectButton = bulkSelectionMode && isBulkSelectableEvent(ev) ? `<button class="event-bulk-select ${bulkSelected ? 'selected' : ''}" type="button" aria-label="Termin auswählen" title="Termin auswählen">${bulkSelected ? '✓' : ''}</button>` : '';
     div.innerHTML = `${resizeHandles}${bulkSelectButton}
   <div class="event-main-row event-title-row ${hasStartAlignedChild ? 'event-main-overlay-bar' : ''}">
-    ${trackable ? `<input class="event-check" type="checkbox" ${isEventDone(ev) ? 'checked' : ''} ${eventAutoCompleteEnabled(ev) && (Array.isArray(ev.subtasks) && ev.subtasks.length || integratedCount) ? 'disabled title="Automatisch: erledigt sich, sobald alle Untertasks erledigt sind"' : 'title="Erledigt"'} />` : ''}
+    ${completionToggle ? `<label class="event-check-hitbox" title="${escapeHtml(completionTitle)}"><input class="event-check" type="checkbox" aria-label="Erledigt" ${isEventDone(ev) ? 'checked' : ''} ${completionDisabled ? 'disabled' : ''} /></label>` : ''}
     ${trackable ? `<button class="event-missed-btn ${ev.missed ? 'active' : ''}" type="button" title="Nicht eingehalten">!</button>` : ''}
     <span class="event-title">${escapeHtml(ev.label)}</span>
     ${compactMeta}
@@ -4003,7 +4099,7 @@
       showEventTitlePopup(ev, e.currentTarget);
     });
     div.addEventListener('click', e => {
-      if (!bulkSelectionMode || !isBulkSelectableEvent(ev) || e.target.closest('input, button, select, textarea, a, .event-resize-handle')) return;
+      if (!bulkSelectionMode || !isBulkSelectableEvent(ev) || isEventControlTarget(e.target)) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       toggleBulkEventSelection(ev.id);
@@ -4026,7 +4122,7 @@
     bindMobileEventDoubleTap(div, ev);
     bindBulkLongPress(div, ev);
     div.addEventListener('dragstart', e => {
-      if (bulkSelectionMode || !canMoveEventAcrossDays(ev) || e.target.closest('input, button, select, textarea, a, .event-resize-handle')) {
+      if (bulkSelectionMode || !canMoveEventAcrossDays(ev) || isEventControlTarget(e.target)) {
         e.preventDefault();
         return;
       }
@@ -4047,9 +4143,13 @@
     });
     const checkbox = div.querySelector('.event-check');
 if (checkbox) {
-  checkbox.addEventListener('click', e => {
+  const hitbox = div.querySelector('.event-check-hitbox');
+  ['pointerdown', 'mousedown', 'touchstart', 'click', 'dblclick'].forEach(type => {
+    hitbox?.addEventListener(type, e => e.stopPropagation(), { passive: type === 'touchstart' });
+  });
+  checkbox.addEventListener('change', e => {
     e.stopPropagation();
-    toggleDone(ev.id, checkbox.checked);
+    toggleDone(ev.id, e.target.checked);
   });
 }
 
@@ -6136,11 +6236,12 @@ return div;
     });
   }
 
- function toggleDone(eventId, done) {
+  function toggleDone(eventId, done) {
   const ev = currentEvents().find(x => x.id === eventId);
   if (!ev) return;
 
   setEventDoneStatus(ev, done);
+  if (isExternalIcsEvent(ev)) recordExternalLocalOverrides(ev, { completed: Boolean(done) });
   touchEvent(ev);
   syncParentAutoCompleteForChild(ev);
 
@@ -6298,7 +6399,7 @@ function toggleMissed(eventId) {
   todayWeekBtn.onclick = () => {
     const today = getTodayInfo();
     state.currentWeekStart = today.weekKey;
-    state.mobileCalendarStartDay = null;
+    state.mobileCalendarStartDay = today.dayIndex;
     state.activeHabitDay = today.dayIndex;
     state.plannerMode = state.plannerMode === 'template' ? 'week' : state.plannerMode;
     currentWeekEvents();
@@ -6320,13 +6421,21 @@ function toggleMissed(eventId) {
       renderMobileControls();
     });
   }
+  document.querySelectorAll('[data-calendar-visible-days]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      setCalendarVisibleDays(button.dataset.calendarVisibleDays);
+    });
+  });
 
   weekDateInput.onchange = () => {
     if (!weekDateInput.value) return;
-    state.currentWeekStart = clampWeekKey(weekDateInput.value);
-    state.mobileCalendarStartDay = null;
-    const today = getTodayInfo();
-    if (state.currentWeekStart === today.weekKey) state.activeHabitDay = today.dayIndex;
+    const selectedDate = dateKeyToLocalDate(weekDateInput.value);
+    const selectedDayIndex = (selectedDate.getDay() + 6) % 7;
+    state.currentWeekStart = clampWeekKey(selectedDate);
+    state.mobileCalendarStartDay = selectedDayIndex;
+    state.activeHabitDay = selectedDayIndex;
     currentWeekEvents();
     saveState();
     renderAll();
@@ -7489,8 +7598,8 @@ function compactIcsPlannerEvent(plannerEvent, existing = null) {
     location: externalOriginal.location,
     description: null,
     duration: plannerEvent.duration,
-    completed: keepExisting('completed', false),
-    done: keepExisting('done', false),
+    completed: localOverrides.completed !== null ? localOverrides.completed : keepExisting('completed', false),
+    done: localOverrides.completed !== null ? localOverrides.completed : keepExisting('done', false),
     missed: keepExisting('missed', false),
     source: 'extra',
     entryType: 'external',

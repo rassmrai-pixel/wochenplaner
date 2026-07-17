@@ -95,6 +95,15 @@
       <div class="week-settings" id="weekSettings">
         <button class="small ghost week-settings-btn" id="weekSettingsBtn" type="button" title="Werkzeuge">⚙</button>
         <div class="week-settings-menu week-menu-popover" id="weekSettingsMenu">
+          <div class="calendar-day-count-setting">
+            <span>Sichtbare Tage</span>
+            <div class="calendar-day-count-options" role="group" aria-label="Anzahl sichtbarer Kalendertage">
+              <button type="button" data-calendar-visible-days="1" aria-pressed="false">1 Tag</button>
+              <button type="button" data-calendar-visible-days="2" aria-pressed="false">2 Tage</button>
+              <button type="button" data-calendar-visible-days="3" aria-pressed="false">3 Tage</button>
+              <button type="button" data-calendar-visible-days="7" aria-pressed="false">Woche</button>
+            </div>
+          </div>
           <button class="primary" id="addCategoryBtn" type="button">Neue Kategorie</button>
           <button id="exportBtn" type="button">Export</button>
           <button id="importBtn" type="button">Import</button>
