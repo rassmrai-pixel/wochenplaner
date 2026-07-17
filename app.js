@@ -34,6 +34,7 @@
   let icsSyncStatus = '';
   let icsAutoSyncTimer = null;
   let icsCalendarIntegrationInitialized = false;
+  let activeIcsExternalEventsTab = 'hidden';
   const invitationUpdateTimers = new Map();
   const cellHeight = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cell-h')) || 18;
 
@@ -7139,6 +7140,30 @@ function renderHiddenExternalEvents() {
   restoreAllButton.onclick = () => restoreHiddenExternalEvents(hiddenEvents.map(item => item.key));
 }
 
+function renderIcsExternalEventsManager() {
+  renderHiddenExternalEvents();
+  renderDeletedExternalEvents();
+  const hiddenCount = hiddenExternalEvents().length;
+  const deletedCount = (state.deletedExternalEvents || []).length;
+  const hiddenTab = document.getElementById('icsHiddenEventsTab');
+  const deletedTab = document.getElementById('icsDeletedEventsTab');
+  const hiddenPanel = document.getElementById('icsHiddenEventsPanel');
+  const deletedPanel = document.getElementById('icsDeletedEventsPanel');
+  const hiddenActive = activeIcsExternalEventsTab !== 'deleted';
+  if (hiddenTab) {
+    hiddenTab.textContent = `Ausgeblendet (${hiddenCount})`;
+    hiddenTab.setAttribute('aria-selected', String(hiddenActive));
+    hiddenTab.tabIndex = hiddenActive ? 0 : -1;
+  }
+  if (deletedTab) {
+    deletedTab.textContent = `Gelöscht (${deletedCount})`;
+    deletedTab.setAttribute('aria-selected', String(!hiddenActive));
+    deletedTab.tabIndex = hiddenActive ? -1 : 0;
+  }
+  if (hiddenPanel) hiddenPanel.hidden = !hiddenActive;
+  if (deletedPanel) deletedPanel.hidden = hiddenActive;
+}
+
 function icsExternalIdAliases(externalId) {
   if (!externalId) return [];
   const raw = String(externalId);
@@ -8237,6 +8262,12 @@ function startIcsAutoSync() {
     const quickSyncBtn = document.getElementById('quickIcsSyncBtn');
     const removeBtn = document.getElementById('removeIcsBtn');
     const modal = document.getElementById('icsModal');
+    const managerModal = document.getElementById('icsExternalEventsModal');
+    const openManagerBtn = document.getElementById('openIcsExternalEventsManagerBtn');
+    const closeManagerBtn = document.getElementById('closeIcsExternalEventsManagerBtn');
+    const closeManagerXBtn = document.getElementById('closeIcsExternalEventsManagerXBtn');
+    const hiddenTab = document.getElementById('icsHiddenEventsTab');
+    const deletedTab = document.getElementById('icsDeletedEventsTab');
     const input = document.getElementById('icsUrlInput');
 
     if (icsCalendarIntegrationInitialized) return;
@@ -8264,16 +8295,78 @@ function startIcsAutoSync() {
       });
     }
 
-    const closeIcsModal = () => modal?.classList.add('hidden');
+    const closeIcsExternalEventsManager = () => {
+      if (!managerModal || managerModal.classList.contains('hidden')) return;
+      managerModal.classList.add('hidden');
+      if (modal) modal.inert = false;
+      openManagerBtn?.focus();
+    };
+
+    const selectIcsExternalEventsTab = (tab, focus = false) => {
+      activeIcsExternalEventsTab = tab === 'deleted' ? 'deleted' : 'hidden';
+      renderIcsExternalEventsManager();
+      if (focus) (activeIcsExternalEventsTab === 'deleted' ? deletedTab : hiddenTab)?.focus();
+    };
+
+    const openIcsExternalEventsManager = () => {
+      if (!managerModal) return;
+      activeIcsExternalEventsTab = hiddenExternalEvents().length || !(state.deletedExternalEvents || []).length ? 'hidden' : 'deleted';
+      renderIcsExternalEventsManager();
+      if (modal) modal.inert = true;
+      managerModal.classList.remove('hidden');
+      setTimeout(() => (activeIcsExternalEventsTab === 'deleted' ? deletedTab : hiddenTab)?.focus(), 50);
+    };
+
+    const closeIcsModal = () => {
+      closeIcsExternalEventsManager();
+      modal?.classList.add('hidden');
+    };
 
     if (closeBtn && modal) closeBtn.addEventListener('click', closeIcsModal);
     if (closeXBtn && modal) closeXBtn.addEventListener('click', closeIcsModal);
+    if (openManagerBtn) openManagerBtn.addEventListener('click', openIcsExternalEventsManager);
+    if (closeManagerBtn) closeManagerBtn.addEventListener('click', closeIcsExternalEventsManager);
+    if (closeManagerXBtn) closeManagerXBtn.addEventListener('click', closeIcsExternalEventsManager);
+    if (hiddenTab) hiddenTab.addEventListener('click', () => selectIcsExternalEventsTab('hidden'));
+    if (deletedTab) deletedTab.addEventListener('click', () => selectIcsExternalEventsTab('deleted'));
+    [hiddenTab, deletedTab].filter(Boolean).forEach(tab => tab.addEventListener('keydown', event => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const nextTab = event.key === 'ArrowLeft' || event.key === 'Home' ? 'hidden' : 'deleted';
+      selectIcsExternalEventsTab(nextTab, true);
+    }));
 
     if (modal) {
       modal.addEventListener('click', (event) => {
         if (event.target === modal) closeIcsModal();
       });
     }
+    if (managerModal) {
+      managerModal.addEventListener('click', event => {
+        if (event.target === managerModal) closeIcsExternalEventsManager();
+      });
+    }
+    document.addEventListener('keydown', event => {
+      if (!managerModal || managerModal.classList.contains('hidden')) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeIcsExternalEventsManager();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = [...managerModal.querySelectorAll('button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+        .filter(element => !element.closest('[hidden]'));
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
 
     if (syncBtn) {
   syncBtn.addEventListener('click', syncIcsCalendarFromModal);
@@ -8298,7 +8391,7 @@ if (removeBtn) {
   // INIT
   // ==================================================
 
-function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); renderCalendarFeedSettings(); renderSpecialEventsButton(); renderSpecialEventsModal(); renderSpecialEventsDrawer(); renderMobileControls(); renderBulkActionBar(); renderHiddenExternalEvents(); renderDeletedExternalEvents(); updateIcsAutoSyncMeta(); }
+function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); renderCalendarFeedSettings(); renderSpecialEventsButton(); renderSpecialEventsModal(); renderSpecialEventsDrawer(); renderMobileControls(); renderBulkActionBar(); renderIcsExternalEventsManager(); updateIcsAutoSyncMeta(); }
   fillTaskDaySelect();
   renderAll();
   renderAll();

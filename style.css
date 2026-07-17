@@ -3170,6 +3170,100 @@
       gap: 6px;
     }
 
+    .ics-manage-events-btn {
+      width: 100%;
+      margin-top: 14px;
+    }
+
+    .ics-modal.ics-management-modal {
+      z-index: 6002;
+    }
+
+    .ics-management-card {
+      width: min(640px, 100%);
+      max-height: min(86dvh, 760px);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .ics-management-sticky,
+    .ics-management-footer {
+      flex: 0 0 auto;
+      background: inherit;
+    }
+
+    .ics-management-tabs {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 4px;
+      margin-top: 14px;
+      padding: 4px;
+      border-radius: 14px;
+      background: rgba(148, 163, 184, 0.16);
+    }
+
+    .ics-management-tab {
+      min-width: 0;
+      min-height: 42px;
+      border: 0;
+      border-radius: 10px;
+      padding: 9px 12px;
+      color: inherit;
+      background: transparent;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .ics-management-tab[aria-selected="true"] {
+      background: #2563eb;
+      color: #ffffff;
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.28);
+    }
+
+    .ics-management-tab:focus-visible {
+      outline: 3px solid rgba(56, 189, 248, 0.5);
+      outline-offset: 2px;
+    }
+
+    .ics-management-list-area {
+      min-height: 0;
+      flex: 1 1 auto;
+      overflow-y: auto;
+      overflow-x: hidden;
+      margin-top: 14px;
+      padding-right: 4px;
+      overscroll-behavior: contain;
+    }
+
+    .ics-management-panel,
+    .ics-management-panel:first-child {
+      margin-top: 0;
+      padding-top: 0;
+      border-top: 0;
+    }
+
+    .ics-management-panel[hidden] {
+      display: none;
+    }
+
+    .ics-management-card .ics-hidden-event {
+      border-color: rgba(148, 163, 184, 0.28);
+      background: rgba(15, 23, 42, 0.56);
+    }
+
+    .ics-management-card .ics-hidden-event-copy strong {
+      color: var(--text);
+    }
+
+    .ics-management-footer {
+      display: flex;
+      justify-content: flex-end;
+      padding-top: 14px;
+      margin-top: 12px;
+      border-top: 1px solid rgba(148, 163, 184, 0.24);
+    }
+
     .ics-modal-status {
       margin: 0 !important;
       min-width: 0;
@@ -3709,6 +3803,44 @@ body:not(.todo-drawer-open) #todoDrawerBackdrop {
     width: 100%;
     min-height: 44px;
     white-space: normal;
+  }
+
+  .ics-management-card {
+    height: calc(100dvh - 24px);
+    overflow: hidden;
+  }
+
+  .ics-management-tabs {
+    gap: 3px;
+  }
+
+  .ics-management-tab {
+    padding-inline: 8px;
+    font-size: 13px;
+    white-space: normal;
+  }
+
+  .ics-hidden-events-header,
+  .ics-hidden-event {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ics-hidden-event-copy strong {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .ics-hidden-event-actions,
+  .ics-management-footer {
+    justify-content: stretch;
+  }
+
+  .ics-hidden-event-actions button,
+  .ics-hidden-events-header > button,
+  .ics-management-footer button {
+    width: 100%;
+    min-height: 44px;
   }
 
   .ics-modal-header,
