@@ -262,14 +262,53 @@ async function requireUser(req, config) {
   const auth = req.headers.authorization || req.headers.Authorization || '';
   const match = String(auth).match(/^Bearer\s+(.+)$/i);
   if (!match) throw Object.assign(new Error('Nicht angemeldet.'), { statusCode: 401 });
-  const response = await fetch(`${config.url.replace(/\/$/, '')}/auth/v1/user`, {
+  const endpoint = `${config.url.replace(/\/$/, '')}/auth/v1/user`;
+  const response = await fetch(endpoint, {
     headers: {
       apikey: config.key,
       Authorization: `Bearer ${match[1]}`,
       Accept: 'application/json'
     }
   });
-  if (!response.ok) throw Object.assign(new Error('Sitzung konnte nicht geprüft werden.'), { statusCode: 401 });
+  if (!response.ok) {
+    const responseText = await response.text().catch(() => '');
+    const redactSensitive = value => String(value || '')
+      .replace(/Bearer\s+[^\s,;]+/gi, 'Bearer [REDACTED]')
+      .replace(/sb_(?:secret|publishable)_[A-Za-z0-9_-]+/g, 'sb_[REDACTED]')
+      .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[JWT REDACTED]')
+      .slice(0, 500);
+    let responsePreview = '';
+    try {
+      const parsed = JSON.parse(responseText);
+      responsePreview = redactSensitive(JSON.stringify({
+        code: parsed?.code || null,
+        error: parsed?.error || null,
+        message: parsed?.message || parsed?.msg || parsed?.error_description || null
+      }));
+    } catch {
+      responsePreview = redactSensitive(responseText);
+    }
+    const projectRef = (() => {
+      try { return new URL(config.url).hostname.split('.')[0] || 'unknown'; }
+      catch { return 'invalid-url'; }
+    })();
+    const keyType = config.key.startsWith('sb_secret_')
+      ? 'secret'
+      : (config.key.startsWith('sb_publishable_')
+          ? 'publishable'
+          : (config.key.split('.').length === 3 ? 'legacy-jwt' : 'unknown'));
+    console.error('[CalendarInvite] Supabase user verification failed', {
+      endpoint,
+      status: response.status,
+      statusText: response.statusText,
+      responsePreview,
+      projectRef,
+      expectedProjectRef: 'uwynzmdsveplxfqgwzqp',
+      matchesExpectedProject: projectRef === 'uwynzmdsveplxfqgwzqp',
+      keyType
+    });
+    throw Object.assign(new Error('Sitzung konnte nicht geprüft werden.'), { statusCode: 401 });
+  }
   return response.json();
 }
 
