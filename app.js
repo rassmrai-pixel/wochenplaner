@@ -460,6 +460,38 @@
       .join('\n');
   }
 
+  function invitationAttendeeSignature(participants) {
+    return normalizeParticipantList(participants)
+      .map(att => att.email)
+      .sort()
+      .join('\n');
+  }
+
+  function eventInviteDateKey(ev) {
+    if (ev?.date) return String(ev.date);
+    const weekKey = weekKeyForEvent(ev);
+    return weekKey && Number.isFinite(Number(ev?.day)) ? dateForWeekDay(weekKey, Number(ev.day)) : '';
+  }
+
+  function invitationRelevantState(ev) {
+    if (!ev) return null;
+    return {
+      title: String(ev.label || ev.title || '').trim(),
+      date: eventInviteDateKey(ev),
+      start: Number.isFinite(Number(ev.start)) ? Number(ev.start) : null,
+      end: Number.isFinite(Number(ev.end)) ? Number(ev.end) : null,
+      description: String(ev.description || '').trim(),
+      location: String(ev.location || '').trim(),
+      attendees: invitationAttendeeSignature(eventParticipantList(ev))
+    };
+  }
+
+  function hasInvitationRelevantChanges(before, after) {
+    if (!before || !after) return true;
+    return ['title', 'date', 'start', 'end', 'description', 'location', 'attendees']
+      .some(key => String(before[key] ?? '') !== String(after[key] ?? ''));
+  }
+
   function normalizeState(input) {
     const shouldMigrateHomeView = input.uiHomeVersion !== 'calendar-main-v1';
     const s = { ...clone(defaults), ...input };
@@ -6910,6 +6942,7 @@ function toggleMissed(eventId) {
       const ev = currentEvents().find(x => x.id === editingId);
       if (ev) {
         const scheduleBefore = [ev.date || '', Number(ev.day), Number(ev.start), Number(ev.end)].join('|');
+        const inviteStateBefore = invitationRelevantState(ev);
         const participantsBefore = participantSignature(eventParticipantList(ev));
         const participantDraftChanged = participantSignature(inviteDraftAttendees) !== participantsBefore;
         if (!canManageParticipants(ev) && participantDraftChanged) {
@@ -6938,8 +6971,10 @@ function toggleMissed(eventId) {
           ev.date = isTemplateMode() ? null : dateKey(getDayDate(day));
           applyInviteDraftToEvent(ev);
           const scheduleAfter = [ev.date || '', Number(ev.day), Number(ev.start), Number(ev.end)].join('|');
+          const inviteStateAfter = invitationRelevantState(ev);
+          const invitationRelevantChange = hasInvitationRelevantChanges(inviteStateBefore, inviteStateAfter);
           if (scheduleBefore !== scheduleAfter && !autoInviteIsActive()) scheduleInvitedEventUpdate(ev, 'editor-save');
-          if (shouldSendAutomaticInvitation(ev)) autoInviteTargetEvent = ev;
+          if (invitationRelevantChange && shouldSendAutomaticInvitation(ev)) autoInviteTargetEvent = ev;
         }
         const participantsAfter = participantSignature(eventParticipantList(ev));
         if (participantDraftChanged && participantsBefore !== participantsAfter && routineParticipantScopeEligible(ev)) {
