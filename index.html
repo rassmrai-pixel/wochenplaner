@@ -91,6 +91,7 @@
       <input id="weekDateInput" type="date" title="Woche über Datum auswählen" />
       <span class="week-label" id="weekLabel">KW</span>
       <span class="week-range" id="weekRange"></span>
+      <span class="auto-invite-indicator" id="autoInviteIndicator" hidden title="Automatische Einladungen aktiv" aria-label="Automatische Einladungen aktiv">✉</span>
 
       <div class="week-settings" id="weekSettings">
         <button class="small ghost week-settings-btn" id="weekSettingsBtn" type="button" title="Werkzeuge">⚙</button>
@@ -501,6 +502,26 @@
         <div class="account-info-card"><span>Kalenderfeed</span><strong id="accountFeedInfo">Inaktiv</strong></div>
       </div>
       <div class="account-detail" id="accountDetailText">Melde dich an, um Cloud Sync und den Kalenderfeed serverseitig zu nutzen.</div>
+
+      <section class="account-settings-card auto-invite-settings" id="autoInviteSettingsPanel">
+        <div class="account-settings-card-head">
+          <div>
+            <div class="account-settings-title">Automatische Einladungen</div>
+            <div class="account-settings-status" id="autoInviteStatus">Deaktiviert</div>
+          </div>
+          <label class="switch-control" title="Automatische Einladungen aktivieren">
+            <input id="autoInviteEnabled" type="checkbox" />
+            <span></span>
+          </label>
+        </div>
+        <label for="autoInviteEmail" class="account-settings-label">Standard-E-Mail-Adresse</label>
+        <div class="auto-invite-input-row">
+          <input id="autoInviteEmail" type="email" autocomplete="email" placeholder="name@example.com" />
+          <button class="primary" id="saveAutoInviteSettingsBtn" type="button">Speichern</button>
+        </div>
+        <div class="account-settings-note" id="autoInviteHint">Beim Speichern eigener Termine wird diese Adresse automatisch als Teilnehmer ergänzt.</div>
+      </section>
+
       <div class="modal-actions">
         <button class="ghost" id="closeAccountModalFooterBtn" type="button">Schließen</button>
       </div>

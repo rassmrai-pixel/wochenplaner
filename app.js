@@ -70,6 +70,10 @@
       exportAllDayTodos: true,
       includeCompleted: true
     },
+    autoInvite: {
+      enabled: false,
+      email: ''
+    },
     categories: {
       gym: { label: 'Gym / Sport', color: '#22c55e', habit: true },
       work: { label: 'Arbeit / Business', color: '#38bdf8', habit: true },
@@ -345,6 +349,13 @@
   const accountSyncInfo = document.getElementById('accountSyncInfo');
   const accountFeedInfo = document.getElementById('accountFeedInfo');
   const accountDetailText = document.getElementById('accountDetailText');
+  const autoInviteSettingsPanel = document.getElementById('autoInviteSettingsPanel');
+  const autoInviteEnabled = document.getElementById('autoInviteEnabled');
+  const autoInviteEmail = document.getElementById('autoInviteEmail');
+  const autoInviteStatus = document.getElementById('autoInviteStatus');
+  const autoInviteHint = document.getElementById('autoInviteHint');
+  const saveAutoInviteSettingsBtn = document.getElementById('saveAutoInviteSettingsBtn');
+  const autoInviteIndicator = document.getElementById('autoInviteIndicator');
   const calendarFeedModalBackdrop = document.getElementById('calendarFeedModalBackdrop');
   const openCalendarFeedModalBtn = document.getElementById('openCalendarFeedModalBtn');
   const closeCalendarFeedModalBtn = document.getElementById('closeCalendarFeedModalBtn');
@@ -463,6 +474,14 @@
     s.calendarFeed.exportTimedTodos = s.calendarFeed.exportTimedTodos !== false;
     s.calendarFeed.exportAllDayTodos = true;
     s.calendarFeed.includeCompleted = s.calendarFeed.includeCompleted !== false;
+    const incomingAutoInvite = input.autoInvite && typeof input.autoInvite === 'object' ? input.autoInvite : {};
+    const legacyAutoInviteEnabled = input.auto_invite_enabled ?? input.autoInviteEnabled;
+    const legacyAutoInviteEmail = input.auto_invite_email ?? input.autoInviteEmail;
+    s.autoInvite = { ...clone(defaults).autoInvite, ...incomingAutoInvite };
+    if (legacyAutoInviteEnabled !== undefined) s.autoInvite.enabled = Boolean(legacyAutoInviteEnabled);
+    if (legacyAutoInviteEmail !== undefined && !s.autoInvite.email) s.autoInvite.email = String(legacyAutoInviteEmail || '');
+    s.autoInvite.email = normalizeInviteEmail(s.autoInvite.email);
+    s.autoInvite.enabled = Boolean(s.autoInvite.enabled && isValidInviteEmail(s.autoInvite.email));
     if (s.categories.neutral) {
       s.categories.orga = s.categories.orga || { label: 'Orga / To-dos', color: s.categories.neutral.color || '#94a3b8', habit: true };
       delete s.categories.neutral;
@@ -850,6 +869,8 @@
       setCloudStatus('Bitte einloggen oder registrieren. Alternativ kannst du ohne Login lokal starten.');
     }
     renderCalendarFeedSettings();
+    renderAutoInviteSettings();
+    renderAutoInviteIndicator();
   }
 
   function generateCalendarFeedToken() {
@@ -876,6 +897,100 @@
     return `${origin}/api/calendar-feed?token=${encodeURIComponent(feed.token)}`;
   }
 
+  function ensureAutoInviteSettings() {
+    if (!state.autoInvite || typeof state.autoInvite !== 'object') state.autoInvite = clone(defaults.autoInvite);
+    state.autoInvite = { ...clone(defaults.autoInvite), ...state.autoInvite };
+    state.autoInvite.email = normalizeInviteEmail(state.autoInvite.email);
+    state.autoInvite.enabled = Boolean(state.autoInvite.enabled && isValidInviteEmail(state.autoInvite.email));
+    return state.autoInvite;
+  }
+
+  function autoInviteIsActive() {
+    const settings = ensureAutoInviteSettings();
+    return Boolean(settings.enabled && isValidInviteEmail(settings.email));
+  }
+
+  function autoInviteParticipant() {
+    const settings = ensureAutoInviteSettings();
+    if (!settings.enabled || !isValidInviteEmail(settings.email)) return null;
+    return { email: settings.email, name: '', status: 'pending', invitationStatus: 'pending', autoInvite: true };
+  }
+
+  function mergeAutoInviteParticipants(participants) {
+    const list = normalizeParticipantList(participants);
+    const autoParticipant = autoInviteParticipant();
+    if (!autoParticipant) return list;
+    return normalizeParticipantList([...list, autoParticipant]);
+  }
+
+  function renderAutoInviteIndicator() {
+    if (!autoInviteIndicator) return;
+    const settings = ensureAutoInviteSettings();
+    const active = autoInviteIsActive();
+    autoInviteIndicator.hidden = !active;
+    autoInviteIndicator.title = active ? `Automatische Einladungen aktiv: ${settings.email}` : 'Automatische Einladungen deaktiviert';
+    autoInviteIndicator.setAttribute('aria-label', autoInviteIndicator.title);
+  }
+
+  function renderAutoInviteSettings() {
+    if (!autoInviteSettingsPanel) return;
+    const signedIn = Boolean(cloudUser);
+    const settings = ensureAutoInviteSettings();
+    if (autoInviteEnabled) {
+      autoInviteEnabled.checked = Boolean(settings.enabled);
+      autoInviteEnabled.disabled = !signedIn;
+    }
+    if (autoInviteEmail) {
+      autoInviteEmail.value = settings.email || '';
+      autoInviteEmail.disabled = !signedIn;
+    }
+    if (saveAutoInviteSettingsBtn) saveAutoInviteSettingsBtn.disabled = !signedIn;
+    const validEmail = isValidInviteEmail(settings.email);
+    if (autoInviteStatus) {
+      autoInviteStatus.textContent = !signedIn
+        ? 'Login erforderlich'
+        : (settings.enabled ? `Aktiv · ${settings.email}` : (validEmail ? 'Deaktiviert' : 'E-Mail-Adresse fehlt'));
+    }
+    if (autoInviteHint) {
+      autoInviteHint.textContent = !signedIn
+        ? 'Automatische Einladungen werden mit deinem Cloud-Konto gespeichert.'
+        : (settings.enabled
+          ? 'Beim Speichern eigener Termine wird diese Adresse automatisch eingeladen.'
+          : 'Aktiviere die Funktion, nachdem du eine gültige Standard-E-Mail-Adresse eingetragen hast.');
+      autoInviteHint.classList.toggle('error', signedIn && Boolean(autoInviteEnabled?.checked) && !validEmail);
+    }
+  }
+
+  async function persistAutoInviteSettings({ showStatus = true } = {}) {
+    const previous = clone(ensureAutoInviteSettings());
+    const email = normalizeInviteEmail(autoInviteEmail?.value || '');
+    const enabled = Boolean(autoInviteEnabled?.checked);
+    if (enabled && !isValidInviteEmail(email)) {
+      state.autoInvite = previous;
+      renderAutoInviteSettings();
+      alert('Bitte trage eine gültige Standard-E-Mail-Adresse ein, bevor du automatische Einladungen aktivierst.');
+      return false;
+    }
+    state.autoInvite = { enabled, email };
+    saveState();
+    renderAutoInviteSettings();
+    renderAutoInviteIndicator();
+    if (cloudUser && supabaseClient) {
+      try {
+        await saveCloudState(state, { throwOnError: true });
+        if (showStatus && autoInviteHint) autoInviteHint.textContent = enabled ? 'Automatische Einladungen gespeichert.' : 'Automatische Einladungen deaktiviert.';
+      } catch (error) {
+        state.autoInvite = previous;
+        saveState();
+        renderAutoInviteSettings();
+        renderAutoInviteIndicator();
+        alert(`Automatische Einladungen konnten nicht gespeichert werden: ${error.message || error}`);
+        return false;
+      }
+    }
+    return true;
+  }
+
   function renderAccountModal() {
     if (!accountModalBackdrop) return;
     const signedIn = Boolean(cloudUser);
@@ -893,6 +1008,8 @@
         ? `Deine Planung wird mit Supabase synchronisiert.${feed.enabled ? ' Dein persönlicher Kalenderfeed ist aktiv.' : ' Der Kalenderfeed ist aktuell deaktiviert.'}`
         : 'Du nutzt die App lokal in diesem Browser. Für Cloud Sync und den serverseitigen Kalenderfeed musst du eingeloggt sein.';
     }
+    renderAutoInviteSettings();
+    renderAutoInviteIndicator();
   }
 
   function openAccountModal() {
@@ -4440,7 +4557,7 @@ return div;
     }
     if (sendInviteBtn) {
       sendInviteBtn.textContent = ev?.invitationSentAt ? 'Aktualisierung senden' : 'Einladung senden';
-      sendInviteBtn.disabled = !canInviteEvent(ev) || !inviteDraftAttendees.length;
+      sendInviteBtn.disabled = !canInviteEvent(ev) || (!inviteDraftAttendees.length && !autoInviteIsActive());
       sendInviteBtn.parentElement.style.display = inviteAllowed ? '' : 'none';
     }
     renderInvitePanelState();
@@ -4483,9 +4600,30 @@ return div;
   }
 
   function applyInviteDraftToEvent(ev) {
-    syncParticipantsToEvent(ev, inviteDraftAttendees);
+    const participants = canManageParticipants(ev) ? mergeAutoInviteParticipants(inviteDraftAttendees) : inviteDraftAttendees;
+    syncParticipantsToEvent(ev, participants);
     ev.inviteMessage = eventInviteMessage?.value || '';
     ensureOwnEventInvitationUid(ev);
+  }
+
+  function shouldSendAutomaticInvitation(ev) {
+    return Boolean(autoInviteIsActive() && canInviteEvent(ev) && eventParticipantList(ev).length);
+  }
+
+  async function sendAutomaticInvitationForEvent(ev, reason = 'save') {
+    if (!shouldSendAutomaticInvitation(ev)) return false;
+    try {
+      await deliverCalendarInvitation(ev, 'REQUEST');
+      console.log('[AutoInvite] Einladung gesendet', { eventId: ev.id, reason, recipients: eventParticipantList(ev).map(att => att.email) });
+      return true;
+    } catch (error) {
+      ev.invitationStatus = 'failed';
+      ev.invitationError = error.message || String(error);
+      saveState();
+      console.warn('[AutoInvite] Automatische Einladung fehlgeschlagen', { eventId: ev.id, reason, message: ev.invitationError });
+      alert(`Termin gespeichert, aber die automatische Einladung konnte nicht gesendet werden: ${ev.invitationError}`);
+      return false;
+    }
   }
 
   function modalEventDraftValues() {
@@ -6468,6 +6606,26 @@ function toggleMissed(eventId) {
   if (openCalendarFeedModalBtn) openCalendarFeedModalBtn.onclick = openCalendarFeedModal;
   if (closeAccountModalBtn) closeAccountModalBtn.onclick = closeAccountModal;
   if (closeAccountModalFooterBtn) closeAccountModalFooterBtn.onclick = closeAccountModal;
+  if (saveAutoInviteSettingsBtn) saveAutoInviteSettingsBtn.onclick = () => persistAutoInviteSettings();
+  if (autoInviteEnabled) autoInviteEnabled.addEventListener('change', () => persistAutoInviteSettings());
+  if (autoInviteEmail) {
+    autoInviteEmail.addEventListener('input', () => {
+      const email = normalizeInviteEmail(autoInviteEmail.value);
+      const signedIn = Boolean(cloudUser);
+      const validEmail = isValidInviteEmail(email);
+      if (autoInviteStatus) autoInviteStatus.textContent = !signedIn ? 'Login erforderlich' : (autoInviteEnabled?.checked ? (validEmail ? `Aktiv · ${email}` : 'Ungültige E-Mail-Adresse') : (validEmail ? 'Deaktiviert' : 'E-Mail-Adresse fehlt'));
+      if (autoInviteHint) {
+        autoInviteHint.textContent = validEmail ? 'Beim Speichern eigener Termine wird diese Adresse automatisch als Teilnehmer ergänzt.' : 'Bitte trage eine gültige Standard-E-Mail-Adresse ein.';
+        autoInviteHint.classList.toggle('error', !validEmail && Boolean(autoInviteEnabled?.checked));
+      }
+    });
+    autoInviteEmail.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        persistAutoInviteSettings();
+      }
+    });
+  }
   if (accountModalBackdrop) accountModalBackdrop.addEventListener('click', e => { if (e.target === accountModalBackdrop) closeAccountModal(); });
   if (closeCalendarFeedModalBtn) closeCalendarFeedModalBtn.onclick = closeCalendarFeedModal;
   if (closeCalendarFeedModalFooterBtn) closeCalendarFeedModalFooterBtn.onclick = closeCalendarFeedModal;
@@ -6695,7 +6853,7 @@ function toggleMissed(eventId) {
   });
   if (sendInviteBtn) sendInviteBtn.onclick = () => sendCalendarInvitationForCurrentEvent('REQUEST');
   document.getElementById('cancelModalBtn').onclick = closeModal;
-  document.getElementById('saveModalBtn').onclick = () => {
+  document.getElementById('saveModalBtn').onclick = async () => {
     const categoryId = modalCategory.value;
     const entryType = modalEntryType?.value || (isTemplateMode() ? 'routine' : 'calendar');
     const label = modalLabel.value.trim() || state.categories[categoryId].label;
@@ -6709,6 +6867,8 @@ function toggleMissed(eventId) {
       return;
     }
     if (!addInviteEmailFromInput()) return;
+    const savingExistingEvent = Boolean(editingId);
+    let autoInviteTargetEvent = null;
     if (editingId) {
       const ev = currentEvents().find(x => x.id === editingId);
       if (ev) {
@@ -6741,10 +6901,11 @@ function toggleMissed(eventId) {
           ev.date = isTemplateMode() ? null : dateKey(getDayDate(day));
           applyInviteDraftToEvent(ev);
           const scheduleAfter = [ev.date || '', Number(ev.day), Number(ev.start), Number(ev.end)].join('|');
-          if (scheduleBefore !== scheduleAfter) scheduleInvitedEventUpdate(ev, 'editor-save');
+          if (scheduleBefore !== scheduleAfter && !autoInviteIsActive()) scheduleInvitedEventUpdate(ev, 'editor-save');
+          if (shouldSendAutomaticInvitation(ev)) autoInviteTargetEvent = ev;
         }
         const participantsAfter = participantSignature(eventParticipantList(ev));
-        if (participantsBefore !== participantsAfter && routineParticipantScopeEligible(ev)) {
+        if (participantDraftChanged && participantsBefore !== participantsAfter && routineParticipantScopeEligible(ev)) {
           const applyFuture = confirm('Diese Teilnehmeränderung gilt für:\n\nOK = Alle zukünftigen Termine dieser Routine\nAbbrechen = Nur diesen Termin');
           if (applyFuture) applyParticipantsToRoutineTemplate(ev);
         }
@@ -6754,9 +6915,14 @@ function toggleMissed(eventId) {
     } else {
       const created = createEventFromModalDraft({ categoryId, entryType, label, day, start, end, stackedIntoId });
       if (!created) return;
+      if (shouldSendAutomaticInvitation(created)) autoInviteTargetEvent = created;
     }
     saveState();
     renderAll();
+    if (autoInviteTargetEvent) {
+      await sendAutomaticInvitationForEvent(autoInviteTargetEvent, savingExistingEvent ? 'editor-update' : 'editor-create');
+      renderAll();
+    }
     closeModal();
   };
   document.getElementById('deleteBlockBtn').onclick = async () => {
@@ -8500,7 +8666,7 @@ if (removeBtn) {
   // INIT
   // ==================================================
 
-function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); renderCalendarFeedSettings(); renderSpecialEventsButton(); renderSpecialEventsModal(); renderSpecialEventsDrawer(); renderMobileControls(); renderBulkActionBar(); renderIcsExternalEventsManager(); updateIcsAutoSyncMeta(); }
+function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); renderCalendarFeedSettings(); renderAutoInviteSettings(); renderAutoInviteIndicator(); renderSpecialEventsButton(); renderSpecialEventsModal(); renderSpecialEventsDrawer(); renderMobileControls(); renderBulkActionBar(); renderIcsExternalEventsManager(); updateIcsAutoSyncMeta(); }
   fillTaskDaySelect();
   renderAll();
   renderAll();

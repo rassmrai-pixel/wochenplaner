@@ -5264,3 +5264,76 @@ body:not(.special-events-drawer-open) .special-events-drawer-backdrop {
     min-height: 22px;
   }
 }
+
+.account-settings-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.52);
+}
+
+.account-settings-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.account-settings-title {
+  font-weight: 900;
+  color: #e5eefc;
+}
+
+.account-settings-status,
+.account-settings-note,
+.account-settings-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.account-settings-note.error {
+  color: #fecaca;
+}
+
+.auto-invite-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.auto-invite-input-row input {
+  min-width: 0;
+}
+
+.auto-invite-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid rgba(56, 189, 248, 0.38);
+  background: rgba(56, 189, 248, 0.12);
+  color: #bae6fd;
+  font-size: 15px;
+  font-weight: 900;
+  flex: 0 0 auto;
+}
+
+.auto-invite-indicator[hidden] {
+  display: none !important;
+}
+
+@media (max-width: 640px) {
+  .auto-invite-input-row {
+    grid-template-columns: 1fr;
+  }
+
+  .auto-invite-input-row button {
+    width: 100%;
+  }
+}
