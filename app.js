@@ -132,6 +132,7 @@
   let eventDraftSubtasks = [];
   let inviteDraftAttendees = [];
   let invitePanelExpanded = false;
+  let autoInviteSendStatus = { state: 'idle', message: '', eventId: null, timer: null };
   let bulkSelectionMode = false;
   const selectedEventIds = new Set();
   let bulkActionType = null;
@@ -923,13 +924,43 @@
     return normalizeParticipantList([...list, autoParticipant]);
   }
 
+  function autoInviteStatusLabel(settings = ensureAutoInviteSettings()) {
+    if (autoInviteSendStatus.state === 'sending') return 'Kalendereinladung wird versendet...';
+    if (autoInviteSendStatus.state === 'success') return 'Kalendereinladung versendet';
+    if (autoInviteSendStatus.state === 'error') return autoInviteSendStatus.message || 'Kalendereinladung konnte nicht versendet werden.';
+    return autoInviteIsActive() ? `Automatische Einladungen aktiv: ${settings.email}` : 'Automatische Einladungen deaktiviert';
+  }
+
+  function setAutoInviteSendStatus(stateName = 'idle', message = '', eventId = null) {
+    if (autoInviteSendStatus.timer) window.clearTimeout(autoInviteSendStatus.timer);
+    autoInviteSendStatus = { state: stateName, message: message || '', eventId, timer: null };
+    renderAutoInviteIndicator();
+    if (stateName === 'success') {
+      autoInviteSendStatus.timer = window.setTimeout(() => {
+        autoInviteSendStatus = { state: 'idle', message: '', eventId: null, timer: null };
+        renderAutoInviteIndicator();
+      }, 1800);
+    }
+  }
+
+  function clearAutoInviteError() {
+    if (autoInviteSendStatus.state === 'error') setAutoInviteSendStatus('idle');
+  }
+
   function renderAutoInviteIndicator() {
     if (!autoInviteIndicator) return;
     const settings = ensureAutoInviteSettings();
     const active = autoInviteIsActive();
-    autoInviteIndicator.hidden = !active;
-    autoInviteIndicator.title = active ? `Automatische Einladungen aktiv: ${settings.email}` : 'Automatische Einladungen deaktiviert';
-    autoInviteIndicator.setAttribute('aria-label', autoInviteIndicator.title);
+    const statusState = autoInviteSendStatus.state || 'idle';
+    const shouldShow = active || statusState === 'sending' || statusState === 'success' || statusState === 'error';
+    autoInviteIndicator.hidden = !shouldShow;
+    autoInviteIndicator.classList.toggle('sending', statusState === 'sending');
+    autoInviteIndicator.classList.toggle('success', statusState === 'success');
+    autoInviteIndicator.classList.toggle('error', statusState === 'error');
+    autoInviteIndicator.textContent = statusState === 'success' ? '✓' : '✉';
+    const label = autoInviteStatusLabel(settings);
+    autoInviteIndicator.title = label;
+    autoInviteIndicator.setAttribute('aria-label', label);
   }
 
   function renderAutoInviteSettings() {
@@ -972,6 +1003,7 @@
       return false;
     }
     state.autoInvite = { enabled, email };
+    clearAutoInviteError();
     saveState();
     renderAutoInviteSettings();
     renderAutoInviteIndicator();
@@ -4612,14 +4644,19 @@ return div;
 
   async function sendAutomaticInvitationForEvent(ev, reason = 'save') {
     if (!shouldSendAutomaticInvitation(ev)) return false;
+    setAutoInviteSendStatus('sending', 'Kalendereinladung wird versendet...', ev.id);
     try {
       await deliverCalendarInvitation(ev, 'REQUEST');
+      setAutoInviteSendStatus('success', 'Kalendereinladung versendet', ev.id);
+      setInviteStatus('Automatische Einladung gesendet.', 'success');
       console.log('[AutoInvite] Einladung gesendet', { eventId: ev.id, reason, recipients: eventParticipantList(ev).map(att => att.email) });
       return true;
     } catch (error) {
       ev.invitationStatus = 'failed';
       ev.invitationError = error.message || String(error);
       saveState();
+      setAutoInviteSendStatus('error', ev.invitationError || 'Kalendereinladung konnte nicht versendet werden.', ev.id);
+      setInviteStatus(`Automatische Einladung fehlgeschlagen: ${ev.invitationError}`, 'error');
       console.warn('[AutoInvite] Automatische Einladung fehlgeschlagen', { eventId: ev.id, reason, message: ev.invitationError });
       alert(`Termin gespeichert, aber die automatische Einladung konnte nicht gesendet werden: ${ev.invitationError}`);
       return false;
@@ -6920,8 +6957,9 @@ function toggleMissed(eventId) {
     saveState();
     renderAll();
     if (autoInviteTargetEvent) {
-      await sendAutomaticInvitationForEvent(autoInviteTargetEvent, savingExistingEvent ? 'editor-update' : 'editor-create');
+      const autoInviteSent = await sendAutomaticInvitationForEvent(autoInviteTargetEvent, savingExistingEvent ? 'editor-update' : 'editor-create');
       renderAll();
+      if (!autoInviteSent) return;
     }
     closeModal();
   };

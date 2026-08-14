@@ -5337,3 +5337,58 @@ body:not(.special-events-drawer-open) .special-events-drawer-backdrop {
     width: 100%;
   }
 }
+
+.auto-invite-indicator {
+  position: relative;
+}
+
+.auto-invite-indicator.sending {
+  color: transparent;
+  border-color: rgba(125, 211, 252, 0.6);
+  background: rgba(56, 189, 248, 0.16);
+}
+
+.auto-invite-indicator.sending::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid rgba(186, 230, 253, 0.35);
+  border-top-color: #bae6fd;
+  animation: autoInviteSpin 0.8s linear infinite;
+}
+
+.auto-invite-indicator.success {
+  color: #bbf7d0;
+  border-color: rgba(34, 197, 94, 0.55);
+  background: rgba(34, 197, 94, 0.14);
+}
+
+.auto-invite-indicator.error {
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.58);
+  background: rgba(127, 29, 29, 0.22);
+}
+
+.auto-invite-indicator.error::after {
+  content: '!';
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 15px;
+  height: 15px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ef4444;
+  color: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.9);
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 950;
+}
+
+@keyframes autoInviteSpin {
+  to { transform: rotate(360deg); }
+}
