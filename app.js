@@ -4674,13 +4674,14 @@ return div;
     return Boolean(autoInviteIsActive() && canInviteEvent(ev) && eventParticipantList(ev).length);
   }
 
-  async function sendAutomaticInvitationForEvent(ev, reason = 'save') {
+  async function sendAutomaticInvitationForEvent(ev, reason = 'save', options = {}) {
+    const { updateModalStatus = true, alertOnError = true } = options || {};
     if (!shouldSendAutomaticInvitation(ev)) return false;
     setAutoInviteSendStatus('sending', 'Kalendereinladung wird versendet...', ev.id);
     try {
       await deliverCalendarInvitation(ev, 'REQUEST');
       setAutoInviteSendStatus('success', 'Kalendereinladung versendet', ev.id);
-      setInviteStatus('Automatische Einladung gesendet.', 'success');
+      if (updateModalStatus) setInviteStatus('Automatische Einladung gesendet.', 'success');
       console.log('[AutoInvite] Einladung gesendet', { eventId: ev.id, reason, recipients: eventParticipantList(ev).map(att => att.email) });
       return true;
     } catch (error) {
@@ -4688,11 +4689,19 @@ return div;
       ev.invitationError = error.message || String(error);
       saveState();
       setAutoInviteSendStatus('error', ev.invitationError || 'Kalendereinladung konnte nicht versendet werden.', ev.id);
-      setInviteStatus(`Automatische Einladung fehlgeschlagen: ${ev.invitationError}`, 'error');
+      if (updateModalStatus) setInviteStatus(`Automatische Einladung fehlgeschlagen: ${ev.invitationError}`, 'error');
       console.warn('[AutoInvite] Automatische Einladung fehlgeschlagen', { eventId: ev.id, reason, message: ev.invitationError });
-      alert(`Termin gespeichert, aber die automatische Einladung konnte nicht gesendet werden: ${ev.invitationError}`);
+      if (alertOnError) alert(`Termin gespeichert, aber die automatische Einladung konnte nicht gesendet werden: ${ev.invitationError}`);
       return false;
     }
+  }
+
+  function startAutomaticInvitationInBackground(ev, reason = 'save') {
+    if (!shouldSendAutomaticInvitation(ev)) return;
+    window.setTimeout(async () => {
+      await sendAutomaticInvitationForEvent(ev, reason, { updateModalStatus: false, alertOnError: false });
+      renderAll();
+    }, 0);
   }
 
   function modalEventDraftValues() {
@@ -6991,12 +7000,10 @@ function toggleMissed(eventId) {
     }
     saveState();
     renderAll();
-    if (autoInviteTargetEvent) {
-      const autoInviteSent = await sendAutomaticInvitationForEvent(autoInviteTargetEvent, savingExistingEvent ? 'editor-update' : 'editor-create');
-      renderAll();
-      if (!autoInviteSent) return;
-    }
     closeModal();
+    if (autoInviteTargetEvent) {
+      startAutomaticInvitationInBackground(autoInviteTargetEvent, savingExistingEvent ? 'editor-update' : 'editor-create');
+    }
   };
   document.getElementById('deleteBlockBtn').onclick = async () => {
     if (!editingId) return;
