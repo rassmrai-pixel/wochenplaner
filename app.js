@@ -74,6 +74,7 @@
       enabled: false,
       email: ''
     },
+    invitationErrors: [],
     categories: {
       gym: { label: 'Gym / Sport', color: '#22c55e', habit: true },
       work: { label: 'Arbeit / Business', color: '#38bdf8', habit: true },
@@ -133,6 +134,7 @@
   let inviteDraftAttendees = [];
   let invitePanelExpanded = false;
   let autoInviteSendStatus = { state: 'idle', message: '', eventId: null, timer: null };
+  let activeInviteErrorId = null;
   let bulkSelectionMode = false;
   const selectedEventIds = new Set();
   let bulkActionType = null;
@@ -357,6 +359,13 @@
   const autoInviteHint = document.getElementById('autoInviteHint');
   const saveAutoInviteSettingsBtn = document.getElementById('saveAutoInviteSettingsBtn');
   const autoInviteIndicator = document.getElementById('autoInviteIndicator');
+  const inviteErrorModalBackdrop = document.getElementById('inviteErrorModalBackdrop');
+  const closeInviteErrorModalBtn = document.getElementById('closeInviteErrorModalBtn');
+  const closeInviteErrorModalFooterBtn = document.getElementById('closeInviteErrorModalFooterBtn');
+  const inviteErrorModalSubtitle = document.getElementById('inviteErrorModalSubtitle');
+  const inviteErrorList = document.getElementById('inviteErrorList');
+  const inviteErrorDetail = document.getElementById('inviteErrorDetail');
+  const resolveInviteErrorBtn = document.getElementById('resolveInviteErrorBtn');
   const calendarFeedModalBackdrop = document.getElementById('calendarFeedModalBackdrop');
   const openCalendarFeedModalBtn = document.getElementById('openCalendarFeedModalBtn');
   const closeCalendarFeedModalBtn = document.getElementById('closeCalendarFeedModalBtn');
@@ -433,6 +442,50 @@
     };
   }
 
+  function normalizeInvitationStatus(value) {
+    const status = String(value || '').trim();
+    if (['pending', 'sending', 'sent', 'failed'].includes(status)) return status;
+    if (status === 'updated' || status === 'cancelled') return 'sent';
+    return 'pending';
+  }
+
+  function inviteErrorUserMessage(errorCode) {
+    const messages = {
+      MISSING_SENDER_EMAIL: 'Für den Versand fehlt eine Absender-E-Mail-Adresse.',
+      AUTH_ERROR: 'Du bist nicht angemeldet oder deine Anmeldung konnte nicht geprüft werden.',
+      SESSION_EXPIRED: 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.',
+      INVALID_RECIPIENT: 'Mindestens eine Teilnehmeradresse ist ungültig oder fehlt.',
+      NETWORK_ERROR: 'Die Verbindung zum Maildienst konnte nicht hergestellt werden.',
+      RESEND_ERROR: 'Der Mailanbieter hat die Einladung abgelehnt.',
+      SERVER_ERROR: 'Der Server konnte die Einladung nicht senden.',
+      RATE_LIMIT: 'Es wurden zu viele Einladungen in kurzer Zeit versendet. Bitte warte einen Moment.',
+      UNKNOWN_ERROR: 'Die Kalendereinladung konnte nicht gesendet werden.'
+    };
+    return messages[errorCode] || messages.UNKNOWN_ERROR;
+  }
+
+  function inviteErrorRetryable(errorCode) {
+    return ['NETWORK_ERROR', 'RESEND_ERROR', 'SERVER_ERROR', 'UNKNOWN_ERROR'].includes(errorCode);
+  }
+
+  function normalizeInvitationFailureInput(input = {}, ev = null) {
+    const errorCode = String(input.errorCode || input.code || 'UNKNOWN_ERROR').trim() || 'UNKNOWN_ERROR';
+    const eventId = String(input.eventId || ev?.id || '').trim();
+    const timestamp = input.timestamp || new Date().toISOString();
+    return {
+      id: input.id || 'invite-error-' + (eventId || 'unknown') + '-' + (Date.parse(timestamp) || Date.now()),
+      errorCode,
+      userMessage: input.userMessage || inviteErrorUserMessage(errorCode),
+      technicalMessage: String(input.technicalMessage || input.message || input.error || '').slice(0, 1000),
+      eventId,
+      eventTitle: input.eventTitle || ev?.label || ev?.title || 'Termin',
+      timestamp,
+      retryable: input.retryable ?? inviteErrorRetryable(errorCode),
+      resolved: Boolean(input.resolved),
+      technicalId: input.technicalId || ('invite-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7))
+    };
+  }
+
   function normalizeParticipantList(value) {
     const seen = new Set();
     const list = Array.isArray(value) ? value : [];
@@ -480,15 +533,13 @@
       date: eventInviteDateKey(ev),
       start: Number.isFinite(Number(ev.start)) ? Number(ev.start) : null,
       end: Number.isFinite(Number(ev.end)) ? Number(ev.end) : null,
-      description: String(ev.description || '').trim(),
-      location: String(ev.location || '').trim(),
       attendees: invitationAttendeeSignature(eventParticipantList(ev))
     };
   }
 
   function hasInvitationRelevantChanges(before, after) {
     if (!before || !after) return true;
-    return ['title', 'date', 'start', 'end', 'description', 'location', 'attendees']
+    return ['title', 'date', 'start', 'end', 'attendees']
       .some(key => String(before[key] ?? '') !== String(after[key] ?? ''));
   }
 
@@ -515,6 +566,9 @@
     if (legacyAutoInviteEmail !== undefined && !s.autoInvite.email) s.autoInvite.email = String(legacyAutoInviteEmail || '');
     s.autoInvite.email = normalizeInviteEmail(s.autoInvite.email);
     s.autoInvite.enabled = Boolean(s.autoInvite.enabled && isValidInviteEmail(s.autoInvite.email));
+    s.invitationErrors = Array.isArray(input.invitationErrors)
+      ? input.invitationErrors.map(item => normalizeInvitationFailureInput(item)).filter(item => item.eventId && !item.resolved)
+      : [];
     if (s.categories.neutral) {
       s.categories.orga = s.categories.orga || { label: 'Orga / To-dos', color: s.categories.neutral.color || '#94a3b8', habit: true };
       delete s.categories.neutral;
@@ -598,8 +652,9 @@
         invitationSequence: Number.isInteger(Number(ev.invitationSequence)) ? Number(ev.invitationSequence) : 0,
         invitationSentAt: ev.invitationSentAt || null,
         invitationUpdatedAt: ev.invitationUpdatedAt || null,
-        invitationStatus: ev.invitationStatus || 'not-sent',
+        invitationStatus: normalizeInvitationStatus(ev.invitationStatus),
         invitationError: ev.invitationError || null,
+        invitationErrorDetails: ev.invitationErrorDetails ? normalizeInvitationFailureInput(ev.invitationErrorDetails, ev) : null,
         subtasks: Array.isArray(ev.subtasks) ? ev.subtasks.map(sub => ({
           id: sub.id || id(),
           text: sub.text || 'Untertask',
@@ -956,7 +1011,191 @@
     return normalizeParticipantList([...list, autoParticipant]);
   }
 
+  function findEventById(eventId) {
+    const targetId = String(eventId || '');
+    if (!targetId) return null;
+    const current = currentEvents().find(ev => ev.id === targetId);
+    if (current) return current;
+    for (const events of Object.values(state.weekEventsByWeek || {})) {
+      const found = Array.isArray(events) ? events.find(ev => ev.id === targetId) : null;
+      if (found) return found;
+    }
+    return null;
+  }
+
+  function openInvitationFailures() {
+    return (state.invitationErrors || []).filter(item => item && !item.resolved);
+  }
+
+  function classifyInvitationError(error, ev = null) {
+    const rawCode = error?.errorCode || error?.code || error?.responseCode || '';
+    const status = Number(error?.status || error?.statusCode || 0);
+    const message = String(error?.technicalMessage || error?.message || error || '');
+    const missing = Array.isArray(error?.missingConfig) ? error.missingConfig.join(' ') : '';
+    let errorCode = rawCode || 'UNKNOWN_ERROR';
+    if (errorCode === 'MAIL_CONFIG_MISSING') errorCode = /CALENDAR_(ORGANIZER|FROM)_EMAIL/i.test(missing) ? 'MISSING_SENDER_EMAIL' : 'SERVER_ERROR';
+    else if (status === 401 || /nicht angemeldet|gueltige sitzung|gültige sitzung|sitzung/i.test(message)) errorCode = /abgelaufen|session/i.test(message) ? 'SESSION_EXPIRED' : 'AUTH_ERROR';
+    else if (status === 429) errorCode = 'RATE_LIMIT';
+    else if (status === 400 || /teilnehmer|adresse|recipient|attendee/i.test(message)) errorCode = 'INVALID_RECIPIENT';
+    else if (/Failed to fetch|NetworkError|Load failed|netzwerk|verbindung|timeout/i.test(message)) errorCode = 'NETWORK_ERROR';
+    else if (status === 502 || /mailanbieter|resend/i.test(message)) errorCode = 'RESEND_ERROR';
+    else if (status >= 500) errorCode = 'SERVER_ERROR';
+    return normalizeInvitationFailureInput({
+      errorCode,
+      userMessage: error?.userMessage || inviteErrorUserMessage(errorCode),
+      technicalMessage: message || error?.technicalMessage || '',
+      eventId: ev?.id || error?.eventId || '',
+      eventTitle: ev?.label || ev?.title || error?.eventTitle || 'Termin',
+      retryable: error?.retryable ?? inviteErrorRetryable(errorCode),
+      timestamp: new Date().toISOString()
+    }, ev);
+  }
+
+  function clearInvitationFailure(eventId) {
+    const targetId = String(eventId || '');
+    if (!targetId) return;
+    state.invitationErrors = (state.invitationErrors || []).filter(item => item.eventId !== targetId);
+    const ev = findEventById(targetId);
+    if (ev) {
+      ev.invitationError = null;
+      ev.invitationErrorDetails = null;
+    }
+    if (activeInviteErrorId && !openInvitationFailures().some(item => item.id === activeInviteErrorId)) activeInviteErrorId = openInvitationFailures()[0]?.id || null;
+  }
+
+  function recordInvitationFailure(ev, error) {
+    const detail = classifyInvitationError(error, ev);
+    state.invitationErrors = (state.invitationErrors || []).filter(item => item.eventId !== detail.eventId);
+    state.invitationErrors.unshift(detail);
+    if (ev) {
+      ev.invitationStatus = 'failed';
+      ev.invitationError = detail.userMessage;
+      ev.invitationErrorDetails = detail;
+    }
+    activeInviteErrorId = detail.id;
+    return detail;
+  }
+
+  function invitationFailureActionLabel(error) {
+    if (!error) return 'Fehler beheben';
+    if (error.errorCode === 'MISSING_SENDER_EMAIL') return 'E-Mail hinterlegen';
+    if (['AUTH_ERROR', 'SESSION_EXPIRED'].includes(error.errorCode)) return 'Session aktualisieren';
+    if (error.errorCode === 'INVALID_RECIPIENT') return 'Teilnehmer prüfen';
+    if (error.errorCode === 'RATE_LIMIT') return 'Schließen';
+    if (error.retryable) return 'Erneut versuchen';
+    return 'Fehler beheben';
+  }
+
+  function openInvitationErrorModal(errorId = null) {
+    const failures = openInvitationFailures();
+    activeInviteErrorId = errorId || activeInviteErrorId || failures[0]?.id || null;
+    renderInvitationErrorModal();
+    if (inviteErrorModalBackdrop) inviteErrorModalBackdrop.style.display = 'flex';
+  }
+
+  function closeInvitationErrorModal() {
+    if (inviteErrorModalBackdrop) inviteErrorModalBackdrop.style.display = 'none';
+  }
+
+  function renderInvitationErrorModal() {
+    const failures = openInvitationFailures();
+    if (inviteErrorModalSubtitle) inviteErrorModalSubtitle.textContent = failures.length === 1 ? 'Eine Einladung braucht deine Aufmerksamkeit.' : `${failures.length} Einladungen brauchen deine Aufmerksamkeit.`;
+    if (!failures.some(item => item.id === activeInviteErrorId)) activeInviteErrorId = failures[0]?.id || null;
+    const active = failures.find(item => item.id === activeInviteErrorId) || failures[0] || null;
+    if (inviteErrorList) {
+      inviteErrorList.innerHTML = '';
+      if (!failures.length) {
+        const empty = document.createElement('div');
+        empty.className = 'invite-error-meta';
+        empty.textContent = 'Keine offenen Versandfehler.';
+        inviteErrorList.appendChild(empty);
+      }
+      failures.forEach(error => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `invite-error-item${error.id === active?.id ? ' is-active' : ''}`;
+        const title = document.createElement('strong');
+        title.textContent = error.eventTitle || 'Termin';
+        const meta = document.createElement('span');
+        meta.textContent = `${error.errorCode} · ${formatInviteErrorTime(error.timestamp)}`;
+        btn.append(title, meta);
+        btn.onclick = () => { activeInviteErrorId = error.id; renderInvitationErrorModal(); };
+        inviteErrorList.appendChild(btn);
+      });
+    }
+    if (inviteErrorDetail) {
+      inviteErrorDetail.innerHTML = '';
+      if (active) {
+        const title = document.createElement('h3');
+        title.textContent = active.eventTitle || 'Termin';
+        const code = document.createElement('div');
+        code.className = 'invite-error-code';
+        code.textContent = active.errorCode;
+        const time = document.createElement('div');
+        time.className = 'invite-error-meta';
+        time.textContent = `Fehlerzeitpunkt: ${formatInviteErrorTime(active.timestamp)}`;
+        const msg = document.createElement('p');
+        msg.textContent = active.userMessage || inviteErrorUserMessage(active.errorCode);
+        inviteErrorDetail.append(title, code, time, msg);
+      } else {
+        const empty = document.createElement('p');
+        empty.textContent = 'Alle Kalendereinladungen wurden erfolgreich versendet.';
+        inviteErrorDetail.appendChild(empty);
+      }
+    }
+    if (resolveInviteErrorBtn) {
+      resolveInviteErrorBtn.textContent = invitationFailureActionLabel(active);
+      resolveInviteErrorBtn.disabled = !active;
+    }
+  }
+
+  function formatInviteErrorTime(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Unbekannt';
+    return date.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
+  }
+
+  async function handleInvitationErrorAction() {
+    const error = openInvitationFailures().find(item => item.id === activeInviteErrorId);
+    if (!error) return;
+    if (error.errorCode === 'MISSING_SENDER_EMAIL') {
+      closeInvitationErrorModal();
+      openAccountModal();
+      autoInviteEmail?.focus();
+      return;
+    }
+    if (['AUTH_ERROR', 'SESSION_EXPIRED'].includes(error.errorCode)) {
+      try { await supabaseClient?.auth?.getSession?.(); } catch {}
+      if (!cloudUser) openAccountModal();
+      else if (error.retryable) await retryInvitationFailure(error);
+      return;
+    }
+    if (error.errorCode === 'INVALID_RECIPIENT') {
+      closeInvitationErrorModal();
+      openEditor(error.eventId);
+      invitePanelExpanded = true;
+      renderInvitePanelState();
+      eventInviteEmailInput?.focus();
+      return;
+    }
+    if (error.retryable) {
+      await retryInvitationFailure(error);
+      return;
+    }
+    renderInvitationErrorModal();
+  }
+
+  async function retryInvitationFailure(error) {
+    const ev = findEventById(error?.eventId);
+    if (!ev) return;
+    await sendAutomaticInvitationForEvent(ev, 'retry', { updateModalStatus: false, alertOnError: false });
+    renderAll();
+    renderInvitationErrorModal();
+  }
+
   function autoInviteStatusLabel(settings = ensureAutoInviteSettings()) {
+    const failures = openInvitationFailures();
+    if (failures.length) return failures.length === 1 ? 'Eine Kalendereinladung konnte nicht gesendet werden.' : `${failures.length} Kalendereinladungen konnten nicht gesendet werden.`;
     if (autoInviteSendStatus.state === 'sending') return 'Kalendereinladung wird versendet...';
     if (autoInviteSendStatus.state === 'success') return 'Kalendereinladung versendet';
     if (autoInviteSendStatus.state === 'error') return autoInviteSendStatus.message || 'Kalendereinladung konnte nicht versendet werden.';
@@ -984,12 +1223,13 @@
     const settings = ensureAutoInviteSettings();
     const active = autoInviteIsActive();
     const statusState = autoInviteSendStatus.state || 'idle';
-    const shouldShow = active || statusState === 'sending' || statusState === 'success' || statusState === 'error';
+    const hasFailures = openInvitationFailures().length > 0;
+    const shouldShow = active || statusState === 'sending' || statusState === 'success' || statusState === 'error' || hasFailures;
     autoInviteIndicator.hidden = !shouldShow;
-    autoInviteIndicator.classList.toggle('sending', statusState === 'sending');
-    autoInviteIndicator.classList.toggle('success', statusState === 'success');
-    autoInviteIndicator.classList.toggle('error', statusState === 'error');
-    autoInviteIndicator.textContent = statusState === 'success' ? '✓' : '✉';
+    autoInviteIndicator.classList.toggle('sending', !hasFailures && statusState === 'sending');
+    autoInviteIndicator.classList.toggle('success', !hasFailures && statusState === 'success');
+    autoInviteIndicator.classList.toggle('error', hasFailures || statusState === 'error');
+    autoInviteIndicator.textContent = hasFailures ? '!' : (statusState === 'success' ? '✓' : '✉');
     const label = autoInviteStatusLabel(settings);
     autoInviteIndicator.title = label;
     autoInviteIndicator.setAttribute('aria-label', label);
@@ -1756,23 +1996,25 @@
           body: JSON.stringify({ eventId: ev.id, weekKey: state.currentWeekStart, method: 'REQUEST', message })
         });
         const result = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(result.error || 'Versand fehlgeschlagen');
+        if (!response.ok) throw Object.assign(new Error(result.error || 'Versand fehlgeschlagen'), { errorCode: result.errorCode || result.code, userMessage: result.userMessage, technicalMessage: result.technicalMessage || result.error, missingConfig: result.missingConfig, retryable: result.retryable, status: response.status });
         ev.invitationUid = result.invitationUid || ev.invitationUid || invitationUidForEvent(ev);
         ev.invitationSequence = Number(result.sequence ?? ev.invitationSequence ?? 0);
         rememberOwnInvitationUid(ev.invitationUid);
         ev.organizerEmail = result.organizerEmail || ev.organizerEmail || null;
         ev.organizerName = result.organizerName || ev.organizerName || null;
-        ev.invitationStatus = ev.invitationSentAt ? 'updated' : 'sent';
+        ev.invitationStatus = 'sent';
         ev.invitationSentAt = ev.invitationSentAt || new Date().toISOString();
         ev.invitationUpdatedAt = new Date().toISOString();
         ev.invitationError = null;
+        ev.invitationErrorDetails = null;
+        clearInvitationFailure(ev.id);
         ev.attendees = eventParticipantList(ev).map(att => emails.includes(att.email) ? { ...att, status: 'sent', invitationStatus: 'sent', invitationError: null, invitationSentAt: new Date().toISOString() } : att);
         ev.participants = ev.attendees.map(att => ({ ...att }));
         ok += 1;
       } catch (error) {
-        ev.invitationStatus = 'failed';
-        ev.invitationError = error.message || String(error);
+        const detail = recordInvitationFailure(ev, error);
         failed.push(ev.label || ev.id);
+        console.warn('[CalendarInvite] Sammelversand fehlgeschlagen', { eventId: ev.id, errorCode: detail.errorCode, technicalId: detail.technicalId });
       }
     }
     saveState();
@@ -4473,7 +4715,7 @@ return div;
     if (!ev || isExternalIcsEvent(ev)) return ev;
     if (!ev.invitationUid) ev.invitationUid = invitationUidForEvent(ev);
     if (!Number.isInteger(Number(ev.invitationSequence))) ev.invitationSequence = 0;
-    if (!ev.invitationStatus) ev.invitationStatus = 'not-sent';
+    ev.invitationStatus = normalizeInvitationStatus(ev.invitationStatus);
     return ev;
   }
 
@@ -4509,30 +4751,44 @@ return div;
   }
 
   async function deliverCalendarInvitation(ev, method = 'REQUEST') {
-    if (!ev || !canManageParticipants(ev)) throw new Error('Einladungen sind fuer diesen Termin nicht verfuegbar.');
-    if (!eventParticipantList(ev).length) throw new Error('Bitte mindestens einen Teilnehmer hinzufuegen.');
-    if (!cloudUser || !supabaseClient) throw new Error('Bitte einloggen, um Einladungen zu senden.');
+    if (!ev || !canManageParticipants(ev)) throw Object.assign(new Error('Einladungen sind fuer diesen Termin nicht verfuegbar.'), { errorCode: 'INVALID_RECIPIENT' });
+    if (!eventParticipantList(ev).length) throw Object.assign(new Error('Bitte mindestens einen Teilnehmer hinzufuegen.'), { errorCode: 'INVALID_RECIPIENT' });
+    if (!cloudUser || !supabaseClient) throw Object.assign(new Error('Bitte einloggen, um Einladungen zu senden.'), { errorCode: 'AUTH_ERROR' });
+    ev.invitationStatus = 'sending';
+    ev.invitationError = null;
+    ev.invitationErrorDetails = null;
     saveState();
     const cloudSaved = await saveCloudState(state, { throwOnError: true });
     if (!cloudSaved) throw new Error('Termin konnte nicht fuer den Einladungsversand gespeichert werden.');
     const { data } = await supabaseClient.auth.getSession();
     const token = data?.session?.access_token;
-    if (!token) throw new Error('Keine gueltige Sitzung. Bitte erneut einloggen.');
+    if (!token) throw Object.assign(new Error('Keine gueltige Sitzung. Bitte erneut einloggen.'), { errorCode: 'SESSION_EXPIRED' });
     const response = await fetch('/api/send-calendar-invitation', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ eventId: ev.id, weekKey: weekKeyForEvent(ev), method, message: ev.inviteMessage })
     });
     const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.error || 'Einladung konnte nicht gesendet werden.');
+    if (!response.ok) {
+      throw Object.assign(new Error(result.error || 'Einladung konnte nicht gesendet werden.'), {
+        errorCode: result.errorCode || result.code,
+        userMessage: result.userMessage,
+        technicalMessage: result.technicalMessage || result.error,
+        missingConfig: result.missingConfig,
+        retryable: result.retryable,
+        status: response.status
+      });
+    }
     ev.invitationUid = result.invitationUid || ev.invitationUid || invitationUidForEvent(ev);
     ev.invitationSequence = Number(result.sequence ?? ev.invitationSequence ?? 0);
     ev.organizerEmail = result.organizerEmail || ev.organizerEmail || null;
     ev.organizerName = result.organizerName || ev.organizerName || null;
-    ev.invitationStatus = method === 'CANCEL' ? 'cancelled' : (ev.invitationSentAt ? 'updated' : 'sent');
+    ev.invitationStatus = method === 'CANCEL' ? 'sent' : 'sent';
     ev.invitationSentAt = method === 'CANCEL' ? ev.invitationSentAt : (ev.invitationSentAt || new Date().toISOString());
     ev.invitationUpdatedAt = new Date().toISOString();
     ev.invitationError = null;
+    ev.invitationErrorDetails = null;
+    clearInvitationFailure(ev.id);
     ev.attendees = eventParticipantList(ev).map(att => ({ ...att, status: method === 'CANCEL' ? 'cancelled' : 'sent', invitationStatus: method === 'CANCEL' ? 'cancelled' : 'sent', invitationError: null, invitationSentAt: new Date().toISOString() }));
     ev.participants = ev.attendees.map(att => ({ ...att }));
     rememberOwnInvitationUid(ev.invitationUid);
@@ -4553,10 +4809,10 @@ return div;
         await deliverCalendarInvitation(current, 'REQUEST');
         logOwnInviteDebug('schedule-update-sent', current, { reason });
       } catch (error) {
-        current.invitationStatus = 'failed';
-        current.invitationError = error.message || String(error);
+        const detail = recordInvitationFailure(current, error);
         saveState();
-        console.warn('[CalendarInvite] Automatische Aktualisierung fehlgeschlagen', { eventId: current.id, reason, message: current.invitationError });
+        renderAutoInviteIndicator();
+        console.warn('[CalendarInvite] Automatische Aktualisierung fehlgeschlagen', { eventId: current.id, reason, errorCode: detail.errorCode, technicalId: detail.technicalId });
       }
     }, 700);
     invitationUpdateTimers.set(ev.id, timer);
@@ -4656,9 +4912,9 @@ return div;
 
   function invitationSummary(ev) {
     if (!eventParticipantList(ev).length) return 'Noch nicht gesendet';
-    if (ev.invitationStatus === 'cancelled') return 'Absage gesendet';
+    if (ev.invitationStatus === 'sending') return 'Einladung wird gesendet';
+    if (ev.invitationStatus === 'sent' && ev.invitationUpdatedAt) return `Einladung gesendet am ${new Date(ev.invitationUpdatedAt).toLocaleString('de-DE')}`;
     if (ev.invitationStatus === 'sent' && ev.invitationSentAt) return `Einladung gesendet am ${new Date(ev.invitationSentAt).toLocaleString('de-DE')}`;
-    if (ev.invitationStatus === 'updated' && ev.invitationUpdatedAt) return `Aktualisierte Einladung gesendet am ${new Date(ev.invitationUpdatedAt).toLocaleString('de-DE')}`;
     if (ev.invitationStatus === 'failed') return `Versand fehlgeschlagen: ${ev.invitationError || 'Bitte erneut versuchen.'}`;
     return 'Noch nicht gesendet';
   }
@@ -4685,13 +4941,12 @@ return div;
       console.log('[AutoInvite] Einladung gesendet', { eventId: ev.id, reason, recipients: eventParticipantList(ev).map(att => att.email) });
       return true;
     } catch (error) {
-      ev.invitationStatus = 'failed';
-      ev.invitationError = error.message || String(error);
+      const detail = recordInvitationFailure(ev, error);
       saveState();
-      setAutoInviteSendStatus('error', ev.invitationError || 'Kalendereinladung konnte nicht versendet werden.', ev.id);
-      if (updateModalStatus) setInviteStatus(`Automatische Einladung fehlgeschlagen: ${ev.invitationError}`, 'error');
-      console.warn('[AutoInvite] Automatische Einladung fehlgeschlagen', { eventId: ev.id, reason, message: ev.invitationError });
-      if (alertOnError) alert(`Termin gespeichert, aber die automatische Einladung konnte nicht gesendet werden: ${ev.invitationError}`);
+      setAutoInviteSendStatus('error', detail.userMessage || 'Kalendereinladung konnte nicht versendet werden.', ev.id);
+      if (updateModalStatus) setInviteStatus(`Automatische Einladung fehlgeschlagen: ${detail.userMessage}`, 'error');
+      console.warn('[AutoInvite] Automatische Einladung fehlgeschlagen', { eventId: ev.id, reason, errorCode: detail.errorCode, technicalId: detail.technicalId });
+      if (alertOnError) openInvitationErrorModal(detail.id);
       return false;
     }
   }
@@ -4746,7 +5001,7 @@ return div;
       inviteMessage: '',
       invitationUid: invitationUidForEvent({ id: newEventId }),
       invitationSequence: 0,
-      invitationStatus: 'not-sent',
+      invitationStatus: 'pending',
       invitationError: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -4798,10 +5053,9 @@ return div;
       setInviteStatus(method === 'CANCEL' ? 'Absage gesendet.' : 'Einladung gesendet.', 'success');
       return true;
     } catch (error) {
-      ev.invitationStatus = 'failed';
-      ev.invitationError = error.message || String(error);
+      const detail = recordInvitationFailure(ev, error);
       saveState();
-      setInviteStatus(`Einladung konnte nicht gesendet werden. Termin wurde gespeichert. ${ev.invitationError}`, 'error');
+      setInviteStatus(`Einladung konnte nicht gesendet werden. Termin wurde gespeichert. ${detail.userMessage}`, 'error');
       return false;
     } finally {
       renderInviteAttendees(ev);
@@ -6154,7 +6408,7 @@ return div;
       inviteMessage: templateEv.inviteMessage || '',
       invitationUid: invitationUidForEvent({ id: instanceId }),
       invitationSequence: 0,
-      invitationStatus: 'not-sent',
+      invitationStatus: 'pending',
       invitationError: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -6681,6 +6935,11 @@ function toggleMissed(eventId) {
   };
   if (profileLogoutBtn) profileLogoutBtn.onclick = signOut;
   if (profileAccountBtn) profileAccountBtn.onclick = openAccountModal;
+  if (autoInviteIndicator) autoInviteIndicator.onclick = () => { if (openInvitationFailures().length) openInvitationErrorModal(); };
+  if (closeInviteErrorModalBtn) closeInviteErrorModalBtn.onclick = closeInvitationErrorModal;
+  if (closeInviteErrorModalFooterBtn) closeInviteErrorModalFooterBtn.onclick = closeInvitationErrorModal;
+  if (resolveInviteErrorBtn) resolveInviteErrorBtn.onclick = handleInvitationErrorAction;
+  if (inviteErrorModalBackdrop) inviteErrorModalBackdrop.addEventListener('click', e => { if (e.target === inviteErrorModalBackdrop) closeInvitationErrorModal(); });
   if (openCalendarFeedModalBtn) openCalendarFeedModalBtn.onclick = openCalendarFeedModal;
   if (closeAccountModalBtn) closeAccountModalBtn.onclick = closeAccountModal;
   if (closeAccountModalFooterBtn) closeAccountModalFooterBtn.onclick = closeAccountModal;
@@ -7070,6 +7329,7 @@ function toggleMissed(eventId) {
 
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
+      if (inviteErrorModalBackdrop?.style.display === 'flex') { closeInvitationErrorModal(); return; }
       if (bulkActionModalBackdrop?.style.display === 'flex') { closeBulkActionModal(); return; }
       if (bulkSelectionMode) { setBulkSelectionMode(false); return; }
       const icsModal = document.getElementById('icsModal');
@@ -8746,7 +9006,7 @@ if (removeBtn) {
   // INIT
   // ==================================================
 
-function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); renderCalendarFeedSettings(); renderAutoInviteSettings(); renderAutoInviteIndicator(); renderSpecialEventsButton(); renderSpecialEventsModal(); renderSpecialEventsDrawer(); renderMobileControls(); renderBulkActionBar(); renderIcsExternalEventsManager(); updateIcsAutoSyncMeta(); }
+function renderAll() { currentWeekEvents(); renderLegend(); fillTodoCategorySelect(); renderTodos(); renderWeekControls(); renderCalendar(); renderHabits(); renderTaskView(); renderTracking(); renderViewMode(); renderPlannerMode(); renderTodoDrawer(); renderCalendarFeedSettings(); renderAutoInviteSettings(); renderAutoInviteIndicator(); if (inviteErrorModalBackdrop?.style.display === 'flex') renderInvitationErrorModal(); renderSpecialEventsButton(); renderSpecialEventsModal(); renderSpecialEventsDrawer(); renderMobileControls(); renderBulkActionBar(); renderIcsExternalEventsManager(); updateIcsAutoSyncMeta(); }
   fillTaskDaySelect();
   renderAll();
   renderAll();

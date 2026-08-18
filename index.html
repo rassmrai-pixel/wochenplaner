@@ -12,7 +12,7 @@
   <header>
     <div>
       <h1>Perfekte Woche Planer</h1>
-      <div class="subtitle">Wochenansicht · 24 Stunden · 15-Minuten-Schritte · Kalender + Habit Tracker + To-do Planner + Tages-Taskansicht</div>
+      <div class="subtitle">Kalender · Aufgaben · Routinen</div>
     </div>
     <div class="toolbar">
   <button id="quickIcsSyncBtn" class="topbar-icon-btn" type="button" title="ICS Sync" aria-label="ICS Sync" data-tooltip="ICS Sync">🔄</button>
@@ -46,7 +46,6 @@
   </header>
 
   <main class="app">
-    <p class="hint calendar-hint">Wähle eine Kategorie und ziehe über freie Zeitfelder, um neue Blöcke zu setzen. Doppelklick auf einen Block öffnet die Bearbeitung. Checkboxen im Kalender und im Habit Tracker sind synchron. Fahrt wird nicht getrackt, Orga schon. Mit dem To-do Planner sammelst du Aufgaben und planst sie später als Kalenderblock ein. Mit der Tages-Taskansicht kannst du ohne Kalender nur abhaken.</p>
     <section class="cloud-panel" id="cloudPanel">
       <div class="cloud-left">
         <div class="cloud-title">Cloud Sync</div>
@@ -524,6 +523,26 @@
 
       <div class="modal-actions">
         <button class="ghost" id="closeAccountModalFooterBtn" type="button">Schließen</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="inviteErrorModalBackdrop">
+    <div class="modal calendar-invite-error-modal">
+      <div class="modal-title-row">
+        <div>
+          <h2>Kalendereinladung konnte nicht gesendet werden</h2>
+          <div class="modal-subtitle" id="inviteErrorModalSubtitle">Bitte prüfe die betroffenen Einladungen.</div>
+        </div>
+        <button class="modal-close-btn" id="closeInviteErrorModalBtn" type="button" aria-label="Schließen">×</button>
+      </div>
+      <div class="invite-error-layout">
+        <div class="invite-error-list" id="inviteErrorList"></div>
+        <div class="invite-error-detail" id="inviteErrorDetail"></div>
+      </div>
+      <div class="modal-actions invite-error-actions">
+        <button class="ghost" id="closeInviteErrorModalFooterBtn" type="button">Schließen</button>
+        <button class="primary" id="resolveInviteErrorBtn" type="button">Fehler beheben</button>
       </div>
     </div>
   </div>

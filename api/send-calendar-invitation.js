@@ -34,6 +34,45 @@ function missingEmailConfig(email) {
   return missing;
 }
 
+function inviteErrorUserMessage(errorCode) {
+  const messages = {
+    MISSING_SENDER_EMAIL: 'Für den Versand fehlt eine Absender-E-Mail-Adresse.',
+    AUTH_ERROR: 'Die Anmeldung konnte nicht geprüft werden.',
+    SESSION_EXPIRED: 'Die Sitzung ist abgelaufen. Bitte erneut anmelden.',
+    INVALID_RECIPIENT: 'Mindestens eine Teilnehmeradresse ist ungültig oder fehlt.',
+    NETWORK_ERROR: 'Der Maildienst konnte nicht erreicht werden.',
+    RESEND_ERROR: 'Der Mailanbieter hat die Einladung abgelehnt.',
+    SERVER_ERROR: 'Der Server konnte die Einladung nicht senden.',
+    RATE_LIMIT: 'Es wurden zu viele Einladungen in kurzer Zeit versendet.',
+    UNKNOWN_ERROR: 'Die Kalendereinladung konnte nicht gesendet werden.'
+  };
+  return messages[errorCode] || messages.UNKNOWN_ERROR;
+}
+
+function retryableInviteError(errorCode) {
+  return ['NETWORK_ERROR', 'RESEND_ERROR', 'SERVER_ERROR', 'UNKNOWN_ERROR'].includes(errorCode);
+}
+
+function codedError(message, statusCode, errorCode, extra = {}) {
+  return Object.assign(new Error(message), {
+    statusCode,
+    errorCode,
+    code: errorCode,
+    userMessage: extra.userMessage || inviteErrorUserMessage(errorCode),
+    technicalMessage: extra.technicalMessage || message,
+    retryable: extra.retryable ?? retryableInviteError(errorCode),
+    ...extra
+  });
+}
+
+function classifyProviderError(status, body) {
+  if (status === 429) return 'RATE_LIMIT';
+  if (status >= 500) return 'RESEND_ERROR';
+  const normalized = String(body || '').toLowerCase();
+  if (status === 400 && /recipient|to|email|invalid/.test(normalized)) return 'INVALID_RECIPIENT';
+  return 'RESEND_ERROR';
+}
+
 function pad2(value) {
   return String(value).padStart(2, '0');
 }
@@ -203,10 +242,10 @@ function buildInviteIcs({ event, weekKey, method, sequence, uid, message, organi
   const start = Number(event.start);
   const end = Number(event.end);
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
-    throw Object.assign(new Error('Ungültige Terminzeit.'), { statusCode: 400 });
+    throw codedError('Ungültige Terminzeit.', 400, 'INVALID_RECIPIENT');
   }
   const attendees = validateAttendees(event);
-  if (!attendees.length) throw Object.assign(new Error('Keine gültigen Teilnehmer.'), { statusCode: 400 });
+  if (!attendees.length) throw codedError('Keine gültigen Teilnehmer.', 400, 'INVALID_RECIPIENT');
   const dateKey = eventDateKey(event, weekKey);
   const summary = event.label || event.title || 'Termin';
   const description = [message, event.description].filter(Boolean).join('\n\n') || summary;
@@ -261,7 +300,7 @@ function buildInviteIcs({ event, weekKey, method, sequence, uid, message, organi
 async function requireUser(req, config) {
   const auth = req.headers.authorization || req.headers.Authorization || '';
   const match = String(auth).match(/^Bearer\s+(.+)$/i);
-  if (!match) throw Object.assign(new Error('Nicht angemeldet.'), { statusCode: 401 });
+  if (!match) throw codedError('Nicht angemeldet.', 401, 'AUTH_ERROR');
   const endpoint = `${config.url.replace(/\/$/, '')}/auth/v1/user`;
   const response = await fetch(endpoint, {
     headers: {
@@ -307,7 +346,7 @@ async function requireUser(req, config) {
       matchesExpectedProject: projectRef === 'uwynzmdsveplxfqgwzqp',
       keyType
     });
-    throw Object.assign(new Error('Sitzung konnte nicht geprüft werden.'), { statusCode: 401 });
+    throw codedError('Sitzung konnte nicht geprüft werden.', 401, 'SESSION_EXPIRED');
   }
   return response.json();
 }
@@ -324,10 +363,10 @@ async function loadPlannerState(userId, config) {
       Accept: 'application/json'
     }
   });
-  if (!response.ok) throw Object.assign(new Error('Planner-State konnte nicht geladen werden.'), { statusCode: 502 });
+  if (!response.ok) throw codedError('Planner-State konnte nicht geladen werden.', 502, 'SERVER_ERROR');
   const rows = await response.json();
   const state = rows?.[0]?.data;
-  if (!state) throw Object.assign(new Error('Planner-State nicht gefunden.'), { statusCode: 404 });
+  if (!state) throw codedError('Planner-State nicht gefunden.', 404, 'UNKNOWN_ERROR');
   return state;
 }
 
@@ -342,7 +381,7 @@ async function savePlannerState(userId, state, config) {
     },
     body: JSON.stringify({ data: state, updated_at: new Date().toISOString() })
   });
-  if (!response.ok) throw Object.assign(new Error('Einladungsstatus konnte nicht gespeichert werden.'), { statusCode: 502 });
+  if (!response.ok) throw codedError('Einladungsstatus konnte nicht gespeichert werden.', 502, 'SERVER_ERROR');
 }
 
 function findEventRecord(state, eventId, preferredWeekKey) {
@@ -361,10 +400,11 @@ function findEventRecord(state, eventId, preferredWeekKey) {
 async function sendViaResend({ to, subject, text, html, ics, method, email }) {
   const missing = missingEmailConfig(email);
   if (missing.length) {
-    throw Object.assign(new Error(`Mailversand ist serverseitig nicht konfiguriert. Fehlende Environment Variables: ${missing.join(', ')}.`), {
-      statusCode: 500,
-      code: 'MAIL_CONFIG_MISSING',
-      missingConfig: missing
+    const missingSender = missing.some(item => /CALENDAR_(ORGANIZER|FROM)_EMAIL/i.test(item));
+    throw codedError(`Mailversand ist serverseitig nicht konfiguriert. Fehlende Environment Variables: ${missing.join(', ')}.`, 500, missingSender ? 'MISSING_SENDER_EMAIL' : 'SERVER_ERROR', {
+      missingConfig: missing,
+      provider: 'resend-http',
+      retryable: !missingSender
     });
   }
 
@@ -379,9 +419,11 @@ async function sendViaResend({ to, subject, text, html, ics, method, email }) {
   });
   const body = await response.text().catch(() => '');
   if (!response.ok) {
-    throw Object.assign(new Error(`Mailanbieter hat den Versand abgelehnt (${response.status}).`), {
-      statusCode: 502,
-      providerBody: body.slice(0, 300)
+    const errorCode = classifyProviderError(response.status, body);
+    throw codedError(`Mailanbieter hat den Versand abgelehnt (${response.status}).`, response.status === 429 ? 429 : 502, errorCode, {
+      providerBody: body.slice(0, 300),
+      technicalMessage: body.slice(0, 500) || `Resend HTTP ${response.status}`,
+      retryable: errorCode !== 'RATE_LIMIT' && errorCode !== 'INVALID_RECIPIENT'
     });
   }
 }
@@ -396,23 +438,23 @@ async function sendCalendarInvitationHandler(req, res) {
   try {
     const body = await readJsonBody(req);
     const method = String(body.method || 'REQUEST').toUpperCase();
-    if (!['REQUEST', 'CANCEL'].includes(method)) throw Object.assign(new Error('Ungültige Einladungsaktion.'), { statusCode: 400 });
+    if (!['REQUEST', 'CANCEL'].includes(method)) throw codedError('Ungültige Einladungsaktion.', 400, 'INVALID_RECIPIENT');
     const eventId = String(body.eventId || '').trim();
     const weekKey = String(body.weekKey || '').trim();
-    if (!eventId) throw Object.assign(new Error('Termin fehlt.'), { statusCode: 400 });
+    if (!eventId) throw codedError('Termin fehlt.', 400, 'INVALID_RECIPIENT');
 
     const config = supabaseConfig();
-    if (!config.url || !config.key) throw Object.assign(new Error('Supabase ist serverseitig nicht konfiguriert.'), { statusCode: 500 });
+    if (!config.url || !config.key) throw codedError('Supabase ist serverseitig nicht konfiguriert.', 500, 'SERVER_ERROR');
 
     const user = await requireUser(req, config);
     const state = await loadPlannerState(user.id, config);
     const record = findEventRecord(state, eventId, weekKey);
-    if (!record) throw Object.assign(new Error('Termin nicht gefunden.'), { statusCode: 404 });
+    if (!record) throw codedError('Termin nicht gefunden.', 404, 'UNKNOWN_ERROR');
     const event = record.event;
-    if (isUnsupportedEvent(event)) throw Object.assign(new Error('Einladungen sind für eigene Termine mit Uhrzeit verfügbar.'), { statusCode: 400 });
+    if (isUnsupportedEvent(event)) throw codedError('Einladungen sind für eigene Termine mit Uhrzeit verfügbar.', 400, 'INVALID_RECIPIENT');
     const attendees = validateAttendees(event);
-    if (!attendees.length) throw Object.assign(new Error('Keine gültigen Teilnehmer.'), { statusCode: 400 });
-    if ((Array.isArray(event.participants || event.attendees) ? (event.participants || event.attendees).length : 0) > MAX_ATTENDEES) throw Object.assign(new Error(`Maximal ${MAX_ATTENDEES} Teilnehmer pro Termin.`), { statusCode: 400 });
+    if (!attendees.length) throw codedError('Keine gültigen Teilnehmer.', 400, 'INVALID_RECIPIENT');
+    if ((Array.isArray(event.participants || event.attendees) ? (event.participants || event.attendees).length : 0) > MAX_ATTENDEES) throw codedError(`Maximal ${MAX_ATTENDEES} Teilnehmer pro Termin.`, 400, 'INVALID_RECIPIENT');
 
     event.participants = attendees.map(att => ({ ...att }));
     event.attendees = attendees.map(att => ({ ...att }));
@@ -458,7 +500,7 @@ async function sendCalendarInvitationHandler(req, res) {
       email
     });
 
-    event.invitationStatus = method === 'CANCEL' ? 'cancelled' : (event.invitationSentAt ? 'updated' : 'sent');
+    event.invitationStatus = 'sent';
     event.invitationSentAt = method === 'CANCEL' ? event.invitationSentAt : (event.invitationSentAt || now);
     event.invitationUpdatedAt = now;
     event.invitationError = null;
@@ -485,13 +527,16 @@ async function sendCalendarInvitationHandler(req, res) {
   } catch (error) {
     const status = error.statusCode || 500;
     if (status >= 500) console.error('[CalendarInvite] failed', { status, message: error.message, code: error.code, providerBody: error.providerBody });
-    const payload = { error: status >= 500 ? (error.message || 'Einladung konnte nicht gesendet werden.') : error.message };
-    if (error.code === 'MAIL_CONFIG_MISSING') {
-      payload.code = error.code;
-      payload.provider = 'resend-http';
-      payload.missingConfig = error.missingConfig || [];
-    }
-    return json(res, status, payload);
+    const errorCode = error.errorCode || error.code || (status === 401 ? 'SESSION_EXPIRED' : (status === 429 ? 'RATE_LIMIT' : (status >= 500 ? 'SERVER_ERROR' : 'UNKNOWN_ERROR')));
+    return json(res, status, {
+      error: error.userMessage || inviteErrorUserMessage(errorCode),
+      errorCode,
+      userMessage: error.userMessage || inviteErrorUserMessage(errorCode),
+      technicalMessage: error.technicalMessage || error.message || String(error),
+      retryable: error.retryable ?? retryableInviteError(errorCode),
+      provider: error.provider || (error.providerBody ? 'resend-http' : undefined),
+      missingConfig: error.missingConfig || undefined
+    });
   }
 }
 
