@@ -1,6 +1,7 @@
 const DEFAULT_TIMEZONE = 'Europe/Berlin';
 const SLOTS_PER_DAY = 96;
 const MAX_ATTENDEES = 10;
+const DEFAULT_ORGANIZER_EMAIL = 'calendar@notify.webmines.de';
 
 function json(res, statusCode, payload) {
   res.statusCode = statusCode;
@@ -17,7 +18,7 @@ function supabaseConfig() {
 }
 
 function emailConfig() {
-  const organizerEmail = process.env.CALENDAR_ORGANIZER_EMAIL || process.env.CALENDAR_FROM_EMAIL || '';
+  const organizerEmail = process.env.CALENDAR_ORGANIZER_EMAIL || process.env.CALENDAR_FROM_EMAIL || DEFAULT_ORGANIZER_EMAIL;
   return {
     provider: 'resend-http',
     resendApiKey: process.env.RESEND_API_KEY || '',
