@@ -5314,20 +5314,20 @@ body:not(.special-events-drawer-open) .special-events-drawer-backdrop {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  min-height: 44px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
   padding: 0;
   box-sizing: border-box;
   border-radius: 999px;
   border: 1px solid rgba(56, 189, 248, 0.38);
   background: rgba(56, 189, 248, 0.12);
   color: #bae6fd;
-  font-size: 18px;
+  font-size: 14px;
   line-height: 1;
   font-weight: 900;
-  flex: 0 0 44px;
+  flex: 0 0 24px;
   overflow: visible;
   transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
 }
@@ -5360,11 +5360,11 @@ body:not(.special-events-drawer-open) .special-events-drawer-backdrop {
   content: '';
   position: absolute;
   inset: 50% auto auto 50%;
-  width: 19px;
-  height: 19px;
+  width: 12px;
+  height: 12px;
   box-sizing: border-box;
   border-radius: 999px;
-  border: 2.25px solid rgba(186, 230, 253, 0.28);
+  border: 1.75px solid rgba(186, 230, 253, 0.28);
   border-top-color: #bae6fd;
   transform: translate(-50%, -50%);
   animation: autoInviteSpin 0.8s linear infinite;
@@ -5380,7 +5380,7 @@ body:not(.special-events-drawer-open) .special-events-drawer-backdrop {
   color: #fecaca;
   border-color: rgba(248, 113, 113, 0.62);
   background: rgba(127, 29, 29, 0.26);
-  font-size: 20px;
+  font-size: 15px;
 }
 
 .auto-invite-indicator.error::before,
