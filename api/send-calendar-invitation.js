@@ -234,6 +234,10 @@ function isUnsupportedEvent(event) {
     event.isExternal ||
     event.importSource === 'ics' ||
     event.provider === 'ics' ||
+    event.source === 'routine' ||
+    event.templateEventId ||
+    event.entryType === 'routine' ||
+    event.entryType === 'habit' ||
     event.rrule ||
     event.recurrenceId
   );

@@ -366,6 +366,8 @@
   const inviteErrorList = document.getElementById('inviteErrorList');
   const inviteErrorDetail = document.getElementById('inviteErrorDetail');
   const resolveInviteErrorBtn = document.getElementById('resolveInviteErrorBtn');
+  const ignoreInviteErrorBtn = document.getElementById('ignoreInviteErrorBtn');
+  const ignoreAllInviteErrorsBtn = document.getElementById('ignoreAllInviteErrorsBtn');
   const calendarFeedModalBackdrop = document.getElementById('calendarFeedModalBackdrop');
   const openCalendarFeedModalBtn = document.getElementById('openCalendarFeedModalBtn');
   const closeCalendarFeedModalBtn = document.getElementById('closeCalendarFeedModalBtn');
@@ -480,8 +482,14 @@
       eventId,
       eventTitle: input.eventTitle || ev?.label || ev?.title || 'Termin',
       timestamp,
+      attemptedAt: input.attemptedAt || null,
+      source: input.source || null,
       retryable: input.retryable ?? inviteErrorRetryable(errorCode),
-      resolved: Boolean(input.resolved),
+      status: input.status || (input.dismissed || input.ignored ? 'dismissed' : (input.resolved ? 'resolved' : 'active')),
+      dismissed: Boolean(input.dismissed || input.ignored || input.status === 'dismissed' || input.status === 'ignored'),
+      ignored: Boolean(input.ignored || input.status === 'ignored'),
+      resolved: Boolean(input.resolved || input.status === 'resolved'),
+      dismissedAt: input.dismissedAt || input.ignoredAt || null,
       technicalId: input.technicalId || ('invite-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7))
     };
   }
@@ -567,7 +575,7 @@
     s.autoInvite.email = normalizeInviteEmail(s.autoInvite.email);
     s.autoInvite.enabled = Boolean(s.autoInvite.enabled && isValidInviteEmail(s.autoInvite.email));
     s.invitationErrors = Array.isArray(input.invitationErrors)
-      ? input.invitationErrors.map(item => normalizeInvitationFailureInput(item)).filter(item => item.eventId && !item.resolved)
+      ? input.invitationErrors.map(item => normalizeInvitationFailureInput(item)).filter(item => item.eventId)
       : [];
     if (s.categories.neutral) {
       s.categories.orga = s.categories.orga || { label: 'Orga / To-dos', color: s.categories.neutral.color || '#94a3b8', habit: true };
@@ -1023,8 +1031,16 @@
     return null;
   }
 
+  function isLegacyUnknownInvitationFailure(item) {
+    return Boolean(item?.errorCode === 'UNKNOWN_ERROR' && !item.attemptedAt && item.source !== 'send-attempt');
+  }
+
+  function isActiveInvitationFailure(item) {
+    return Boolean(item && !isLegacyUnknownInvitationFailure(item) && !item.resolved && !item.dismissed && item.status !== 'dismissed' && item.status !== 'ignored' && item.status !== 'resolved');
+  }
+
   function openInvitationFailures() {
-    return (state.invitationErrors || []).filter(item => item && !item.resolved);
+    return (state.invitationErrors || []).filter(isActiveInvitationFailure);
   }
 
   function classifyInvitationError(error, ev = null) {
@@ -1066,6 +1082,11 @@
   function recordInvitationFailure(ev, error) {
     const detail = classifyInvitationError(error, ev);
     state.invitationErrors = (state.invitationErrors || []).filter(item => item.eventId !== detail.eventId);
+    detail.status = 'active';
+    detail.source = 'send-attempt';
+    detail.attemptedAt = detail.attemptedAt || detail.timestamp || new Date().toISOString();
+    detail.dismissed = false;
+    detail.ignored = false;
     state.invitationErrors.unshift(detail);
     if (ev) {
       ev.invitationStatus = 'failed';
@@ -1095,6 +1116,43 @@
 
   function closeInvitationErrorModal() {
     if (inviteErrorModalBackdrop) inviteErrorModalBackdrop.style.display = 'none';
+  }
+
+  function dismissInvitationFailure(errorId = activeInviteErrorId) {
+    const error = (state.invitationErrors || []).find(item => item.id === errorId);
+    if (!error) return;
+    error.status = 'dismissed';
+    error.dismissed = true;
+    error.dismissedAt = new Date().toISOString();
+    const ev = findEventById(error.eventId);
+    if (ev?.invitationErrorDetails?.id === error.id) {
+      ev.invitationErrorDetails = { ...ev.invitationErrorDetails, status: 'dismissed', dismissed: true, dismissedAt: error.dismissedAt };
+      ev.invitationError = null;
+      if (ev.invitationStatus === 'failed') ev.invitationStatus = 'pending';
+    }
+    activeInviteErrorId = openInvitationFailures()[0]?.id || null;
+    saveState();
+    renderAutoInviteIndicator();
+    renderInvitationErrorModal();
+  }
+
+  function dismissAllInvitationFailures() {
+    const now = new Date().toISOString();
+    openInvitationFailures().forEach(error => {
+      error.status = 'dismissed';
+      error.dismissed = true;
+      error.dismissedAt = now;
+      const ev = findEventById(error.eventId);
+      if (ev?.invitationErrorDetails?.id === error.id) {
+        ev.invitationErrorDetails = { ...ev.invitationErrorDetails, status: 'dismissed', dismissed: true, dismissedAt: now };
+        ev.invitationError = null;
+        if (ev.invitationStatus === 'failed') ev.invitationStatus = 'pending';
+      }
+    });
+    activeInviteErrorId = null;
+    saveState();
+    renderAutoInviteIndicator();
+    renderInvitationErrorModal();
   }
 
   function renderInvitationErrorModal() {
@@ -1146,6 +1204,11 @@
     if (resolveInviteErrorBtn) {
       resolveInviteErrorBtn.textContent = invitationFailureActionLabel(active);
       resolveInviteErrorBtn.disabled = !active;
+    }
+    if (ignoreInviteErrorBtn) ignoreInviteErrorBtn.disabled = !active;
+    if (ignoreAllInviteErrorsBtn) {
+      ignoreAllInviteErrorsBtn.hidden = failures.length < 2;
+      ignoreAllInviteErrorsBtn.disabled = failures.length < 2;
     }
   }
 
@@ -1954,14 +2017,10 @@
   }
 
   async function sendBulkInvitations() {
-    const editable = selectedEditableEvents().filter(canInviteEvent);
+    const editable = selectedEditableEvents().filter(ev => shouldSendCalendarInvitation(ev));
     if (!editable.length) throw new Error('Keine ausgewählten Termine können eingeladen werden.');
     const emails = parseBulkInviteEmails();
     const message = bulkInviteMessage?.value || '';
-    const routineEditable = editable.filter(routineParticipantScopeEligible);
-    const applyFutureRoutines = routineEditable.length
-      ? confirm(`${routineEditable.length} Routine-/Habit-Termine sind ausgewählt.\n\nOK = Teilnehmer zusätzlich für alle zukünftigen Termine dieser Routine übernehmen\nAbbrechen = Nur ausgewählte Instanzen einladen`)
-      : false;
     if (!cloudUser || !supabaseClient) throw new Error('Bitte einloggen, um Einladungen zu senden.');
     editable.forEach(ev => {
       const participants = eventParticipantList(ev);
@@ -1972,14 +2031,6 @@
       if (!ev.invitationUid) ev.invitationUid = invitationUidForEvent(ev);
       if (!Number.isInteger(Number(ev.invitationSequence))) ev.invitationSequence = 0;
       ev.updatedAt = new Date().toISOString();
-      if (applyFutureRoutines && routineParticipantScopeEligible(ev)) {
-        const templateEv = state.templateEvents.find(item => item.id === ev.templateEventId);
-        if (templateEv) {
-          syncParticipantsToEvent(templateEv, eventParticipantList(ev));
-          templateEv.inviteMessage = message;
-          touchEvent(templateEv);
-        }
-      }
     });
     saveState();
     await saveCloudState(state, { throwOnError: true });
@@ -4666,12 +4717,33 @@ return div;
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeInviteEmail(value));
   }
 
+  function calendarInvitationBlockType(ev) {
+    if (!ev) return 'internal';
+    const type = eventEntryType(ev);
+    if (isExternalIcsEvent(ev) || isExternalReadOnlyEvent(ev) || type === 'external') return 'internal';
+    if (ev.source === 'routine' || ev.templateEventId || type === 'routine') return 'routine';
+    if (type === 'habit') return 'habit';
+    if (type === 'timedTodo') return 'todo';
+    if (type === 'calendar') return 'calendar_event';
+    return 'internal';
+  }
+
   function canManageParticipants(ev) {
-    return Boolean(ev && !ev.allDay && hasScheduledTime(ev) && !isExternalIcsEvent(ev) && !isExternalReadOnlyEvent(ev));
+    const blockType = calendarInvitationBlockType(ev);
+    return Boolean(ev && !ev.allDay && hasScheduledTime(ev) && (blockType === 'calendar_event' || blockType === 'todo'));
+  }
+
+  function shouldSendCalendarInvitation(ev, { requireRelevantChange = false, relevantChange = true, requireAutoInvite = false } = {}) {
+    const blockType = calendarInvitationBlockType(ev);
+    if (!['calendar_event', 'todo'].includes(blockType)) return false;
+    if (!isWeekMode() || !canManageParticipants(ev)) return false;
+    if (requireAutoInvite && !autoInviteIsActive()) return false;
+    if (requireRelevantChange && !relevantChange) return false;
+    return eventParticipantList(ev).length > 0;
   }
 
   function canInviteEvent(ev) {
-    return Boolean(ev && isWeekMode() && canManageParticipants(ev));
+    return shouldSendCalendarInvitation(ev);
   }
 
   function routineParticipantScopeEligible(ev) {
@@ -4798,7 +4870,7 @@ return div;
   }
 
   function scheduleInvitedEventUpdate(ev, reason) {
-    if (!ev?.id || isExternalIcsEvent(ev) || !ev.invitationSentAt || !eventParticipantList(ev).length) return;
+    if (!ev?.id || !ev.invitationSentAt || !shouldSendCalendarInvitation(ev)) return;
     const existingTimer = invitationUpdateTimers.get(ev.id);
     if (existingTimer) window.clearTimeout(existingTimer);
     const timer = window.setTimeout(async () => {
@@ -4926,8 +4998,8 @@ return div;
     ensureOwnEventInvitationUid(ev);
   }
 
-  function shouldSendAutomaticInvitation(ev) {
-    return Boolean(autoInviteIsActive() && canInviteEvent(ev) && eventParticipantList(ev).length);
+  function shouldSendAutomaticInvitation(ev, options = {}) {
+    return shouldSendCalendarInvitation(ev, { ...options, requireAutoInvite: true });
   }
 
   async function sendAutomaticInvitationForEvent(ev, reason = 'save', options = {}) {
@@ -6403,13 +6475,14 @@ return div;
       autoComplete: Boolean(templateEv.autoComplete),
       autoCompleteFromSubtasks: Boolean(templateEv.autoCompleteFromSubtasks || templateEv.autoComplete),
       subtasks: cloneEventSubtasks(templateEv).map(sub => ({ ...sub, done: false })),
-      participants: eventParticipantList(templateEv),
-      attendees: eventParticipantList(templateEv),
-      inviteMessage: templateEv.inviteMessage || '',
-      invitationUid: invitationUidForEvent({ id: instanceId }),
+      participants: [],
+      attendees: [],
+      inviteMessage: '',
+      invitationUid: null,
       invitationSequence: 0,
-      invitationStatus: 'pending',
+      invitationStatus: null,
       invitationError: null,
+      invitationErrorDetails: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -6939,6 +7012,8 @@ function toggleMissed(eventId) {
   if (closeInviteErrorModalBtn) closeInviteErrorModalBtn.onclick = closeInvitationErrorModal;
   if (closeInviteErrorModalFooterBtn) closeInviteErrorModalFooterBtn.onclick = closeInvitationErrorModal;
   if (resolveInviteErrorBtn) resolveInviteErrorBtn.onclick = handleInvitationErrorAction;
+  if (ignoreInviteErrorBtn) ignoreInviteErrorBtn.onclick = () => dismissInvitationFailure();
+  if (ignoreAllInviteErrorsBtn) ignoreAllInviteErrorsBtn.onclick = dismissAllInvitationFailures;
   if (inviteErrorModalBackdrop) inviteErrorModalBackdrop.addEventListener('click', e => { if (e.target === inviteErrorModalBackdrop) closeInvitationErrorModal(); });
   if (openCalendarFeedModalBtn) openCalendarFeedModalBtn.onclick = openCalendarFeedModal;
   if (closeAccountModalBtn) closeAccountModalBtn.onclick = closeAccountModal;
@@ -7242,7 +7317,7 @@ function toggleMissed(eventId) {
           const inviteStateAfter = invitationRelevantState(ev);
           const invitationRelevantChange = hasInvitationRelevantChanges(inviteStateBefore, inviteStateAfter);
           if (scheduleBefore !== scheduleAfter && !autoInviteIsActive()) scheduleInvitedEventUpdate(ev, 'editor-save');
-          if (invitationRelevantChange && shouldSendAutomaticInvitation(ev)) autoInviteTargetEvent = ev;
+          if (shouldSendAutomaticInvitation(ev, { requireRelevantChange: true, relevantChange: invitationRelevantChange })) autoInviteTargetEvent = ev;
         }
         const participantsAfter = participantSignature(eventParticipantList(ev));
         if (participantDraftChanged && participantsBefore !== participantsAfter && routineParticipantScopeEligible(ev)) {
