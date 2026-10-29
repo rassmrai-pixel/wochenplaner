@@ -414,22 +414,39 @@ async function sendViaResend({ to, subject, text, html, ics, method, email }) {
   }
 
   const payload = buildResendEmailPayload({ to, subject, text, html, ics, method, email });
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${email.resendApiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
-  });
-  const body = await response.text().catch(() => '');
-  if (!response.ok) {
-    const errorCode = classifyProviderError(response.status, body);
-    throw codedError(`Mailanbieter hat den Versand abgelehnt (${response.status}).`, response.status === 429 ? 429 : 502, errorCode, {
-      providerBody: body.slice(0, 300),
-      technicalMessage: body.slice(0, 500) || `Resend HTTP ${response.status}`,
-      retryable: errorCode !== 'RATE_LIMIT' && errorCode !== 'INVALID_RECIPIENT'
-    });
+  // Keep both the key and serialized body identical across provider retries.
+  const idempotencyKey = require('node:crypto').randomUUID();
+  const serializedPayload = JSON.stringify(payload);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${email.resendApiKey}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey
+        },
+        signal: AbortSignal.timeout(8000),
+        body: serializedPayload
+      });
+      const body = await response.text();
+      if (response.ok) return;
+      if (attempt === 0 && response.status >= 500) continue;
+      const errorCode = classifyProviderError(response.status, body);
+      throw codedError(`Mailanbieter hat den Versand abgelehnt (${response.status}).`, response.status === 429 ? 429 : 502, errorCode, {
+        providerBody: body.slice(0, 300),
+        technicalMessage: body.slice(0, 500) || `Resend HTTP ${response.status}`,
+        retryable: errorCode !== 'RATE_LIMIT' && errorCode !== 'INVALID_RECIPIENT'
+      });
+    } catch (error) {
+      if (error.statusCode) throw error;
+      if (attempt === 0) continue;
+      throw codedError('Mailanbieter konnte nicht erreicht werden.', 502, 'NETWORK_ERROR', {
+        technicalMessage: error.message,
+        provider: 'resend-http',
+        retryable: true
+      });
+    }
   }
 }
 
@@ -518,9 +535,17 @@ async function sendCalendarInvitationHandler(req, res) {
     }));
     event.participants = event.attendees.map(att => ({ ...att }));
     record.events[record.index] = event;
-    await savePlannerState(user.id, state, config);
+    let statusPersisted = true;
+    try {
+      await savePlannerState(user.id, state, config);
+    } catch (error) {
+      // Provider already accepted the mail. Do not report a failed send.
+      statusPersisted = false;
+      console.error('[CalendarInvite] sent but status save failed', { code: error.errorCode, message: error.message });
+    }
 
     return json(res, 200, {
+      statusPersisted,
       ok: true,
       method,
       invitationUid,
@@ -548,6 +573,7 @@ async function sendCalendarInvitationHandler(req, res) {
 module.exports = sendCalendarInvitationHandler;
 module.exports._test = {
   buildInviteIcs,
+  sendViaResend,
   validateAttendees,
   findEventRecord,
   isUnsupportedEvent,

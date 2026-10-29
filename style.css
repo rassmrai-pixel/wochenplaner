@@ -1530,6 +1530,10 @@
       font-weight: 900;
       line-height: 1;
     }
+    .event-create-lane-slot.selected {
+      background: rgba(56, 189, 248, 0.45);
+      outline: 1px solid #e0f2fe;
+    }
     .event-create-lane-slot:hover,
     .event-create-lane-slot:focus-visible {
       outline: none;
