@@ -91,7 +91,7 @@ assert.equal(firstCreated.invitationUid, "uid-event-1");
 assert.equal(firstCreated.entryType, "calendar");
 assert.equal(firstCreated.participants.length, 1);
 
-assert.match(appSource, /sendInviteBtn\.disabled = !canInviteEvent\(ev\) \|\| !inviteDraftAttendees\.length/);
+assert.match(appSource, /sendInviteBtn\.disabled = !canInviteEvent\(ev\) \|\| \(!inviteDraftAttendees\.length && !autoInviteIsActive\(\)\)/);
 assert.match(appSource, /const created = createEventFromModalDraft\(draft\);[\s\S]*?openEditor\(created\.id\)/);
 assert.match(appSource, /source: 'extra',\s*entryType: 'external',\s*templateEventId: null/);
 

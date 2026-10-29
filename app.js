@@ -3604,11 +3604,15 @@
         createSlot.dataset.slot = s;
         createSlot.title = `${timeLabel(s)}: neuen Termin erstellen`;
         createSlot.setAttribute('aria-label', `${days[d]} ${timeLabel(s)}: neuen Termin erstellen`);
-        ['pointerdown', 'mousedown', 'touchstart'].forEach(type => createSlot.addEventListener(type, event => event.stopPropagation(), { passive: true }));
+        ['pointerdown', 'touchstart'].forEach(type => createSlot.addEventListener(type, event => event.stopPropagation(), { passive: true }));
+        createSlot.addEventListener('mousedown', event => {
+          event.stopPropagation();
+          startDrag(event, d, s);
+        });
         createSlot.addEventListener('click', event => {
           event.preventDefault();
           event.stopImmediatePropagation();
-          if (bulkSelectionMode) return;
+          if (bulkSelectionMode || event.detail > 0) return;
           openEditor(null, {
             day: d,
             start: s,
@@ -4037,7 +4041,7 @@
   }
 
   function startDrag(e, d, s) {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || bulkSelectionMode) return;
     e.preventDefault();
     isDragging = true;
     dragDay = d;
@@ -4060,15 +4064,35 @@
     if (end <= start) return;
     openEditor(null, { day: d, start, end, source: isTemplateMode() ? 'routine' : 'extra', entryType: isTemplateMode() ? 'routine' : 'calendar' });
   }
-  document.addEventListener('mouseup', () => {
+  function selectionSlotAtPointer(event) {
+    const column = document.querySelector(`.day-column[data-day="${dragDay}"]`);
+    if (!column) return null;
+    const rect = column.getBoundingClientRect();
+    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY >= rect.bottom) return null;
+    return clamp(Math.floor((event.clientY - rect.top) / (rect.height / slotsPerDay)), 0, slotsPerDay - 1);
+  }
+  document.addEventListener('mousemove', event => {
     if (!isDragging) return;
+    const slot = selectionSlotAtPointer(event);
+    if (slot !== null) moveDrag(dragDay, slot);
+  });
+  document.addEventListener('mouseup', event => {
+    if (!isDragging) return;
+    const slot = selectionSlotAtPointer(event);
+    if (slot !== null) finishDrag(dragDay, slot);
+    else {
+      clearSelection();
+      isDragging = false;
+    }
+  });
+  window.addEventListener('blur', () => {
     clearSelection();
     isDragging = false;
   });
   function markSelection() {
     clearSelection();
     const a = Math.min(dragStart, dragEnd), b = Math.max(dragStart, dragEnd);
-    document.querySelectorAll(`.slot[data-day="${dragDay}"]`).forEach(slot => {
+    document.querySelectorAll(`.slot[data-day="${dragDay}"], .event-create-lane-slot[data-day="${dragDay}"]`).forEach(slot => {
       const s = Number(slot.dataset.slot);
       if (s >= a && s <= b) slot.classList.add('selected');
     });
@@ -4157,7 +4181,7 @@
       resetEventMoveState();
     });
   }
-  function clearSelection() { document.querySelectorAll('.slot.selected').forEach(el => el.classList.remove('selected')); }
+  function clearSelection() { document.querySelectorAll('.slot.selected, .event-create-lane-slot.selected').forEach(el => el.classList.remove('selected')); }
 
 
   let mobileEventTapState = null;
@@ -4861,6 +4885,7 @@ return div;
     ev.invitationError = null;
     ev.invitationErrorDetails = null;
     clearInvitationFailure(ev.id);
+    ev.invitationStatusWarning = result.statusPersisted === false ? 'Einladung gesendet. Der Versandstatus konnte noch nicht auf dem Server gespeichert werden.' : null;
     ev.attendees = eventParticipantList(ev).map(att => ({ ...att, status: method === 'CANCEL' ? 'cancelled' : 'sent', invitationStatus: method === 'CANCEL' ? 'cancelled' : 'sent', invitationError: null, invitationSentAt: new Date().toISOString() }));
     ev.participants = ev.attendees.map(att => ({ ...att }));
     rememberOwnInvitationUid(ev.invitationUid);
@@ -5122,7 +5147,7 @@ return div;
       await deliverCalendarInvitation(ev, method);
       inviteDraftAttendees = ev.participants.map(att => ({ ...att }));
       renderInviteAttendees(ev);
-      setInviteStatus(method === 'CANCEL' ? 'Absage gesendet.' : 'Einladung gesendet.', 'success');
+      setInviteStatus(ev.invitationStatusWarning || (method === 'CANCEL' ? 'Absage gesendet.' : 'Einladung gesendet.'), ev.invitationStatusWarning ? 'pending' : 'success');
       return true;
     } catch (error) {
       const detail = recordInvitationFailure(ev, error);
